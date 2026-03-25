@@ -3,20 +3,43 @@
    Full live-data frontend
    ============================================================ */
 
+// BASE_PATH is set by PHP in header.php
+// If not set, calculate fallback
+if (typeof window.BASE_PATH === 'undefined') {
+  const pathname = window.location.pathname;
+  const parts = pathname.split('/').filter(Boolean);
+  window.BASE_PATH = parts.length > 0 ? '/' + parts[0] + '/' : '/';
+  console.log('[JS] PHP BASE_PATH not set, calculated:', window.BASE_PATH);
+} else {
+  console.log('[JS] Using PHP-provided BASE_PATH:', window.BASE_PATH);
+}
+
 const API = {
-  dashboard:   'api/dashboard.php',
-  projects:    'api/projects.php',
-  expenses:    'api/expenses.php',
-  contractors: 'api/contractors.php',
-  feedback:    'api/feedback.php',
+  dashboard:   window.BASE_PATH + 'api/dashboard.php',
+  projects:    window.BASE_PATH + 'api/projects.php',
+  expenses:    window.BASE_PATH + 'api/expenses.php',
+  contractors: window.BASE_PATH + 'api/contractors.php',
+  feedback:    window.BASE_PATH + 'api/feedback.php',
 };
+
+console.log('[API] Using endpoints:', API);
 
 /* ── Tiny fetch helpers ── */
 async function get(url, params = {}) {
   const qs = new URLSearchParams(params).toString();
-  const res = await fetch(qs ? `${url}?${qs}` : url);
-  if (!res.ok) throw new Error(`HTTP ${res.status}`);
-  return res.json();
+  const fullUrl = qs ? `${url}?${qs}` : url;
+  console.log('[FETCH] GET', fullUrl);
+  try {
+    const res = await fetch(fullUrl);
+    if (!res.ok) {
+      console.error('[FETCH] HTTP Error', res.status, res.statusText, 'URL:', fullUrl);
+      throw new Error(`HTTP ${res.status}`);
+    }
+    return res.json();
+  } catch (e) {
+    console.error('[FETCH] Error:', e.message, 'URL:', fullUrl);
+    throw e;
+  }
 }
 async function post(url, body) {
   const res = await fetch(url, { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body) });
