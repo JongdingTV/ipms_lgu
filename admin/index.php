@@ -1,0 +1,248 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>LGU Infrastructure Project Management System</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet" />
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+  <link rel="stylesheet" href="../assets/css/style.css" />
+</head>
+<body>
+
+  <!-- SIDEBAR -->
+  <aside class="sidebar" id="sidebar">
+    <div class="sidebar-logo">
+      <div class="logo-badge">
+        <svg viewBox="0 0 40 40" fill="none" xmlns="http://www.w3.org/2000/svg">
+          <circle cx="20" cy="20" r="19" stroke="#f0c040" stroke-width="2"/>
+          <path d="M20 8 L28 14 L28 26 L20 32 L12 26 L12 14 Z" fill="#f0c040" opacity="0.3" stroke="#f0c040" stroke-width="1.5"/>
+          <path d="M20 12 L25 16 L25 24 L20 28 L15 24 L15 16 Z" fill="#f0c040"/>
+        </svg>
+      </div>
+      <div class="logo-text">
+        <span class="logo-title">LGU Infrastructure</span>
+        <span class="logo-sub">Project Management System</span>
+      </div>
+    </div>
+
+    <nav class="sidebar-nav">
+      <a href="#" class="nav-item active" data-page="dashboard">
+        <span class="nav-icon"><svg viewBox="0 0 20 20" fill="currentColor"><path d="M3 4a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1zm0 4a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1zm0 4a1 1 0 011-1h6a1 1 0 110 2H4a1 1 0 01-1-1z"/></svg></span>
+        Dashboard
+      </a>
+      <a href="#" class="nav-item" data-page="projects">
+        <span class="nav-icon"><svg viewBox="0 0 20 20" fill="currentColor"><path d="M2 6a2 2 0 012-2h5l2 2h5a2 2 0 012 2v6a2 2 0 01-2 2H4a2 2 0 01-2-2V6z"/></svg></span>
+        Projects
+      </a>
+      <a href="#" class="nav-item" data-page="milestones">
+        <span class="nav-icon"><svg viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M6 2a1 1 0 00-1 1v1H4a2 2 0 00-2 2v10a2 2 0 002 2h12a2 2 0 002-2V6a2 2 0 00-2-2h-1V3a1 1 0 10-2 0v1H7V3a1 1 0 00-1-1zm0 5a1 1 0 000 2h8a1 1 0 100-2H6z" clip-rule="evenodd"/></svg></span>
+        Milestones &amp; Tasks
+      </a>
+      <a href="#" class="nav-item" data-page="budget">
+        <span class="nav-icon"><svg viewBox="0 0 20 20" fill="currentColor"><path d="M4 4a2 2 0 00-2 2v1h16V6a2 2 0 00-2-2H4z"/><path fill-rule="evenodd" d="M18 9H2v5a2 2 0 002 2h12a2 2 0 002-2V9zM4 13a1 1 0 011-1h1a1 1 0 110 2H5a1 1 0 01-1-1zm5-1a1 1 0 100 2h1a1 1 0 100-2H9z" clip-rule="evenodd"/></svg></span>
+        Budget &amp; Expenses
+      </a>
+      <a href="#" class="nav-item" data-page="contractors">
+        <span class="nav-icon"><svg viewBox="0 0 20 20" fill="currentColor"><path d="M13 6a3 3 0 11-6 0 3 3 0 016 0zM18 8a2 2 0 11-4 0 2 2 0 014 0zM14 15a4 4 0 00-8 0v3h8v-3zM6 8a2 2 0 11-4 0 2 2 0 014 0zM16 18v-3a5.972 5.972 0 00-.75-2.906A3.005 3.005 0 0119 15v3h-3zM4.75 12.094A5.973 5.973 0 004 15v3H1v-3a3 3 0 013.75-2.906z"/></svg></span>
+        Contractors
+      </a>
+      <a href="#" class="nav-item" data-page="feedback">
+        <span class="nav-icon"><svg viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M18 10c0 3.866-3.582 7-8 7a8.841 8.841 0 01-4.083-.98L2 17l1.338-3.123C2.493 12.767 2 11.434 2 10c0-3.866 3.582-7 8-7s8 3.134 8 7zM7 9H5v2h2V9zm8 0h-2v2h2V9zM9 9h2v2H9V9z" clip-rule="evenodd"/></svg></span>
+        Feedback &amp; Complaints
+      </a>
+      <a href="#" class="nav-item" data-page="reports">
+        <span class="nav-icon"><svg viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M6 2a2 2 0 00-2 2v12a2 2 0 002 2h8a2 2 0 002-2V7.414A2 2 0 0015.414 6L12 2.586A2 2 0 0010.586 2H6zm2 10a1 1 0 10-2 0v3a1 1 0 102 0v-3zm2-3a1 1 0 011 1v5a1 1 0 11-2 0v-5a1 1 0 011-1zm4-1a1 1 0 10-2 0v7a1 1 0 102 0V8z" clip-rule="evenodd"/></svg></span>
+        Reports
+      </a>
+      <a href="#" class="nav-item" data-page="users">
+        <span class="nav-icon"><svg viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M10 9a3 3 0 100-6 3 3 0 000 6zm-7 9a7 7 0 1114 0H3z" clip-rule="evenodd"/></svg></span>
+        User Management
+      </a>
+      <a href="#" class="nav-item" data-page="audit">
+        <span class="nav-icon"><svg viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M3 4a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1zm0 4a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1zm0 4a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1zm0 4a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1z" clip-rule="evenodd"/></svg></span>
+        Audit Logs
+      </a>
+    </nav>
+  </aside>
+
+  <!-- MAIN -->
+  <div class="main-wrapper">
+
+    <!-- TOPBAR -->
+    <header class="topbar">
+      <button class="sidebar-toggle" id="sidebarToggle" aria-label="Toggle sidebar">
+        <svg viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M3 5a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1zM3 10a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1zM3 15a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1z" clip-rule="evenodd"/></svg>
+      </button>
+      <div class="search-bar">
+        <svg class="search-icon" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M8 4a4 4 0 100 8 4 4 0 000-8zM2 8a6 6 0 1110.89 3.476l4.817 4.817a1 1 0 01-1.414 1.414l-4.816-4.816A6 6 0 012 8z" clip-rule="evenodd"/></svg>
+        <input type="text" placeholder="Search..." id="searchInput" />
+      </div>
+      <div class="topbar-actions">
+        <button class="notif-btn" id="notifBtn" aria-label="Notifications">
+          <svg viewBox="0 0 20 20" fill="currentColor"><path d="M10 2a6 6 0 00-6 6v3.586l-.707.707A1 1 0 004 14h12a1 1 0 00.707-1.707L16 11.586V8a6 6 0 00-6-6zM10 18a3 3 0 01-3-3h6a3 3 0 01-3 3z"/></svg>
+          <span class="notif-badge">3</span>
+        </button>
+        <div class="user-avatar" id="userMenu">
+          <svg viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M10 9a3 3 0 100-6 3 3 0 000 6zm-7 9a7 7 0 1114 0H3z" clip-rule="evenodd"/></svg>
+        </div>
+        <div class="user-label">
+          Admin
+          <svg class="chevron" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z" clip-rule="evenodd"/></svg>
+        </div>
+      </div>
+    </header>
+
+    <!-- CONTENT (JS will wrap this into page sections) -->
+    <main class="content">
+
+      <!-- KPI CARDS -->
+      <section class="kpi-grid" id="kpiGrid">
+        <div class="kpi-card">
+          <div class="kpi-icon kpi-blue">
+            <svg viewBox="0 0 20 20" fill="currentColor"><path d="M2 6a2 2 0 012-2h5l2 2h5a2 2 0 012 2v6a2 2 0 01-2 2H4a2 2 0 01-2-2V6z"/></svg>
+          </div>
+          <div class="kpi-info">
+            <span class="kpi-label">Active Projects</span>
+            <span class="kpi-value" id="kpi-active">—</span>
+          </div>
+        </div>
+        <div class="kpi-card">
+          <div class="kpi-icon kpi-red">
+            <svg viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clip-rule="evenodd"/></svg>
+          </div>
+          <div class="kpi-info">
+            <span class="kpi-label">Delayed Projects</span>
+            <span class="kpi-value" id="kpi-delayed">—</span>
+          </div>
+        </div>
+        <div class="kpi-card">
+          <div class="kpi-icon kpi-green">
+            <svg viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M4 4a2 2 0 00-2 2v4a2 2 0 002 2V6h10a2 2 0 00-2-2H4zm2 6a2 2 0 012-2h8a2 2 0 012 2v4a2 2 0 01-2 2H8a2 2 0 01-2-2v-4zm6 4a2 2 0 100-4 2 2 0 000 4z" clip-rule="evenodd"/></svg>
+          </div>
+          <div class="kpi-info">
+            <span class="kpi-label">Budget Utilized</span>
+            <div class="kpi-budget">
+              <span class="kpi-value kpi-peso" id="kpi-budget">—</span>
+              <span class="kpi-budget-total" id="kpi-budget-total">/ ₱—M</span>
+            </div>
+          </div>
+        </div>
+        <div class="kpi-card">
+          <div class="kpi-icon kpi-orange">
+            <svg viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clip-rule="evenodd"/></svg>
+          </div>
+          <div class="kpi-info">
+            <span class="kpi-label">High-Risk Alerts (AI)</span>
+            <span class="kpi-value" id="kpi-alerts">—</span>
+          </div>
+        </div>
+      </section>
+
+      <!-- CHARTS ROW -->
+      <section class="charts-row">
+        <div class="chart-card chart-main">
+          <div class="chart-header">
+            <h2 class="chart-title">Project Progress Overview</h2>
+            <div class="chart-legend">
+              <span class="legend-dot legend-blue"></span><span>Planned</span>
+              <span class="legend-dot legend-green"></span><span>Actual</span>
+            </div>
+          </div>
+          <div class="chart-body"><canvas id="progressChart"></canvas></div>
+        </div>
+        <div class="chart-card chart-budget">
+          <div class="chart-header"><h2 class="chart-title">Budget Status</h2></div>
+          <div class="chart-body budget-body">
+            <div class="donut-wrapper">
+              <canvas id="budgetChart"></canvas>
+              <div class="donut-center"><span class="donut-pct">—</span></div>
+            </div>
+            <div class="budget-legend">
+              <div class="budget-legend-item"><span class="legend-dot" style="background:#3b82f6"></span><span>Spent <strong>—</strong></span></div>
+              <div class="budget-legend-item"><span class="legend-dot" style="background:#22c55e"></span><span>Remaining <strong>—</strong></span></div>
+              <div class="budget-legend-item"><span class="legend-dot" style="background:#ef4444"></span><span>Overspending Alerts <strong>4</strong></span></div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- LOWER ROW -->
+      <section class="lower-row">
+        <div class="info-card">
+          <h3 class="info-card-title">Top Delayed Projects</h3>
+          <div class="delayed-list"><p class="empty-state">Loading…</p></div>
+        </div>
+        <div class="info-card">
+          <h3 class="info-card-title">Budget Anomalies</h3>
+          <div class="anomaly-list"><p class="empty-state">Loading…</p></div>
+          <div class="anomaly-footer">
+            <button class="btn-review" onclick="navigate('budget')">Review</button>
+          </div>
+        </div>
+        <div class="info-card">
+          <h3 class="info-card-title">Recent Citizen Feedback</h3>
+          <div class="feedback-list"><p class="empty-state">Loading…</p></div>
+        </div>
+      </section>
+
+      <!-- AI INSIGHTS -->
+      <section class="ai-insights">
+        <h3 class="info-card-title" style="padding:0 0 1rem 0;">AI Insights</h3>
+        <div class="ai-grid">
+          <div class="ai-card ai-red">
+            <div class="ai-card-title">Delay Risk: <strong>—</strong></div>
+            <div class="ai-card-body">Loading…</div>
+          </div>
+          <div class="ai-card ai-orange">
+            <div class="ai-card-icon"><svg viewBox="0 0 20 20" fill="currentColor"><path d="M4 4a2 2 0 00-2 2v1h16V6a2 2 0 00-2-2H4z"/><path fill-rule="evenodd" d="M18 9H2v5a2 2 0 002 2h12a2 2 0 002-2V9z" clip-rule="evenodd"/></svg></div>
+            <div class="ai-card-title"><strong>Budget Alert:</strong> Loading…</div>
+            <div class="ai-card-body"></div>
+          </div>
+          <div class="ai-card ai-green">
+            <div class="ai-card-icon"><svg viewBox="0 0 20 20" fill="currentColor"><path d="M13 6a3 3 0 11-6 0 3 3 0 016 0zM18 8a2 2 0 11-4 0 2 2 0 014 0zM14 15a4 4 0 00-8 0v3h8v-3z"/></svg></div>
+            <div class="ai-card-title"><strong>Top Contractor:</strong> Loading…</div>
+            <div class="ai-card-body"></div>
+          </div>
+        </div>
+      </section>
+
+    </main>
+  </div>
+
+  <!-- MODAL -->
+  <div class="modal-overlay" id="modalOverlay">
+    <div class="modal" id="modal">
+      <div class="modal-header">
+        <h3 id="modalTitle">Details</h3>
+        <button class="modal-close" id="modalClose">&times;</button>
+      </div>
+      <div class="modal-body" id="modalBody"></div>
+    </div>
+  </div>
+
+  <!-- NOTIFICATION PANEL -->
+  <div class="notif-panel" id="notifPanel">
+    <div class="notif-panel-header">
+      <span>Notifications</span>
+      <button class="notif-clear" id="notifClear">Clear all</button>
+    </div>
+    <div class="notif-item notif-high">
+      <div class="notif-dot"></div>
+      <div><p class="notif-msg">Brgy. Health Center is over budget</p><span class="notif-time">Loading live data…</span></div>
+    </div>
+    <div class="notif-item notif-mid">
+      <div class="notif-dot"></div>
+      <div><p class="notif-msg">River Dike expense spike detected</p><span class="notif-time">Loading live data…</span></div>
+    </div>
+    <div class="notif-item notif-low">
+      <div class="notif-dot"></div>
+      <div><p class="notif-msg">Delayed projects need attention</p><span class="notif-time">Loading live data…</span></div>
+    </div>
+  </div>
+
+  <script src="assets/js/script.js"></script>
+</body>
+</html>
