@@ -32,6 +32,9 @@ function getDB(): PDO {
     return $pdo;
 }
 
+// Initialize database connection for use in scripts
+$pdo = getDB();
+
 // ── CORS + JSON headers for API responses ──
 function apiHeaders(): void {
     header('Content-Type: application/json; charset=utf-8');

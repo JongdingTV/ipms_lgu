@@ -11,13 +11,32 @@ USE lgu_infrastructure;
 
 -- ── Users ──────────────────────────────────────────────────
 CREATE TABLE users (
-  id          INT AUTO_INCREMENT PRIMARY KEY,
-  name        VARCHAR(120)  NOT NULL,
-  email       VARCHAR(180)  NOT NULL UNIQUE,
-  password    VARCHAR(255)  NOT NULL,
-  role        ENUM('admin','engineer','viewer') DEFAULT 'viewer',
-  created_at  TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-);
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    username VARCHAR(50) UNIQUE NOT NULL,
+    password_hash VARCHAR(255) NOT NULL,
+    full_name VARCHAR(100) NOT NULL,
+    email VARCHAR(100) UNIQUE NOT NULL,
+    role ENUM('admin', 'manager', 'staff', 'viewer') DEFAULT 'staff',
+    is_active BOOLEAN DEFAULT TRUE,
+    last_login DATETIME NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    INDEX idx_username (username),
+    INDEX idx_email (email),
+    INDEX idx_role (role)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Insert default admin user
+-- Username: admin
+-- Password: admin123
+INSERT INTO users (username, password_hash, full_name, email, role, is_active) VALUES
+('admin', '$2y$10$92IXUNpkjO0rOQ5byMi.Ye4oKoEa3Ro9llC/.og/at2.uheWG/igi', 'System Administrator', 'admin@lgu.gov.ph', 'admin', TRUE);
+
+-- Insert sample users for testing
+INSERT INTO users (username, password_hash, full_name, email, role, is_active) VALUES
+('manager', '$2y$10$92IXUNpkjO0rOQ5byMi.Ye4oKoEa3Ro9llC/.og/at2.uheWG/igi', 'Project Manager', 'manager@lgu.gov.ph', 'manager', TRUE),
+('staff', '$2y$10$92IXUNpkjO0rOQ5byMi.Ye4oKoEa3Ro9llC/.og/at2.uheWG/igi', 'Staff Member', 'staff@lgu.gov.ph', 'staff', TRUE),
+('viewer', '$2y$10$92IXUNpkjO0rOQ5byMi.Ye4oKoEa3Ro9llC/.og/at2.uheWG/igi', 'Read Only User', 'viewer@lgu.gov.ph', 'viewer', TRUE);
 
 -- ── Contractors ────────────────────────────────────────────
 CREATE TABLE contractors (

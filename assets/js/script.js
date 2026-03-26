@@ -20,6 +20,7 @@ const API = {
   expenses:    window.BASE_PATH + 'api/expenses.php',
   contractors: window.BASE_PATH + 'api/contractors.php',
   feedback:    window.BASE_PATH + 'api/feedback.php',
+  user:        window.BASE_PATH + 'api/user.php',
 };
 
 console.log('[API] Using endpoints:', API);
@@ -1112,6 +1113,29 @@ document.getElementById('searchInput')?.addEventListener('keydown', e => {
    INIT — build page sections and load dashboard
    ============================================================ */
 document.addEventListener('DOMContentLoaded', () => {
+  // User menu toggle
+  const userMenuBtn = document.getElementById('userMenuBtn');
+  const userMenu = document.getElementById('userMenu');
+  
+  if (userMenuBtn && userMenu) {
+    userMenuBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      userMenu.classList.toggle('open');
+    });
+    
+    // Close menu when clicking outside
+    document.addEventListener('click', (e) => {
+      if (!userMenu.contains(e.target) && e.target !== userMenuBtn) {
+        userMenu.classList.remove('open');
+      }
+    });
+    
+    // Prevent menu from closing when clicking inside
+    userMenu.addEventListener('click', (e) => {
+      e.stopPropagation();
+    });
+  }
+
   const contentEl = document.querySelector('.content');
   if (!contentEl) return;
 
@@ -1132,3 +1156,142 @@ document.addEventListener('DOMContentLoaded', () => {
 
   loadDashboard();
 });
+// Profile settings modal (already in topbar.php but with working implementation)
+async function showProfileSettings() {
+  try {
+    const user = await get(API.user);
+    openModal('Profile Settings', `
+      <form id="profileForm" onsubmit="submitProfileForm(event)">
+        <div class="form-grid">
+          <div class="form-group">
+            <label>Full Name *</label>
+            <input name="full_name" class="form-input" required value="${user.data.full_name}" />
+          </div>
+          <div class="form-group">
+            <label>Email *</label>
+            <input name="email" type="email" class="form-input" required value="${user.data.email}" />
+          </div>
+          <div class="form-group">
+            <label>Username</label>
+            <input class="form-input" value="${user.data.username}" disabled />
+            <small style="color: #64748b; font-size: 0.8rem;">Username cannot be changed</small>
+          </div>
+          <div class="form-group">
+            <label>Role</label>
+            <input class="form-input" value="${user.data.role.charAt(0).toUpperCase() + user.data.role.slice(1)}" disabled />
+          </div>
+        </div>
+        <div class="form-actions">
+          <button type="button" class="btn-secondary" onclick="closeModal()">Cancel</button>
+          <button type="submit" class="btn-primary">Update Profile</button>
+        </div>
+      </form>
+    `);
+  } catch (e) {
+    toast('Failed to load profile', 'error');
+  }
+}
+ 
+// Change password modal
+function showChangePassword() {
+  openModal('Change Password', `
+    <form id="passwordForm" onsubmit="submitPasswordForm(event)">
+      <div class="form-group">
+        <label>Current Password *</label>
+        <input name="current_password" type="password" class="form-input" required autocomplete="current-password" />
+      </div>
+      <div class="form-group">
+        <label>New Password *</label>
+        <input name="new_password" type="password" class="form-input" required minlength="6" autocomplete="new-password" />
+        <small style="color: #64748b; font-size: 0.8rem;">Minimum 6 characters</small>
+      </div>
+      <div class="form-group">
+        <label>Confirm New Password *</label>
+        <input name="confirm_password" type="password" class="form-input" required autocomplete="new-password" />
+      </div>
+      <div class="form-actions">
+        <button type="button" class="btn-secondary" onclick="closeModal()">Cancel</button>
+        <button type="submit" class="btn-primary">Change Password</button>
+      </div>
+    </form>
+  `);
+}
+ 
+// Submit profile form
+async function submitProfileForm(e) {
+  e.preventDefault();
+  const formData = new FormData(e.target);
+  const body = {
+    full_name: formData.get('full_name'),
+    email: formData.get('email')
+  };
+  
+  try {
+    const res = await fetch(API.user, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams(body)
+    });
+    const data = await res.json();
+    
+    if (data.error) {
+      toast(data.error, 'error');
+    } else {
+      toast('Profile updated successfully!');
+      closeModal();
+      // Update the displayed name in topbar
+      const userName = document.querySelector('.user-name');
+      const menuName = document.querySelector('.user-menu-name');
+      const menuEmail = document.querySelector('.user-menu-email');
+      if (userName) userName.textContent = body.full_name;
+      if (menuName) menuName.textContent = body.full_name;
+      if (menuEmail) menuEmail.textContent = body.email;
+    }
+  } catch (e) {
+    toast('Failed to update profile', 'error');
+  }
+}
+ 
+// Submit password form
+async function submitPasswordForm(e) {
+  e.preventDefault();
+  const formData = new FormData(e.target);
+  
+  const current = formData.get('current_password');
+  const newPass = formData.get('new_password');
+  const confirm = formData.get('confirm_password');
+  
+  if (newPass !== confirm) {
+    toast('New passwords do not match', 'error');
+    return;
+  }
+  
+  if (newPass.length < 6) {
+    toast('Password must be at least 6 characters', 'error');
+    return;
+  }
+  
+  const body = {
+    current_password: current,
+    new_password: newPass
+  };
+  
+  try {
+    const res = await fetch(API.user, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams(body)
+    });
+    const data = await res.json();
+    
+    if (data.error) {
+      toast(data.error, 'error');
+    } else {
+      toast('Password changed successfully!');
+      closeModal();
+    }
+  } catch (e) {
+    toast('Failed to change password', 'error');
+  }
+}
+ 
