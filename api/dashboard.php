@@ -3,6 +3,7 @@
 // api/dashboard.php — Dashboard KPIs & charts
 // ============================================================
 require_once __DIR__ . '/../includes/db.php';
+require_once __DIR__ . '/../includes/auth.php';
 apiHeaders();
 
 $db  = getDB();

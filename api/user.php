@@ -4,6 +4,8 @@ require_once '../includes/auth.php';
 
 header('Content-Type: application/json');
 
+requireCsrfProtection();
+
 $method = $_SERVER['REQUEST_METHOD'];
 
 try {

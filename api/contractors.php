@@ -3,7 +3,10 @@
 // api/contractors.php — Contractors CRUD
 // ============================================================
 require_once __DIR__ . '/../includes/db.php';
+require_once __DIR__ . '/../includes/auth.php';
 apiHeaders();
+
+requireCsrfProtection();
 
 $db     = getDB();
 $method = $_SERVER['REQUEST_METHOD'];

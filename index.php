@@ -1,7 +1,9 @@
 <?php
-/**
- * Main entry point for LGU Infrastructure Dashboard
- * Redirects to login page
- */
-header('Location: admin/login.php');
+require_once __DIR__ . '/auth/session.php';
+
+if (isLoggedIn()) {
+    redirectToRoleDashboard();
+}
+
+header('Location: ' . APP_LOGIN_PATH);
 exit;

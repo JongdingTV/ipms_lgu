@@ -23,6 +23,8 @@ const API = {
   user:        window.BASE_PATH + 'api/user.php',
 };
 
+const CSRF_HEADERS = window.CSRF_TOKEN ? { 'X-CSRF-Token': window.CSRF_TOKEN } : {};
+
 console.log('[API] Using endpoints:', API);
 
 /* ── Tiny fetch helpers ── */
@@ -43,15 +45,26 @@ async function get(url, params = {}) {
   }
 }
 async function post(url, body) {
-  const res = await fetch(url, { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body) });
+  const res = await fetch(url, {
+    method:'POST',
+    headers:{ 'Content-Type':'application/json', ...CSRF_HEADERS },
+    body: JSON.stringify(body)
+  });
   return res.json();
 }
 async function put(url, id, body) {
-  const res = await fetch(`${url}?id=${id}`, { method:'PUT', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body) });
+  const res = await fetch(`${url}?id=${id}`, {
+    method:'PUT',
+    headers:{ 'Content-Type':'application/json', ...CSRF_HEADERS },
+    body: JSON.stringify(body)
+  });
   return res.json();
 }
 async function del(url, id) {
-  const res = await fetch(`${url}?id=${id}`, { method:'DELETE' });
+  const res = await fetch(`${url}?id=${id}`, {
+    method:'DELETE',
+    headers: { ...CSRF_HEADERS }
+  });
   return res.json();
 }
 
@@ -1229,7 +1242,7 @@ async function submitProfileForm(e) {
   try {
     const res = await fetch(API.user, {
       method: 'PUT',
-      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded', ...CSRF_HEADERS },
       body: new URLSearchParams(body)
     });
     const data = await res.json();
@@ -1279,7 +1292,7 @@ async function submitPasswordForm(e) {
   try {
     const res = await fetch(API.user, {
       method: 'PUT',
-      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded', ...CSRF_HEADERS },
       body: new URLSearchParams(body)
     });
     const data = await res.json();

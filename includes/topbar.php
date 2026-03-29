@@ -29,7 +29,7 @@
     <div class="user-section">
       <div class="user-info">
         <div class="user-name"><?= htmlspecialchars($_SESSION['full_name']) ?></div>
-        <div class="user-role"><?= ucfirst(htmlspecialchars($_SESSION['role'])) ?></div>
+        <div class="user-role"><?= htmlspecialchars(roleLabel($_SESSION['role'])) ?></div>
       </div>
       
       <div class="user-avatar-wrapper">
@@ -45,7 +45,7 @@
             </div>
             <div class="user-menu-info">
               <div class="user-menu-name"><?= htmlspecialchars($_SESSION['full_name']) ?></div>
-              <div class="user-menu-role"><?= ucfirst(htmlspecialchars($_SESSION['role'])) ?></div>
+              <div class="user-menu-role"><?= htmlspecialchars(roleLabel($_SESSION['role'])) ?></div>
               <div class="user-menu-email"><?= htmlspecialchars($_SESSION['email']) ?></div>
             </div>
           </div>
@@ -63,7 +63,7 @@
             <span>Change Password</span>
           </a>
           <div class="user-menu-divider"></div>
-          <a href="<?= $BASE_PATH ?>includes/logout.php" class="user-menu-item user-menu-logout">
+          <a href="<?= $BASE_PATH ?>auth/logout.php" class="user-menu-item user-menu-logout">
             <svg viewBox="0 0 20 20" fill="currentColor">
               <path fill-rule="evenodd" d="M3 3a1 1 0 00-1 1v12a1 1 0 102 0V4a1 1 0 00-1-1zm10.293 9.293a1 1 0 001.414 1.414l3-3a1 1 0 000-1.414l-3-3a1 1 0 10-1.414 1.414L14.586 9H7a1 1 0 100 2h7.586l-1.293 1.293z" clip-rule="evenodd"/>
             </svg>
@@ -74,25 +74,3 @@
     </div>
   </div>
 </header>
-
-// Submit profile form (placeholder - implement in your API)
-function submitProfileForm(e) {
-  e.preventDefault();
-  toast('Profile update functionality coming soon', 'info');
-  closeModal();
-}
-
-// Submit password form (placeholder - implement in your API)
-function submitPasswordForm(e) {
-  e.preventDefault();
-  const formData = new FormData(e.target);
-  
-  if (formData.get('new_password') !== formData.get('confirm_password')) {
-    toast('Passwords do not match', 'error');
-    return;
-  }
-  
-  toast('Password change functionality coming soon', 'info');
-  closeModal();
-}
-</script>
