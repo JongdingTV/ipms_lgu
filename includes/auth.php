@@ -1,7 +1,7 @@
 <?php
 require_once __DIR__ . '/../auth/session.php';
 
-requireLogin(['super_admin', 'admin']);
+$authenticatedUser = requireLogin();
 
 function hasRole(string $requiredRole): bool
 {
@@ -19,6 +19,19 @@ function hasRole(string $requiredRole): bool
     ];
 
     return ($roleHierarchy[$user['role']] ?? 0) >= ($roleHierarchy[$requiredRole] ?? PHP_INT_MAX);
+}
+
+function requireAnyRole(array $allowedRoles): void
+{
+    $user = currentUser();
+    if (!$user || !in_array($user['role'], $allowedRoles, true)) {
+        if (authIsApiRequest()) {
+            authJsonError('Access denied', 403);
+        }
+
+        header('Location: ' . roleDashboardPath($user['role'] ?? 'citizen'));
+        exit;
+    }
 }
 
 function requireRole(string $requiredRole): void

@@ -6,10 +6,16 @@ require_once __DIR__ . '/../includes/db.php';
 require_once __DIR__ . '/../includes/auth.php';
 apiHeaders();
 
+$method = $_SERVER['REQUEST_METHOD'];
+if ($method === 'GET') {
+    requireAnyRole(['super_admin', 'admin', 'engineer']);
+} else {
+    requireAnyRole(['super_admin', 'admin']);
+}
+
 requireCsrfProtection();
 
 $db     = getDB();
-$method = $_SERVER['REQUEST_METHOD'];
 $id     = isset($_GET['id']) ? (int) $_GET['id'] : null;
 
 // ── GET ────────────────────────────────────────────────────
@@ -97,10 +103,13 @@ if ($method === 'POST') {
     }
 
     // Auto-flag if this pushes project over budget
-    $budget = (float) $db->prepare("SELECT budget FROM projects WHERE id=?")
-        ->execute([$b['project_id']]) ?: 0;
-    $spent = (float) $db->prepare("SELECT COALESCE(SUM(amount),0) FROM expenses WHERE project_id=?")
-        ->execute([$b['project_id']]) ?: 0;
+    $budgetStmt = $db->prepare("SELECT budget FROM projects WHERE id = ?");
+    $budgetStmt->execute([(int) $b['project_id']]);
+    $budget = (float) ($budgetStmt->fetchColumn() ?: 0);
+
+    $spentStmt = $db->prepare("SELECT COALESCE(SUM(amount),0) FROM expenses WHERE project_id = ?");
+    $spentStmt->execute([(int) $b['project_id']]);
+    $spent = (float) ($spentStmt->fetchColumn() ?: 0);
     $newAmount = (float) $b['amount'];
     $autoFlag  = ($spent + $newAmount) > $budget ? 1 : 0;
 

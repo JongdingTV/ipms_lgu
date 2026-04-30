@@ -40,7 +40,8 @@ function currentUser(): ?array
 
 function isLoggedIn(): bool
 {
-    return !empty($_SESSION['auth_user']['user_id']);
+    $role = $_SESSION['auth_user']['role'] ?? '';
+    return !empty($_SESSION['auth_user']['user_id']) && is_string($role) && isValidRole($role);
 }
 
 function logoutCurrentUser(bool $logActivity = true): void
@@ -65,6 +66,11 @@ function requireLogin(array $roles = []): array
     }
 
     $user = currentUser();
+    if (!$user || !isValidRole((string) ($user['role'] ?? ''))) {
+        logoutCurrentUser(false);
+        redirectToLogin(['error' => 'Your session role is invalid. Please log in again.']);
+    }
+
     $lastActivity = (int) ($_SESSION['last_activity'] ?? 0);
     if ($lastActivity > 0 && (time() - $lastActivity) > SESSION_TIMEOUT_SECONDS) {
         logoutCurrentUser(false);
@@ -131,25 +137,32 @@ function logActivity(?int $userId, string $action, string $details = ''): void
 
 function isLoginBlocked(string $identifier, string $ipAddress): bool
 {
-    $pdo = getDB();
-    $stmt = $pdo->prepare("
-        SELECT COUNT(*) FROM login_attempts
-        WHERE successful = 0
-          AND attempted_at >= (NOW() - INTERVAL ? MINUTE)
-          AND (identifier = ? OR ip_address = ?)
-    ");
-    $stmt->execute([LOGIN_LOCKOUT_MINUTES, $identifier, $ipAddress]);
-    return (int) $stmt->fetchColumn() >= LOGIN_MAX_ATTEMPTS;
+    try {
+        $pdo = getDB();
+        $stmt = $pdo->prepare("
+            SELECT COUNT(*) FROM login_attempts
+            WHERE successful = 0
+              AND attempted_at >= (NOW() - INTERVAL ? MINUTE)
+              AND (identifier = ? OR ip_address = ?)
+        ");
+        $stmt->execute([LOGIN_LOCKOUT_MINUTES, $identifier, $ipAddress]);
+        return (int) $stmt->fetchColumn() >= LOGIN_MAX_ATTEMPTS;
+    } catch (Throwable $e) {
+        return false;
+    }
 }
 
 function recordLoginAttempt(string $identifier, string $ipAddress, bool $successful, ?int $userId = null): void
 {
-    $pdo = getDB();
-    $stmt = $pdo->prepare("
-        INSERT INTO login_attempts (identifier, user_id, ip_address, successful, attempted_at)
-        VALUES (?, ?, ?, ?, NOW())
-    ");
-    $stmt->execute([$identifier, $userId, $ipAddress, $successful ? 1 : 0]);
+    try {
+        $pdo = getDB();
+        $stmt = $pdo->prepare("
+            INSERT INTO login_attempts (identifier, user_id, ip_address, successful, attempted_at)
+            VALUES (?, ?, ?, ?, NOW())
+        ");
+        $stmt->execute([$identifier, $userId, $ipAddress, $successful ? 1 : 0]);
+    } catch (Throwable $e) {
+    }
 }
 
 function pruneOldLoginAttempts(): void
@@ -178,6 +191,12 @@ function authenticateUser(string $identifier, string $password): array
     ");
     $stmt->execute([$identifier, $identifier]);
     $user = $stmt->fetch();
+
+    if ($user && !isValidRole((string) $user['role'])) {
+        recordLoginAttempt($identifier, $ipAddress, false, (int) $user['id']);
+        logActivity((int) $user['id'], 'login_blocked', 'Invalid account role');
+        return ['success' => false, 'message' => 'Your account role is not allowed.'];
+    }
 
     if (!$user || !password_verify($password, $user['password_hash'])) {
         recordLoginAttempt($identifier, $ipAddress, false, $user ? (int) $user['id'] : null);

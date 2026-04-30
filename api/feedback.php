@@ -6,10 +6,16 @@ require_once __DIR__ . '/../includes/db.php';
 require_once __DIR__ . '/../includes/auth.php';
 apiHeaders();
 
+$method = $_SERVER['REQUEST_METHOD'];
+if ($method === 'GET' || $method === 'POST') {
+    requireAnyRole(['super_admin', 'admin', 'engineer', 'citizen']);
+} else {
+    requireAnyRole(['super_admin', 'admin', 'engineer']);
+}
+
 requireCsrfProtection();
 
 $db     = getDB();
-$method = $_SERVER['REQUEST_METHOD'];
 $id     = isset($_GET['id']) ? (int) $_GET['id'] : null;
 
 // ── GET ────────────────────────────────────────────────────

@@ -13,6 +13,8 @@ define('DB_USER', 'root');
 define('DB_PASS', '');
 define('DB_CHARSET', 'utf8mb4');
 
+const APP_ROLES = ['super_admin', 'admin', 'engineer', 'contractor', 'citizen'];
+
 const ROLE_LABELS = [
     'super_admin' => 'Super Admin',
     'admin' => 'Admin',
@@ -43,4 +45,9 @@ function roleLabel(string $role): string
 function roleDashboardPath(string $role): string
 {
     return appUrl(ROLE_DASHBOARD_PATHS[$role] ?? '/auth/login.php');
+}
+
+function isValidRole(string $role): bool
+{
+    return in_array($role, APP_ROLES, true);
 }

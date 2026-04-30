@@ -1,6 +1,6 @@
 <?php
 /**
- * Setup script to fix admin password hash
+ * Local setup helper to fix the admin password hash
  * Visit this at: http://localhost/setup_admin.php
  */
 
@@ -20,7 +20,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         // Update the admin user
         $stmt = $pdo->prepare("
             UPDATE users 
-            SET password_hash = ?, username = ?, is_active = 1 
+            SET password_hash = ?, username = ?, role = 'admin', status = 'active'
             WHERE id = 1
         ");
         $stmt->execute([$password_hash, $username]);
@@ -70,7 +70,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             <p><strong>Now try logging in with:</strong></p>
             <p>Username: <code>admin</code></p>
             <p>Password: <code>admin123</code></p>
-            <p>Then delete this file for security.</p>
+            <p>Then delete this file or keep it unavailable outside localhost.</p>
         <?php endif; ?>
     </div>
 </body>

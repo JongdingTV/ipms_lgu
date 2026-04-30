@@ -45,10 +45,11 @@ if (empty($password)) {
         <h3>Sample Users (password: admin123)</h3>
         <p>All the following users have the password: <code>admin123</code></p>
         <ul>
-            <li><strong>admin</strong> - Full system access</li>
-            <li><strong>manager</strong> - Project management access</li>
-            <li><strong>staff</strong> - Standard user access</li>
-            <li><strong>viewer</strong> - Read-only access</li>
+            <li><strong>superadmin</strong> - Platform and security administration</li>
+            <li><strong>admin</strong> - Infrastructure operations administration</li>
+            <li><strong>engineer</strong> - Engineering progress and field coordination</li>
+            <li><strong>contractor</strong> - Contractor project access</li>
+            <li><strong>citizen</strong> - Public/citizen portal access</li>
         </ul>
     </body>
     </html>
@@ -86,8 +87,8 @@ if (empty($password)) {
         
         <h3>SQL Example:</h3>
         <div class="hash">
-            INSERT INTO users (username, password_hash, full_name, email, role)<br>
-            VALUES ('myuser', '<?= $hash ?>', 'Full Name', 'email@example.com', 'staff');
+            INSERT INTO users (username, password_hash, full_name, email, role, status)<br>
+            VALUES ('myuser', '<?= $hash ?>', 'Full Name', 'email@example.com', 'citizen', 'active');
         </div>
         
         <script>

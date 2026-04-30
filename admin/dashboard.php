@@ -1,4 +1,6 @@
 <?php
+require_once '../auth/session.php';
+$user = requireLogin(['super_admin', 'admin']);
 require_once '../includes/header.php';
 require_once '../includes/sidebar.php';
 ?>
