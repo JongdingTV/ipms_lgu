@@ -13,11 +13,12 @@ define('DB_USER', 'root');
 define('DB_PASS', '');
 define('DB_CHARSET', 'utf8mb4');
 
-const APP_ROLES = ['super_admin', 'admin', 'engineer', 'contractor', 'citizen'];
+const APP_ROLES = ['super_admin', 'admin', 'bac', 'engineer', 'contractor', 'citizen'];
 
 const ROLE_LABELS = [
     'super_admin' => 'Super Admin',
-    'admin' => 'Admin',
+    'admin' => 'LGU Admin / Engineering Head',
+    'bac' => 'BAC (Bids & Awards Committee)',
     'engineer' => 'Engineer',
     'contractor' => 'Contractor',
     'citizen' => 'Citizen / Public User',
@@ -26,9 +27,10 @@ const ROLE_LABELS = [
 const ROLE_DASHBOARD_PATHS = [
     'super_admin' => '/superadmin/dashboard.php',
     'admin' => '/admin/dashboard.php',
+    'bac' => '/bac/dashboard.php',
     'engineer' => '/engineer/dashboard.php',
     'contractor' => '/contractor/dashboard.php',
-    'citizen' => '/public/index.php',
+    'citizen' => '/citizen/dashboard.php',
 ];
 
 function appUrl(string $path = ''): string

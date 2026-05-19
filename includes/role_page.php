@@ -10,6 +10,8 @@ function renderRolePortal(array $user, string $title, string $description, array
         <meta charset="UTF-8">
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
         <title><?= htmlspecialchars($title) ?> - <?= htmlspecialchars(APP_NAME) ?></title>
+        <link rel="icon" href="<?= htmlspecialchars(appUrl('/assets/img/ipms-icon.png')) ?>" type="image/png">
+        <link rel="apple-touch-icon" href="<?= htmlspecialchars(appUrl('/assets/img/ipms-icon.png')) ?>">
         <style>
             @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap');
 
@@ -41,6 +43,26 @@ function renderRolePortal(array $user, string $title, string $description, array
                 align-items: center;
                 gap: 18px;
                 padding: 22px 26px;
+            }
+            .brand-line {
+                display: flex;
+                align-items: center;
+                gap: 14px;
+                margin-bottom: 18px;
+            }
+            .brand-line img {
+                width: 64px;
+                height: 64px;
+                object-fit: contain;
+                border-radius: 8px;
+                background: rgba(255, 255, 255, 0.95);
+                padding: 6px;
+            }
+            .brand-line span {
+                display: block;
+                color: rgba(239, 246, 255, 0.72);
+                font-size: 0.82rem;
+                font-weight: 700;
             }
             h1 {
                 margin: 0 0 8px;
@@ -92,6 +114,10 @@ function renderRolePortal(array $user, string $title, string $description, array
         <div class="shell">
             <section class="topbar">
                 <div>
+                    <div class="brand-line">
+                        <img src="<?= htmlspecialchars(appUrl('/assets/img/ipms-icon2.png')) ?>" alt="" aria-hidden="true">
+                        <span><?= htmlspecialchars(APP_NAME) ?></span>
+                    </div>
                     <h1><?= htmlspecialchars($title) ?></h1>
                     <p><?= htmlspecialchars($description) ?></p>
                 </div>

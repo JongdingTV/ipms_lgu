@@ -1,5 +1,5 @@
 -- Migration: align local auth foundation with the approved role model.
--- Roles: super_admin, admin, engineer, contractor, citizen
+-- Roles: super_admin, admin, bac, engineer, contractor, citizen
 
 USE lgu_infrastructure;
 
@@ -31,7 +31,7 @@ CREATE TABLE IF NOT EXISTS activity_logs (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 ALTER TABLE users
-    MODIFY role ENUM('super_admin','admin','engineer','contractor','citizen','manager','staff','viewer') NOT NULL DEFAULT 'citizen';
+    MODIFY role ENUM('super_admin','admin','bac','engineer','contractor','citizen','manager','staff','viewer') NOT NULL DEFAULT 'citizen';
 
 ALTER TABLE users
     ADD COLUMN IF NOT EXISTS status ENUM('active','inactive') NOT NULL DEFAULT 'active' AFTER role;
@@ -43,7 +43,7 @@ SET username = 'engineer',
     email = 'engineer@ipms.local',
     full_name = 'Municipal Engineer',
     role = 'engineer',
-    password_hash = '$2y$10$2TKc4G0kzPoHoaxpuxtiLuxJexEHos62W5/98pjMxEXaAyrxZ8PWS',
+    password_hash = '$2y$10$VdpOg0pCQbBgBvy/a9JEnepahLOkR7Oy//W6nGfrZKR0XbHNIsAEW',
     status = 'active'
 WHERE username = 'manager';
 
@@ -52,7 +52,7 @@ SET username = 'contractor',
     email = 'contractor@ipms.local',
     full_name = 'Accredited Contractor',
     role = 'contractor',
-    password_hash = '$2y$10$2TKc4G0kzPoHoaxpuxtiLuxJexEHos62W5/98pjMxEXaAyrxZ8PWS',
+    password_hash = '$2y$10$j1aSpoztS.H6zIHCag.J4O7oQFBh/I3FWa1JysczZaoSWqqz1cwDu',
     status = 'active'
 WHERE username = 'staff';
 
@@ -69,8 +69,9 @@ INSERT INTO users (username, email, password_hash, full_name, role, status)
 VALUES
 ('superadmin', 'superadmin@ipms.local', '$2y$10$2TKc4G0kzPoHoaxpuxtiLuxJexEHos62W5/98pjMxEXaAyrxZ8PWS', 'System Super Admin', 'super_admin', 'active'),
 ('admin', 'admin@ipms.local', '$2y$10$2TKc4G0kzPoHoaxpuxtiLuxJexEHos62W5/98pjMxEXaAyrxZ8PWS', 'Infrastructure Admin', 'admin', 'active'),
-('engineer', 'engineer@ipms.local', '$2y$10$2TKc4G0kzPoHoaxpuxtiLuxJexEHos62W5/98pjMxEXaAyrxZ8PWS', 'Municipal Engineer', 'engineer', 'active'),
-('contractor', 'contractor@ipms.local', '$2y$10$2TKc4G0kzPoHoaxpuxtiLuxJexEHos62W5/98pjMxEXaAyrxZ8PWS', 'Accredited Contractor', 'contractor', 'active'),
+('bac', 'bac@ipms.local', '$2y$10$7zGMOurLkrd1k9Kkj4w4NeL5402YVTeYO4c.L1zve6aCHG.G4FVjm', 'BAC Secretariat', 'bac', 'active'),
+('engineer', 'engineer@ipms.local', '$2y$10$VdpOg0pCQbBgBvy/a9JEnepahLOkR7Oy//W6nGfrZKR0XbHNIsAEW', 'Municipal Engineer', 'engineer', 'active'),
+('contractor', 'contractor@ipms.local', '$2y$10$j1aSpoztS.H6zIHCag.J4O7oQFBh/I3FWa1JysczZaoSWqqz1cwDu', 'Accredited Contractor', 'contractor', 'active'),
 ('citizen', 'citizen@ipms.local', '$2y$10$2TKc4G0kzPoHoaxpuxtiLuxJexEHos62W5/98pjMxEXaAyrxZ8PWS', 'Citizen Viewer', 'citizen', 'active')
 ON DUPLICATE KEY UPDATE
     email = VALUES(email),
@@ -80,4 +81,4 @@ ON DUPLICATE KEY UPDATE
     status = VALUES(status);
 
 ALTER TABLE users
-    MODIFY role ENUM('super_admin','admin','engineer','contractor','citizen') NOT NULL DEFAULT 'citizen';
+    MODIFY role ENUM('super_admin','admin','bac','engineer','contractor','citizen') NOT NULL DEFAULT 'citizen';

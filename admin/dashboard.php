@@ -1,6 +1,6 @@
 <?php
 require_once '../auth/session.php';
-$user = requireLogin(['super_admin', 'admin']);
+$user = requireLogin(['admin']);
 require_once '../includes/header.php';
 require_once '../includes/sidebar.php';
 ?>
@@ -120,7 +120,7 @@ require_once '../includes/sidebar.php';
           <p class="empty-state">Scanning budget activity...</p>
         </div>
         <div class="anomaly-footer">
-          <button class="btn-review" type="button" onclick="navigate('budget')">Review Budget</button>
+          <button class="btn-review" type="button" onclick="navigate('budget-monitoring')">Review Budget</button>
         </div>
       </article>
 

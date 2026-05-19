@@ -1,0 +1,8 @@
+# Prevent direct public access to uploaded citizen ID images
+<IfModule mod_authz_core.c>
+    Require all denied
+</IfModule>
+<IfModule !mod_authz_core.c>
+    Deny from all
+</IfModule>
+# Allow server-side scripts to read files from disk and serve them via a controlled endpoint.

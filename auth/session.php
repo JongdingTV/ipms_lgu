@@ -173,9 +173,14 @@ function pruneOldLoginAttempts(): void
     }
 }
 
-function authenticateUser(string $identifier, string $password): array
+function authenticateUser(string $identifier, string $password, ?string $selectedRole = null): array
 {
     pruneOldLoginAttempts();
+
+    $selectedRole = $selectedRole !== null ? trim($selectedRole) : null;
+    if ($selectedRole !== null && $selectedRole !== '' && !isValidRole($selectedRole)) {
+        return ['success' => false, 'message' => 'Please choose a valid portal.'];
+    }
 
     $ipAddress = $_SERVER['REMOTE_ADDR'] ?? '0.0.0.0';
     if (isLoginBlocked($identifier, $ipAddress)) {
@@ -208,6 +213,11 @@ function authenticateUser(string $identifier, string $password): array
         recordLoginAttempt($identifier, $ipAddress, false, (int) $user['id']);
         logActivity((int) $user['id'], 'login_blocked', 'Inactive account login attempt');
         return ['success' => false, 'message' => 'Your account is inactive.'];
+    }
+
+    if ($selectedRole !== null && $selectedRole !== '' && $user['role'] !== $selectedRole) {
+        logActivity((int) $user['id'], 'login_blocked', 'Portal role mismatch: selected ' . $selectedRole);
+        return ['success' => false, 'message' => 'The selected portal does not match this account. Please choose the role assigned to your account.'];
     }
 
     session_regenerate_id(true);

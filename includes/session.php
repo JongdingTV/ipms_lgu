@@ -19,6 +19,10 @@ function secureSessionStart(): void
     header('X-Content-Type-Options: nosniff');
     header('Referrer-Policy: strict-origin-when-cross-origin');
     header('Permissions-Policy: geolocation=(), microphone=(), camera=()');
+    // Enforce HSTS when using HTTPS
+    if (isHttpsRequest()) {
+        header('Strict-Transport-Security: max-age=63072000; includeSubDomains; preload');
+    }
 
     ini_set('session.use_strict_mode', '1');
     ini_set('session.use_only_cookies', '1');

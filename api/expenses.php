@@ -4,6 +4,7 @@
 // ============================================================
 require_once __DIR__ . '/../includes/db.php';
 require_once __DIR__ . '/../includes/auth.php';
+require_once __DIR__ . '/../includes/workflow.php';
 apiHeaders();
 
 $method = $_SERVER['REQUEST_METHOD'];
@@ -16,6 +17,7 @@ if ($method === 'GET') {
 requireCsrfProtection();
 
 $db     = getDB();
+projectWorkflowEnsureProjectStatusSchema($db);
 $id     = isset($_GET['id']) ? (int) $_GET['id'] : null;
 
 // ── GET ────────────────────────────────────────────────────
@@ -31,7 +33,7 @@ if ($method === 'GET') {
                    p.budget - COALESCE(SUM(e.amount),0) AS remaining
             FROM projects p
             LEFT JOIN expenses e ON e.project_id = p.id
-            WHERE p.status NOT IN ('cancelled')
+            WHERE p.status NOT IN ('draft','returned','cancelled')
             GROUP BY p.id
             ORDER BY (total_spent / NULLIF(p.budget,0)) DESC
         ")->fetchAll();

@@ -41,7 +41,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         body { font-family: Arial; margin: 50px; }
         .container { max-width: 400px; margin: 0 auto; }
         input { width: 100%; padding: 8px; margin: 10px 0; box-sizing: border-box; }
-        button { padding: 10px; background: #667eea; color: white; border: none; cursor: pointer; width: 100%; }
+        button { padding: 10px; background: #2563eb; color: white; border: none; cursor: pointer; width: 100%; }
         .message { margin: 20px 0; padding: 10px; border-radius: 5px; }
         .success { background: #d4edda; color: #155724; }
         .error { background: #f8d7da; color: #721c24; }

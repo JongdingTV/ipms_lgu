@@ -4,11 +4,13 @@
 // ============================================================
 require_once __DIR__ . '/../includes/db.php';
 require_once __DIR__ . '/../includes/auth.php';
+require_once __DIR__ . '/../contractor/includes/scope.php';
+require_once __DIR__ . '/../includes/workflow.php';
 apiHeaders();
 
 $method = $_SERVER['REQUEST_METHOD'];
 if ($method === 'GET') {
-    requireAnyRole(['super_admin', 'admin', 'engineer', 'contractor']);
+    requireAnyRole(['super_admin', 'admin', 'bac', 'engineer', 'contractor']);
 } else {
     requireAnyRole(['super_admin', 'admin']);
 }
@@ -16,10 +18,38 @@ if ($method === 'GET') {
 requireCsrfProtection();
 
 $db     = getDB();
+projectWorkflowEnsureProjectStatusSchema($db);
 $id     = isset($_GET['id']) ? (int) $_GET['id'] : null;
+$user   = currentUser();
+$isContractor = ($user['role'] ?? '') === 'contractor';
+$contractorScopeId = null;
+
+if ($method === 'GET' && $isContractor) {
+    $contractorScopeId = contractorScopeCurrentId($db);
+    if ($contractorScopeId === null) {
+        if ($id) {
+            respond(['error' => 'No contractor profile is linked to this account.'], 403);
+        }
+
+        respond([
+            'data' => [],
+            'total' => 0,
+            'page' => 1,
+            'last_page' => 0,
+        ]);
+    }
+
+    if ($id && $id !== $contractorScopeId) {
+        respond(['error' => 'Access denied'], 403);
+    }
+}
 
 // ── GET ────────────────────────────────────────────────────
 if ($method === 'GET') {
+    if ($contractorScopeId !== null && $id) {
+        $id = $contractorScopeId;
+    }
+
     if ($id) {
         $stmt = $db->prepare("SELECT * FROM contractors WHERE id = ?");
         $stmt->execute([$id]);
@@ -43,29 +73,33 @@ if ($method === 'GET') {
     $where  = ['1=1'];
     $params = [];
 
+    if ($contractorScopeId !== null) {
+        $where[] = 'c.id = ?';
+        $params[] = $contractorScopeId;
+    }
     if (!empty($_GET['status'])) {
-        $where[]  = 'status = ?';
+        $where[]  = 'c.status = ?';
         $params[] = $_GET['status'];
     }
     if (!empty($_GET['search'])) {
-        $where[]  = '(name LIKE ? OR contact_person LIKE ? OR email LIKE ?)';
+        $where[]  = '(c.name LIKE ? OR c.contact_person LIKE ? OR c.email LIKE ?)';
         $s = '%' . $_GET['search'] . '%';
         array_push($params, $s, $s, $s);
     }
 
     $whereSQL = implode(' AND ', $where);
     $page  = max(1, (int) ($_GET['page'] ?? 1));
-    $limit = 10;
+    $limit = min(100, max(1, (int) ($_GET['_limit'] ?? 10)));
     $offset = ($page - 1) * $limit;
 
-    $total = $db->prepare("SELECT COUNT(*) FROM contractors WHERE $whereSQL");
+    $total = $db->prepare("SELECT COUNT(*) FROM contractors c WHERE $whereSQL");
     $total->execute($params);
     $totalRows = (int) $total->fetchColumn();
 
     $stmt = $db->prepare("
         SELECT c.*,
                COUNT(p.id)    AS total_projects,
-               SUM(CASE WHEN p.status='active'    THEN 1 ELSE 0 END) AS active_projects,
+               SUM(CASE WHEN p.status IN ('assigned','active','delayed','on_hold') THEN 1 ELSE 0 END) AS active_projects,
                SUM(CASE WHEN p.status='delayed'   THEN 1 ELSE 0 END) AS delayed_projects,
                SUM(CASE WHEN p.status='completed' THEN 1 ELSE 0 END) AS completed_projects
         FROM contractors c

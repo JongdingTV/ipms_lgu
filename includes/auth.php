@@ -14,6 +14,7 @@ function hasRole(string $requiredRole): bool
         'citizen' => 1,
         'contractor' => 2,
         'engineer' => 3,
+        'bac' => 3,
         'admin' => 4,
         'super_admin' => 5,
     ];

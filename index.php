@@ -5,5 +5,5 @@ if (isLoggedIn()) {
     redirectToRoleDashboard();
 }
 
-header('Location: ' . APP_LOGIN_PATH);
+header('Location: ' . appUrl('/landing.php'));
 exit;

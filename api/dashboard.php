@@ -4,16 +4,18 @@
 // ============================================================
 require_once __DIR__ . '/../includes/db.php';
 require_once __DIR__ . '/../includes/auth.php';
+require_once __DIR__ . '/../includes/workflow.php';
 apiHeaders();
 
 requireAnyRole(['super_admin', 'admin', 'engineer']);
 
 $db  = getDB();
+projectWorkflowEnsureProjectStatusSchema($db);
 $out = [];
 
 // ── KPI: Active projects ──
 $out['active_projects'] = (int) $db
-    ->query("SELECT COUNT(*) FROM projects WHERE status NOT IN ('completed','cancelled')")
+    ->query("SELECT COUNT(*) FROM projects WHERE status IN ('approved','bidding','awarded','assigned','active','delayed','on_hold')")
     ->fetchColumn();
 
 // ── KPI: Delayed projects ──
@@ -30,7 +32,7 @@ $row = $db->query("
     LEFT JOIN (
         SELECT project_id, SUM(amount) AS total_spent FROM expenses GROUP BY project_id
     ) e ON e.project_id = p.id
-    WHERE p.status NOT IN ('cancelled')
+    WHERE p.status NOT IN ('draft','returned','cancelled')
 ")->fetch();
 $out['total_budget']  = (float) $row['total_budget'];
 $out['total_spent']   = (float) $row['total_spent'];
@@ -51,7 +53,7 @@ $progressRows = $db->query("
         MONTH(end_date)    AS end_month,
         progress
     FROM projects
-    WHERE status NOT IN ('cancelled')
+    WHERE status NOT IN ('draft','returned','cancelled')
 ")->fetchAll();
 
 $planned = array_fill(1, 12, 0);

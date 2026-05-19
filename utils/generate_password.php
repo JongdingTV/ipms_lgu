@@ -23,7 +23,7 @@ if (empty($password)) {
             body { font-family: system-ui; max-width: 600px; margin: 50px auto; padding: 20px; }
             input, button { padding: 10px; font-size: 16px; }
             input { width: 300px; }
-            button { background: #667eea; color: white; border: none; cursor: pointer; }
+            button { background: #2563eb; color: white; border: none; cursor: pointer; }
             .hash { background: #f0f0f0; padding: 15px; margin-top: 20px; word-break: break-all; }
             .warning { background: #fee; padding: 15px; margin-top: 20px; border-left: 4px solid #f00; }
         </style>
@@ -42,8 +42,8 @@ if (empty($password)) {
             This tool should never be accessible on a live server.
         </div>
         
-        <h3>Sample Users (password: admin123)</h3>
-        <p>All the following users have the password: <code>admin123</code></p>
+        <h3>Sample Users</h3>
+        <p>Admin-side users use <code>admin123</code>; engineer uses <code>engineer123</code>; contractor uses <code>contractor123</code>.</p>
         <ul>
             <li><strong>superadmin</strong> - Platform and security administration</li>
             <li><strong>admin</strong> - Infrastructure operations administration</li>
@@ -65,7 +65,7 @@ if (empty($password)) {
             body { font-family: system-ui; max-width: 600px; margin: 50px auto; padding: 20px; }
             .hash { background: #f0f0f0; padding: 15px; margin-top: 20px; word-break: break-all; font-family: monospace; }
             .success { background: #efe; padding: 15px; margin-top: 20px; border-left: 4px solid #0f0; }
-            button { padding: 10px 20px; background: #667eea; color: white; border: none; cursor: pointer; margin-top: 10px; }
+            button { padding: 10px 20px; background: #2563eb; color: white; border: none; cursor: pointer; margin-top: 10px; }
         </style>
     </head>
     <body>
