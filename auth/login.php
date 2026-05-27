@@ -34,7 +34,6 @@ if (isset($_GET['timeout'])) {
 }
 
 if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
-    // Validate CSRF token for login form
     requireCsrfProtection();
     $identifier = trim($_POST['identifier'] ?? '');
     $password = $_POST['password'] ?? '';
@@ -83,22 +82,18 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
 
         * { box-sizing: border-box; }
 
-        html {
-            min-height: 100%;
-        }
+        html { min-height: 100%; }
 
         body {
             margin: 0;
             min-height: 100vh;
             font-family: 'Plus Jakarta Sans', sans-serif;
-            background:
-                linear-gradient(135deg, rgba(17, 100, 102, 0.12), transparent 34%),
-                linear-gradient(315deg, rgba(216, 156, 39, 0.16), transparent 28%),
-                var(--page);
+            background: #edf3f4;
             display: grid;
             place-items: center;
             padding: 28px;
             color: var(--text);
+            transition: background 0.55s ease;
         }
 
         .login-shell {
@@ -113,18 +108,18 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
             box-shadow: 0 22px 70px rgba(20, 35, 38, 0.18);
         }
 
+        /* ── Brand panel ── */
         .brand-panel {
             position: relative;
             isolation: isolate;
             padding: 46px;
-            background:
-                linear-gradient(145deg, rgba(15, 57, 58, 0.98), rgba(17, 100, 102, 0.94) 56%, rgba(47, 95, 187, 0.92)),
-                #123b42;
+            background: linear-gradient(145deg, #0f393a, #116466 56%, rgba(47, 95, 187, 0.92));
             color: #f7fbfb;
             display: flex;
             flex-direction: column;
             justify-content: space-between;
             gap: 44px;
+            transition: background 0.55s ease;
         }
 
         .brand-panel::after {
@@ -167,6 +162,7 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
             font-size: 0.75rem;
             font-weight: 700;
             letter-spacing: 0;
+            transition: background 0.3s ease;
         }
 
         h1 {
@@ -205,9 +201,7 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
         }
 
         .brand-footer strong,
-        .brand-footer span {
-            display: block;
-        }
+        .brand-footer span { display: block; }
 
         .brand-footer span {
             margin-top: 3px;
@@ -216,6 +210,7 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
             line-height: 1.45;
         }
 
+        /* ── Login panel ── */
         .login-panel {
             background: var(--panel);
             color: var(--text);
@@ -252,6 +247,7 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
             font-size: 0.94rem;
         }
 
+        /* ── Messages ── */
         .message {
             border-radius: 8px;
             padding: 0.95rem 1rem;
@@ -271,6 +267,7 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
             border: 1px solid #bfdbfe;
         }
 
+        /* ── Form ── */
         label {
             display: block;
             margin-bottom: 8px;
@@ -280,9 +277,7 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
             color: #334155;
         }
 
-        .field {
-            margin-bottom: 18px;
-        }
+        .field { margin-bottom: 18px; }
 
         input {
             width: 100%;
@@ -302,6 +297,7 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
             background: #fff;
         }
 
+        /* ── Portal tiles ── */
         .portal-options {
             display: grid;
             grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -371,7 +367,8 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
             box-shadow: inset 4px 0 0 var(--accent);
         }
 
-        button {
+        /* ── Submit button ── */
+        button[type="submit"] {
             width: 100%;
             border: 0;
             border-radius: 8px;
@@ -383,48 +380,12 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
             background: linear-gradient(135deg, var(--primary), var(--secondary));
             box-shadow: 0 14px 28px rgba(17, 100, 102, 0.22);
             cursor: pointer;
-            transition: transform 0.18s ease, box-shadow 0.18s ease;
+            transition: transform 0.18s ease, box-shadow 0.18s ease, background 0.45s ease;
         }
 
-        button:hover {
+        button[type="submit"]:hover {
             transform: translateY(-1px);
             box-shadow: 0 18px 32px rgba(17, 100, 102, 0.24);
-        }
-
-        .demo {
-            margin-top: 18px;
-            border: 1px solid var(--line);
-            border-radius: 8px;
-            background: var(--soft);
-            font-size: 0.88rem;
-            color: var(--muted);
-        }
-
-        .demo summary {
-            cursor: pointer;
-            padding: 13px 14px;
-            font-weight: 700;
-            color: var(--text);
-        }
-
-        .demo-grid {
-            display: grid;
-            grid-template-columns: 1fr 1fr;
-            gap: 8px;
-            padding: 0 14px 14px;
-        }
-
-        .demo-grid div {
-            min-width: 0;
-        }
-
-        code {
-            background: #fff;
-            border: 1px solid var(--line);
-            border-radius: 6px;
-            padding: 0.12rem 0.36rem;
-            color: var(--primary-dark);
-            font-size: 0.82rem;
         }
 
         .footer {
@@ -434,56 +395,32 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
             line-height: 1.5;
         }
 
+        /* ── Responsive ── */
         @media (max-width: 920px) {
             body { padding: 18px; }
             .login-shell {
                 grid-template-columns: 1fr;
                 min-height: 0;
             }
-
-            .brand-panel {
-                padding: 32px;
-            }
-
-            .brand-logo-wrap {
-                width: 156px;
-                min-height: 156px;
-            }
-
-            h1 {
-                font-size: 2.4rem;
-            }
+            .brand-panel { padding: 32px; }
+            .brand-logo-wrap { width: 156px; min-height: 156px; }
+            h1 { font-size: 2.4rem; }
         }
 
         @media (max-width: 520px) {
             body { padding: 12px; }
-
             .brand-panel,
-            .login-panel {
-                padding: 24px 20px;
-            }
-
-            .brand-logo-wrap {
-                width: 132px;
-                min-height: 132px;
-            }
-
-            h1 {
-                font-size: 2rem;
-            }
-
-            .panel-top {
-                align-items: flex-start;
-            }
-
+            .login-panel { padding: 24px 20px; }
+            .brand-logo-wrap { width: 132px; min-height: 132px; }
+            h1 { font-size: 2rem; }
+            .panel-top { align-items: flex-start; }
             .portal-options { grid-template-columns: 1fr; }
-            .demo-grid { grid-template-columns: 1fr; }
         }
     </style>
 </head>
-<body>
+<body id="pageBody">
     <main class="login-shell">
-        <section class="brand-panel" aria-labelledby="login-title">
+        <section class="brand-panel" id="brandPanel" aria-labelledby="login-title">
             <div class="brand-logo-wrap">
                 <img
                     class="brand-logo"
@@ -493,7 +430,7 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
             </div>
 
             <div class="hero-copy">
-                <div class="eyebrow">Employee access portal</div>
+                <div class="eyebrow" id="eyebrowLabel">Employee access portal</div>
                 <h1 id="login-title">One secure sign-in for infrastructure project teams.</h1>
                 <p>Track projects, coordinate field updates, and manage delivery records through the portal assigned to your account.</p>
             </div>
@@ -536,6 +473,7 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
 
             <form method="POST">
                 <input type="hidden" name="_csrf" value="<?= htmlspecialchars(getCsrfToken()) ?>">
+
                 <div class="field">
                     <label>Portal</label>
                     <div class="portal-options" role="radiogroup" aria-label="Portal role">
@@ -546,6 +484,7 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
                                     name="portal_role"
                                     value="<?= htmlspecialchars($role) ?>"
                                     <?= $selectedRole === $role ? 'checked' : '' ?>
+                                    onchange="switchPortal(this)"
                                     required
                                 >
                                 <span class="portal-option-content">
@@ -584,22 +523,95 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
                 <button type="submit">Login</button>
             </form>
 
-            <details class="demo">
-                <summary>Seed credentials</summary>
-                <div class="demo-grid">
-                    <div>Admin: <code>admin</code></div>
-                    <div>BAC: <code>bac</code></div>
-                    <div>Engineer: <code>engineer</code></div>
-                    <div>Contractor: <code>contractor</code></div>
-                    <div>Admin: <code>admin123</code></div>
-                    <div>BAC: <code>bac123</code></div>
-                    <div>Engineer: <code>engineer123</code></div>
-                    <div>Contractor: <code>contractor123</code></div>
-                </div>
-            </details>
-
             <div class="footer">&copy; <?= date('Y') ?> <?= htmlspecialchars(APP_NAME) ?></div>
         </section>
     </main>
+
+    <script>
+        const portalThemes = {
+            admin: {
+                bodyBg:       '#0d0d0d',
+                brandFrom:    '#0a0a0a',
+                brandTo:      '#1c1c2e',
+                brandAccent:  'rgba(50,50,70,0.97)',
+                primary:      '#6366f1',
+                secondary:    '#818cf8',
+                accent:       '#a5b4fc',
+                eyebrow:      'Admin Portal',
+            },
+            bac: {
+                bodyBg:       '#3b0a0a',
+                brandFrom:    '#4a0e0e',
+                brandTo:      '#7f1d1d',
+                brandAccent:  'rgba(185,28,28,0.92)',
+                primary:      '#ef4444',
+                secondary:    '#f87171',
+                accent:       '#fca5a5',
+                eyebrow:      'BAC Portal',
+            },
+            engineer: {
+                bodyBg:       '#0a2e1a',
+                brandFrom:    '#052e16',
+                brandTo:      '#166534',
+                brandAccent:  'rgba(21,128,61,0.92)',
+                primary:      '#16a34a',
+                secondary:    '#22c55e',
+                accent:       '#86efac',
+                eyebrow:      'Engineer Portal',
+            },
+            contractor: {
+                bodyBg:       '#1a1500',
+                brandFrom:    '#1c1206',
+                brandTo:      '#92400e',
+                brandAccent:  'rgba(180,83,9,0.92)',
+                primary:      '#d97706',
+                secondary:    '#f59e0b',
+                accent:       '#fcd34d',
+                eyebrow:      'Contractor Portal',
+            },
+        };
+
+        const defaultTheme = {
+            bodyBg:      '#edf3f4',
+            brandFrom:   '#0f393a',
+            brandTo:     '#116466',
+            brandAccent: 'rgba(47,95,187,0.92)',
+            primary:     '#116466',
+            secondary:   '#2f5fbb',
+            accent:      '#d89c27',
+            eyebrow:     'Employee access portal',
+        };
+
+        function applyTheme(t) {
+            const root    = document.documentElement;
+            const body    = document.getElementById('pageBody');
+            const panel   = document.getElementById('brandPanel');
+            const eyebrow = document.getElementById('eyebrowLabel');
+
+            body.style.background  = t.bodyBg;
+            panel.style.background = `linear-gradient(145deg, ${t.brandFrom}, ${t.brandTo} 56%, ${t.brandAccent})`;
+
+            root.style.setProperty('--primary',   t.primary);
+            root.style.setProperty('--secondary', t.secondary);
+            root.style.setProperty('--accent',    t.accent);
+
+            if (eyebrow) {
+                eyebrow.textContent = t.eyebrow;
+            }
+        }
+
+        function switchPortal(radio) {
+            const theme = portalThemes[radio.value] || defaultTheme;
+            applyTheme(theme);
+        }
+
+        /* Restore theme on page load if a role was already POST-selected (PHP re-render) */
+        (function () {
+            const checked = document.querySelector('input[name="portal_role"]:checked');
+            if (checked) {
+                switchPortal(checked);
+            }
+        })();
+    </script>
 </body>
 </html>
