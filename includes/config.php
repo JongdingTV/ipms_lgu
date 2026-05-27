@@ -13,6 +13,15 @@ define('DB_USER', 'root');
 define('DB_PASS', '');
 define('DB_CHARSET', 'utf8mb4');
 
+// Email Configuration
+define('MAIL_FROM_EMAIL', 'ipms.systemlgu@gmail.com');
+define('MAIL_FROM_NAME', 'IPMS System');
+define('MAIL_HOST', 'smtp.gmail.com');
+define('MAIL_PORT', 587);
+define('MAIL_USERNAME', 'ipms.systemlgu@gmail.com');
+define('MAIL_PASSWORD', ''); // Set your app password here
+define('MAIL_ENCRYPTION', 'tls');
+
 const APP_ROLES = ['super_admin', 'admin', 'bac', 'engineer', 'contractor', 'citizen'];
 
 const ROLE_LABELS = [
