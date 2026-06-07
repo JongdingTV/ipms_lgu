@@ -1,0 +1,17 @@
+DirectoryIndex index.php
+Options -Indexes
+
+<FilesMatch "^\.env">
+    Require all denied
+</FilesMatch>
+
+<FilesMatch "\.(sql|log|bak|ini|env)$">
+    Require all denied
+</FilesMatch>
+
+<IfModule mod_rewrite.c>
+    RewriteEngine On
+    RewriteRule (^|/)\.git(/|$) - [F,L]
+    RewriteRule ^setup_admin\.php$ - [F,L]
+    RewriteRule ^utils/generate_password\.php$ - [F,L]
+</IfModule>

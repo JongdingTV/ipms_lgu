@@ -3,7 +3,7 @@
 USE lgu_infrastructure;
 
 INSERT INTO users (username, email, password_hash, full_name, role, status)
-VALUES ('engineer', 'engineer@ipms.local', '$2y$10$VdpOg0pCQbBgBvy/a9JEnepahLOkR7Oy//W6nGfrZKR0XbHNIsAEW', 'Municipal Engineer', 'engineer', 'active')
+VALUES ('engineer', 'engineer@ipms.local', '$2y$10$0YrZc94nbE.8tOJTnMhpg.EKaKWe8XAr.P9Zx7E4p.4y0Q/ejDoPa', 'Municipal Engineer', 'engineer', 'active')
 ON DUPLICATE KEY UPDATE
     email = VALUES(email),
     password_hash = VALUES(password_hash),

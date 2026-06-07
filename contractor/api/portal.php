@@ -10,6 +10,7 @@ requireCsrfProtection();
 
 $db = getDB();
 projectWorkflowEnsureProjectStatusSchema($db);
+projectWorkflowEnsureRoleConnectionTables($db);
 $contractorId = contractorScopeCurrentId($db);
 if ($contractorId === null) {
     respond(['error' => 'No contractor profile is linked to this account.'], 403);
@@ -23,10 +24,12 @@ function contractorPortalProject(PDO $db, int $projectId, int $contractorId): ?a
     $stmt = $db->prepare("
         SELECT p.*, c.name AS contractor_name, c.contact_person, c.email AS contractor_email,
                COALESCE((SELECT SUM(amount) FROM expenses WHERE project_id = p.id), 0) AS total_spent,
+               ct.contract_no, ct.contract_amount, ct.notice_to_proceed_date, ct.status AS contract_status,
                COALESCE((SELECT COUNT(*) FROM milestones WHERE project_id = p.id), 0) AS milestone_count,
                (SELECT MAX(report_date) FROM contractor_reports WHERE project_id = p.id AND contractor_id = ?) AS latest_report_date
         FROM projects p
         LEFT JOIN contractors c ON c.id = p.contractor_id
+        LEFT JOIN contracts ct ON ct.project_id = p.id
         WHERE p.id = ? AND p.contractor_id = ?
           AND p.status IN ('assigned','active','delayed','on_hold','completed')
         LIMIT 1
@@ -42,10 +45,12 @@ function contractorPortalProjects(PDO $db, int $contractorId): array
     $stmt = $db->prepare("
         SELECT p.*, c.name AS contractor_name,
                COALESCE((SELECT SUM(amount) FROM expenses WHERE project_id = p.id), 0) AS total_spent,
+               ct.contract_no, ct.contract_amount, ct.notice_to_proceed_date, ct.status AS contract_status,
                COALESCE((SELECT COUNT(*) FROM milestones WHERE project_id = p.id), 0) AS milestone_count,
                (SELECT MAX(report_date) FROM contractor_reports WHERE project_id = p.id AND contractor_id = ?) AS latest_report_date
         FROM projects p
         LEFT JOIN contractors c ON c.id = p.contractor_id
+        LEFT JOIN contracts ct ON ct.project_id = p.id
         WHERE p.contractor_id = ?
           AND p.status IN ('assigned','active','delayed','on_hold','completed')
         ORDER BY p.updated_at DESC, p.id DESC
@@ -55,9 +60,19 @@ function contractorPortalProjects(PDO $db, int $contractorId): array
     return $stmt->fetchAll();
 }
 
-function contractorPortalPayments(array $projects): array
+function contractorPortalPayments(PDO $db, array $projects, int $contractorId): array
 {
-    return array_map(static function (array $project): array {
+    $requests = $db->prepare("
+        SELECT pr.*, p.project_code, p.name
+        FROM payment_requests pr
+        INNER JOIN projects p ON p.id = pr.project_id
+        WHERE pr.contractor_id = ?
+        ORDER BY pr.submitted_at DESC, pr.id DESC
+    ");
+    $requests->execute([$contractorId]);
+    $requestRows = $requests->fetchAll();
+
+    $rows = array_map(static function (array $project): array {
         $budget = (float) ($project['budget'] ?? 0);
         $progress = (int) ($project['progress'] ?? 0);
         $released = (float) ($project['total_spent'] ?? 0);
@@ -86,8 +101,31 @@ function contractorPortalPayments(array $projects): array
             'balance_amount' => $balance,
             'status' => $status,
             'label' => $label,
+            'source' => 'computed',
         ];
     }, $projects);
+
+    foreach ($requestRows as $request) {
+        $rows[] = [
+            'id' => (int) $request['id'],
+            'project_id' => (int) $request['project_id'],
+            'project_code' => $request['project_code'],
+            'name' => $request['name'],
+            'billing_no' => $request['billing_no'],
+            'budget' => 0,
+            'progress' => null,
+            'eligible_amount' => 0,
+            'released_amount' => 0,
+            'balance_amount' => (float) $request['requested_amount'],
+            'requested_amount' => (float) $request['requested_amount'],
+            'status' => $request['status'],
+            'label' => 'Billing ' . str_replace('_', ' ', $request['status']),
+            'submitted_at' => $request['submitted_at'],
+            'source' => 'request',
+        ];
+    }
+
+    return $rows;
 }
 
 function contractorPortalProjectExtras(PDO $db, array $project, int $contractorId): array
@@ -121,6 +159,16 @@ function contractorPortalProjectExtras(PDO $db, array $project, int $contractorI
     ");
     $documents->execute([$projectId, $contractorId]);
     $project['documents'] = $documents->fetchAll();
+
+    $payments = $db->prepare("
+        SELECT id, billing_no, requested_amount, status, remarks, submitted_at
+        FROM payment_requests
+        WHERE project_id = ? AND contractor_id = ?
+        ORDER BY submitted_at DESC, id DESC
+        LIMIT 10
+    ");
+    $payments->execute([$projectId, $contractorId]);
+    $project['payment_requests'] = $payments->fetchAll();
 
     return $project;
 }
@@ -158,7 +206,7 @@ if ($method === 'GET') {
         $documents->execute([$contractorId]);
 
         $projects = contractorPortalProjects($db, $contractorId);
-        $payments = contractorPortalPayments($projects);
+        $payments = contractorPortalPayments($db, $projects, $contractorId);
         $pendingPayments = array_sum(array_map(static fn (array $row): float => (float) $row['balance_amount'], $payments));
 
         respond([
@@ -219,7 +267,7 @@ if ($method === 'GET') {
     }
 
     if ($action === 'payments') {
-        respond(['data' => contractorPortalPayments(contractorPortalProjects($db, $contractorId))]);
+        respond(['data' => contractorPortalPayments($db, contractorPortalProjects($db, $contractorId), $contractorId)]);
     }
 
     respond(['error' => 'Unknown action.'], 404);
@@ -340,6 +388,51 @@ if ($method === 'POST') {
         ]);
 
         respond(['success' => true, 'id' => (int) $db->lastInsertId(), 'file_path' => $relativePath], 201);
+    }
+
+    if ($action === 'payment_request') {
+        $body = requestBody();
+        $projectId = (int) ($body['project_id'] ?? 0);
+        $amount = (float) ($body['requested_amount'] ?? 0);
+        $remarks = trim((string) ($body['remarks'] ?? ''));
+
+        if ($projectId <= 0 || $amount <= 0) {
+            respond(['error' => 'Project and requested amount are required.'], 422);
+        }
+
+        $project = contractorPortalProject($db, $projectId, $contractorId);
+        if (!$project) {
+            respond(['error' => 'Project not found.'], 404);
+        }
+
+        $latestReport = $db->prepare("
+            SELECT id
+            FROM contractor_reports
+            WHERE project_id = ? AND contractor_id = ?
+            ORDER BY report_date DESC, id DESC
+            LIMIT 1
+        ");
+        $latestReport->execute([$projectId, $contractorId]);
+        $reportId = $latestReport->fetchColumn();
+        if (!$reportId) {
+            respond(['error' => 'Submit a progress report before requesting payment.'], 422);
+        }
+
+        $stmt = $db->prepare("
+            INSERT INTO payment_requests
+                (project_id, contractor_id, progress_report_id, requested_amount, billing_no, remarks)
+            VALUES (?, ?, ?, ?, ?, ?)
+        ");
+        $stmt->execute([
+            $projectId,
+            $contractorId,
+            (int) $reportId,
+            $amount,
+            projectWorkflowPaymentNo($projectId, $contractorId),
+            $remarks !== '' ? $remarks : null,
+        ]);
+
+        respond(['success' => true, 'id' => (int) $db->lastInsertId()], 201);
     }
 
     respond(['error' => 'Unknown action.'], 404);

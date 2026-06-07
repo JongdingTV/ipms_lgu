@@ -1,4 +1,9 @@
 // Citizen Portal JavaScript
+const CITIZEN_BASE_PATH = window.BASE_PATH || '/';
+
+function citizenUrl(path) {
+    return CITIZEN_BASE_PATH + path.replace(/^\/+/, '');
+}
 
 document.addEventListener('DOMContentLoaded', function() {
     // Initialize the page
@@ -68,7 +73,7 @@ function changePage(pageName) {
 }
 
 function loadDashboardData() {
-    fetch('/ipms.lgu/citizen/api/dashboard.php')
+    fetch(citizenUrl('citizen/api/dashboard.php'))
         .then(res => res.json())
         .then(data => {
             // Update KPI cards
@@ -94,7 +99,7 @@ function loadProjects() {
     if (searchTerm) params.append('search', searchTerm);
     if (statusFilter) params.append('status', statusFilter);
 
-    fetch('/ipms.lgu/citizen/api/projects.php?' + params)
+    fetch(citizenUrl('citizen/api/projects.php') + '?' + params)
         .then(res => res.json())
         .then(data => {
             displayProjects(data.projects);
@@ -103,7 +108,7 @@ function loadProjects() {
 }
 
 function loadProjectStatus() {
-    fetch('/ipms.lgu/citizen/api/project-status.php')
+    fetch(citizenUrl('citizen/api/project-status.php'))
         .then(res => res.json())
         .then(data => {
             displayProjectStatus(data.projects);
@@ -112,7 +117,7 @@ function loadProjectStatus() {
 }
 
 function loadTrackedFeedback() {
-    fetch('/ipms.lgu/citizen/api/my-feedback.php')
+    fetch(citizenUrl('citizen/api/my-feedback.php'))
         .then(res => res.json())
         .then(data => {
             displayTrackedFeedback(data.feedback);
@@ -121,7 +126,7 @@ function loadTrackedFeedback() {
 }
 
 function loadTransparencyDashboard() {
-    fetch('/ipms.lgu/citizen/api/transparency.php')
+    fetch(citizenUrl('citizen/api/transparency.php'))
         .then(res => res.json())
         .then(data => {
             document.getElementById('totalBudget').textContent = formatCurrency(data.stats.total_budget);
@@ -135,7 +140,7 @@ function loadTransparencyDashboard() {
 }
 
 function populateProjectSelects() {
-    fetch('/ipms.lgu/citizen/api/projects.php?all=1')
+    fetch(citizenUrl('citizen/api/projects.php') + '?all=1')
         .then(res => res.json())
         .then(data => {
             const select = document.getElementById('feedbackProject');
@@ -211,7 +216,7 @@ function displayProjectStatus(projects) {
     container.innerHTML = projects.map(project => `
         <div class="status-item ${project.status}">
             ${project.latest_photo_path ? `
-                <img class="status-photo" src="${window.BASE_PATH || '/ipms.lgu/'}${escapeHtml(project.latest_photo_path)}" alt="${escapeHtml(project.latest_photo_title || project.name)}">
+                <img class="status-photo" src="${citizenUrl(escapeHtml(project.latest_photo_path))}" alt="${escapeHtml(project.latest_photo_title || project.name)}">
             ` : ''}
             <div>
                 <div class="feedback-title">${escapeHtml(project.name)}</div>
@@ -319,7 +324,7 @@ function handleFeedbackSubmit(e) {
 
     const formData = new FormData(e.target);
 
-    fetch('/ipms.lgu/citizen/api/submit-feedback.php', {
+    fetch(citizenUrl('citizen/api/submit-feedback.php'), {
         method: 'POST',
         body: formData
     })

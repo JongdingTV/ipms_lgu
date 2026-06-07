@@ -148,6 +148,22 @@ require_once '../includes/sidebar.php';
         </article>
       </div>
     </section>
+
+    <section class="lower-row" style="margin-top:18px;">
+      <article class="info-card">
+        <h2 class="info-card-title">Workflow Connections</h2>
+        <div id="workflowConnectionList" class="anomaly-list">
+          <p class="empty-state">Loading role connections...</p>
+        </div>
+      </article>
+
+      <article class="info-card" style="grid-column: span 2;">
+        <h2 class="info-card-title">Recent Contract, Inspection, and Payment Records</h2>
+        <div id="workflowActivityList" class="feedback-list">
+          <p class="empty-state">Loading workflow activity...</p>
+        </div>
+      </article>
+    </section>
   </main>
 </div>
 

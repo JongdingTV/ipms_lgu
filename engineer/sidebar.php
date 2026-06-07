@@ -22,6 +22,14 @@
         <span class="nav-icon"><svg viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M6 2a1 1 0 00-1 1v1H4a2 2 0 00-2 2v10a2 2 0 002 2h12a2 2 0 002-2V6a2 2 0 00-2-2h-1V3a1 1 0 10-2 0v1H7V3a1 1 0 00-1-1zm0 5a1 1 0 000 2h8a1 1 0 100-2H6z" clip-rule="evenodd"/></svg></span>
         Milestone Update
       </a>
+      <a href="#" class="nav-item" data-page="inspection-review">
+        <span class="nav-icon"><svg viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M4 3a2 2 0 00-2 2v10a2 2 0 002 2h8.586A2 2 0 0014 16.414l3.414-3.414A2 2 0 0018 11.586V5a2 2 0 00-2-2H4zm4 4a1 1 0 000 2h4a1 1 0 100-2H8zm0 4a1 1 0 100 2h2a1 1 0 100-2H8z" clip-rule="evenodd"/></svg></span>
+        Inspection Review
+      </a>
+      <a href="#" class="nav-item" data-page="payment-review">
+        <span class="nav-icon"><svg viewBox="0 0 20 20" fill="currentColor"><path d="M4 4a2 2 0 00-2 2v1h16V6a2 2 0 00-2-2H4z"/><path fill-rule="evenodd" d="M18 9H2v5a2 2 0 002 2h12a2 2 0 002-2V9zM5 12a1 1 0 100 2h2a1 1 0 100-2H5z" clip-rule="evenodd"/></svg></span>
+        Payment Review
+      </a>
       <a href="#" class="nav-item" data-page="progress-photos">
         <span class="nav-icon"><svg viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M4 3a2 2 0 00-2 2v10a2 2 0 002 2h12a2 2 0 002-2V5a2 2 0 00-2-2H4zm11 12H5l3.2-4.267a1 1 0 011.6 0L11 12.333l1.2-1.6a1 1 0 011.6 0L15 12.333V15zM6.5 8a1.5 1.5 0 100-3 1.5 1.5 0 000 3z" clip-rule="evenodd"/></svg></span>
         Upload Progress Photos

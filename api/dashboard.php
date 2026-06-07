@@ -10,7 +10,7 @@ apiHeaders();
 requireAnyRole(['super_admin', 'admin', 'engineer']);
 
 $db  = getDB();
-projectWorkflowEnsureProjectStatusSchema($db);
+projectWorkflowEnsureRoleConnectionTables($db);
 $out = [];
 
 // ── KPI: Active projects ──
@@ -143,5 +143,49 @@ $out['ai_insights'] = [
     'budget_alert'   => $out['high_risk_alerts'] > 0,
     'top_contractor' => $topContractor,
 ];
+
+$out['workflow_connections'] = [
+    'contracts' => (int) $db->query("SELECT COUNT(*) FROM contracts")->fetchColumn(),
+    'active_contracts' => (int) $db->query("SELECT COUNT(*) FROM contracts WHERE status = 'active'")->fetchColumn(),
+    'inspections' => (int) $db->query("SELECT COUNT(*) FROM inspections")->fetchColumn(),
+    'pending_payment_requests' => (int) $db->query("SELECT COUNT(*) FROM payment_requests WHERE status IN ('submitted','under_review')")->fetchColumn(),
+];
+
+$out['recent_workflow'] = $db->query("
+    SELECT 'Contract' AS record_type,
+           ct.created_at AS record_date,
+           p.project_code,
+           p.name AS project_name,
+           c.name AS actor_name,
+           ct.status,
+           CONCAT(ct.contract_no, ' - PHP ', FORMAT(ct.contract_amount, 2)) AS details
+    FROM contracts ct
+    INNER JOIN projects p ON p.id = ct.project_id
+    INNER JOIN contractors c ON c.id = ct.contractor_id
+    UNION ALL
+    SELECT 'Inspection' AS record_type,
+           i.created_at AS record_date,
+           p.project_code,
+           p.name AS project_name,
+           u.full_name AS actor_name,
+           i.recommendation AS status,
+           CONCAT('Actual progress ', i.actual_progress_percent, '%') AS details
+    FROM inspections i
+    INNER JOIN projects p ON p.id = i.project_id
+    INNER JOIN users u ON u.id = i.engineer_id
+    UNION ALL
+    SELECT 'Payment Request' AS record_type,
+           pr.submitted_at AS record_date,
+           p.project_code,
+           p.name AS project_name,
+           c.name AS actor_name,
+           pr.status,
+           CONCAT(pr.billing_no, ' - PHP ', FORMAT(pr.requested_amount, 2)) AS details
+    FROM payment_requests pr
+    INNER JOIN projects p ON p.id = pr.project_id
+    INNER JOIN contractors c ON c.id = pr.contractor_id
+    ORDER BY record_date DESC
+    LIMIT 8
+")->fetchAll();
 
 respond($out);

@@ -22,6 +22,7 @@ const API = {
   feedback:    window.BASE_PATH + 'api/feedback.php',
   user:        window.BASE_PATH + 'api/user.php',
   users:       window.BASE_PATH + 'api/users.php',
+  workflow:    window.BASE_PATH + 'api/workflow.php',
 };
 
 const CSRF_HEADERS = window.CSRF_TOKEN ? { 'X-CSRF-Token': window.CSRF_TOKEN } : {};
@@ -194,6 +195,7 @@ function navigate(page) {
     'project-registration': () => loadProjectsPage('page-project-registration', 'Project Registration'),
     'project-approval': loadProjectApprovalPage,
     'contractor-assignment': loadContractorAssignmentPage,
+    'workflow-management': loadWorkflowManagementPage,
     'budget-monitoring': () => loadBudgetPage('page-budget-monitoring', 'Budget Monitoring'),
     'milestone-overview': loadMilestoneOverviewPage,
     reports: loadReportsPage,
@@ -245,6 +247,8 @@ async function loadDashboard() {
 
     // AI insights
     renderAIInsights(d.ai_insights);
+
+    renderWorkflowConnections(d.workflow_connections, d.recent_workflow);
 
     // Notif badge
     const badge = document.querySelector('.notif-badge');
@@ -398,6 +402,198 @@ function renderAIInsights(ai) {
   const cEl = document.querySelector('.ai-card.ai-green .ai-card-title');
   if (cEl && ai.top_contractor)
     cEl.innerHTML = `<strong>Top Contractor:</strong> ${ai.top_contractor.name} (Score: ${ai.top_contractor.performance_score})`;
+}
+
+function renderWorkflowConnections(connections, recent) {
+  const summary = document.getElementById('workflowConnectionList');
+  if (summary && connections) {
+    summary.innerHTML = `
+      <div class="anomaly-item"><span class="anomaly-name">Contracts</span><span class="badge badge-resolved">${connections.contracts || 0}</span></div>
+      <div class="anomaly-item"><span class="anomaly-name">Active Contracts</span><span class="badge badge-highprio">${connections.active_contracts || 0}</span></div>
+      <div class="anomaly-item"><span class="anomaly-name">Engineer Inspections</span><span class="badge badge-spike">${connections.inspections || 0}</span></div>
+      <div class="anomaly-item"><span class="anomaly-name">Pending Payment Requests</span><span class="badge badge-urgent">${connections.pending_payment_requests || 0}</span></div>
+    `;
+  }
+
+  const activity = document.getElementById('workflowActivityList');
+  if (activity) {
+    activity.innerHTML = (recent || []).length ? recent.map(row => `
+      <div class="feedback-item">
+        <div class="feedback-icon feedback-red"><span aria-hidden="true">${row.record_type.slice(0, 1)}</span></div>
+        <span class="feedback-text">${row.project_code} - ${row.record_type}: ${row.details}</span>
+        <span class="badge badge-resolved">${formatStatus(row.status)}</span>
+      </div>
+    `).join('') : '<p class="empty-state">No connected workflow records yet.</p>';
+  }
+}
+
+async function workflowGet(action = 'summary') {
+  return get(API.workflow, { action });
+}
+
+async function workflowPost(action, body) {
+  const res = await fetch(`${API.workflow}?action=${encodeURIComponent(action)}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...CSRF_HEADERS },
+    body: JSON.stringify(body),
+  });
+  const data = await res.json();
+  if (!res.ok || data.error) {
+    throw new Error(data.error || `HTTP ${res.status}`);
+  }
+  return data;
+}
+
+async function loadWorkflowManagementPage() {
+  const container = document.getElementById('page-workflow-management');
+  if (!container) return;
+
+  container.innerHTML = `
+    <div class="page-header">
+      <h2 class="page-title">Contract & Payment Review</h2>
+      <button class="btn-secondary" onclick="loadWorkflowManagementPage()">Refresh</button>
+    </div>
+    <section class="admin-summary-grid" id="workflowSummaryCards"></section>
+    <div class="table-card" id="workflowPaymentsTable" style="margin-top:12px;"></div>
+    <div class="table-card" id="workflowContractsTable" style="margin-top:12px;"></div>
+    <div class="table-card" id="workflowInspectionsTable" style="margin-top:12px;"></div>
+  `;
+
+  try {
+    const data = await workflowGet('summary');
+    renderWorkflowManagement(data);
+  } catch (error) {
+    toast(error.message || 'Failed to load workflow records.', 'error');
+  }
+}
+
+function renderWorkflowManagement(data) {
+  const payments = data.payment_requests || [];
+  const contracts = data.contracts || [];
+  const inspections = data.inspections || [];
+
+  const summary = document.getElementById('workflowSummaryCards');
+  if (summary) {
+    summary.innerHTML = `
+      <article class="admin-summary-card"><span>Contracts</span><strong>${contracts.length}</strong></article>
+      <article class="admin-summary-card"><span>Payment Requests</span><strong>${payments.length}</strong></article>
+      <article class="admin-summary-card"><span>Pending Review</span><strong>${payments.filter(p => ['submitted','under_review'].includes(p.status)).length}</strong></article>
+      <article class="admin-summary-card"><span>Inspections</span><strong>${inspections.length}</strong></article>
+    `;
+  }
+
+  const paymentWrap = document.getElementById('workflowPaymentsTable');
+  if (paymentWrap) {
+    paymentWrap.innerHTML = `
+      <h3 style="padding:14px 16px 0;margin:0;">Payment Requests</h3>
+      <table class="data-table">
+        <thead><tr><th>Billing</th><th>Project</th><th>Contractor</th><th>Report</th><th>Amount</th><th>Status</th><th>Latest Review</th><th>Action</th></tr></thead>
+        <tbody>
+          ${payments.length ? payments.map(row => `
+            <tr>
+              <td><span class="proj-id">${row.billing_no}</span><br><small>${formatDate(row.submitted_at)}</small></td>
+              <td><strong>${row.project_code}</strong><br><small>${row.project_name}</small></td>
+              <td>${row.contractor_name}</td>
+              <td>${formatDate(row.report_date)}<br><small>${Number(row.progress_percent || 0)}%</small></td>
+              <td>${formatMoney(row.requested_amount)}</td>
+              <td>${statusBadgeForWorkflow(row.status)}</td>
+              <td>${row.latest_review || 'No review yet'}</td>
+              <td>
+                <button class="btn-primary btn-compact" onclick="openPaymentReviewModal(${row.id}, 'approve')">Approve</button>
+                <button class="btn-secondary btn-compact" onclick="openPaymentReviewModal(${row.id}, 'return')">Return</button>
+                <button class="btn-secondary btn-compact" onclick="openPaymentReviewModal(${row.id}, 'reject')">Reject</button>
+              </td>
+            </tr>
+          `).join('') : '<tr><td colspan="8"><p class="empty-state">No payment requests yet.</p></td></tr>'}
+        </tbody>
+      </table>
+    `;
+  }
+
+  const contractWrap = document.getElementById('workflowContractsTable');
+  if (contractWrap) {
+    contractWrap.innerHTML = `
+      <h3 style="padding:14px 16px 0;margin:0;">Contracts</h3>
+      <table class="data-table">
+        <thead><tr><th>Contract No.</th><th>Project</th><th>Contractor</th><th>Amount</th><th>Schedule</th><th>Status</th></tr></thead>
+        <tbody>
+          ${contracts.length ? contracts.map(row => `
+            <tr>
+              <td><span class="proj-id">${row.contract_no}</span></td>
+              <td><strong>${row.project_code}</strong><br><small>${row.project_name}</small></td>
+              <td>${row.contractor_name}</td>
+              <td>${formatMoney(row.contract_amount)}</td>
+              <td>${formatDate(row.contract_start_date)} to ${formatDate(row.contract_end_date)}</td>
+              <td>${statusBadgeForWorkflow(row.status)}</td>
+            </tr>
+          `).join('') : '<tr><td colspan="6"><p class="empty-state">No contracts yet. BAC recommendations will create contracts.</p></td></tr>'}
+        </tbody>
+      </table>
+    `;
+  }
+
+  const inspectionWrap = document.getElementById('workflowInspectionsTable');
+  if (inspectionWrap) {
+    inspectionWrap.innerHTML = `
+      <h3 style="padding:14px 16px 0;margin:0;">Engineer Inspections</h3>
+      <table class="data-table">
+        <thead><tr><th>Date</th><th>Project</th><th>Engineer</th><th>Reported</th><th>Actual</th><th>Recommendation</th></tr></thead>
+        <tbody>
+          ${inspections.length ? inspections.map(row => `
+            <tr>
+              <td>${formatDate(row.inspection_date)}</td>
+              <td><strong>${row.project_code}</strong><br><small>${row.project_name}</small></td>
+              <td>${row.engineer_name}</td>
+              <td>${Number(row.reported_progress || 0)}%</td>
+              <td>${Number(row.actual_progress_percent || 0)}%</td>
+              <td>${statusBadgeForWorkflow(row.recommendation)}</td>
+            </tr>
+          `).join('') : '<tr><td colspan="6"><p class="empty-state">No inspections yet.</p></td></tr>'}
+        </tbody>
+      </table>
+    `;
+  }
+}
+
+function statusBadgeForWorkflow(value) {
+  return `<span class="badge status-${String(value || '').replace(/[^a-z0-9_-]/gi, '')}">${formatStatus(value)}</span>`;
+}
+
+function openPaymentReviewModal(paymentId, recommendation) {
+  openModal(`${formatStatus(recommendation)} Payment Request`, `
+    <form id="paymentReviewForm" onsubmit="submitPaymentReview(event, ${paymentId}, '${recommendation}')">
+      <div class="form-group">
+        <label>Recommendation</label>
+        <input class="form-input" disabled value="${formatStatus(recommendation)}">
+      </div>
+      <div class="form-group">
+        <label>Remarks</label>
+        <textarea class="form-input" name="remarks" rows="4" placeholder="Review notes, reason, or approval details"></textarea>
+      </div>
+      <div class="form-actions">
+        <button type="button" class="btn-secondary" onclick="closeModal()">Cancel</button>
+        <button type="submit" class="btn-primary">Save Review</button>
+      </div>
+    </form>
+  `);
+}
+
+async function submitPaymentReview(event, paymentId, recommendation) {
+  event.preventDefault();
+  const form = new FormData(event.target);
+  try {
+    await workflowPost('payment_review', {
+      payment_request_id: paymentId,
+      recommendation,
+      remarks: form.get('remarks'),
+    });
+    toast('Payment review saved.');
+    closeModal();
+    loadWorkflowManagementPage();
+    loadDashboard();
+  } catch (error) {
+    toast(error.message || 'Unable to save payment review.', 'error');
+  }
 }
 
 /* ============================================================
@@ -1750,6 +1946,7 @@ document.addEventListener('DOMContentLoaded', () => {
     <div id="page-project-registration" class="page-section" style="display:none;"></div>
     <div id="page-project-approval" class="page-section" style="display:none;"></div>
     <div id="page-contractor-assignment" class="page-section" style="display:none;"></div>
+    <div id="page-workflow-management" class="page-section" style="display:none;"></div>
     <div id="page-budget-monitoring" class="page-section" style="display:none;"></div>
     <div id="page-milestone-overview" class="page-section" style="display:none;"></div>
     <div id="page-reports" class="page-section" style="display:none;"></div>

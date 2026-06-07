@@ -16,6 +16,7 @@ if ($engineerId === null) {
 
 engineerScopeEnsureTables($db);
 projectWorkflowEnsureProjectStatusSchema($db);
+projectWorkflowEnsureRoleConnectionTables($db);
 engineerScopeSeedAssignments($db, $engineerId);
 
 $method = $_SERVER['REQUEST_METHOD'] ?? 'GET';
@@ -101,6 +102,22 @@ function engineerPortalProjectExtras(PDO $db, array $project, int $engineerId): 
     $photos = $db->prepare("SELECT * FROM engineer_progress_photos WHERE project_id = ? AND engineer_id = ? ORDER BY created_at DESC LIMIT 10");
     $photos->execute([$projectId, $engineerId]);
     $project['photos'] = $photos->fetchAll();
+
+    $reports = $db->prepare("
+        SELECT r.*, c.name AS contractor_name,
+               i.id AS inspection_id,
+               i.actual_progress_percent,
+               i.recommendation AS inspection_recommendation,
+               i.inspection_date
+        FROM contractor_reports r
+        INNER JOIN contractors c ON c.id = r.contractor_id
+        LEFT JOIN inspections i ON i.progress_report_id = r.id
+        WHERE r.project_id = ?
+        ORDER BY r.report_date DESC, r.id DESC
+        LIMIT 10
+    ");
+    $reports->execute([$projectId]);
+    $project['contractor_reports'] = $reports->fetchAll();
 
     return $project;
 }
@@ -241,6 +258,37 @@ if ($method === 'GET') {
             INNER JOIN projects p ON p.id = i.project_id
             WHERE i.engineer_id = ?
             ORDER BY FIELD(i.status, 'open', 'in_progress', 'resolved', 'closed'), i.created_at DESC
+        ");
+        $stmt->execute([$engineerId]);
+        respond(['data' => $stmt->fetchAll()]);
+    }
+
+    if ($action === 'inspections') {
+        $stmt = $db->prepare("
+            SELECT r.id AS report_id,
+                   r.project_id,
+                   r.contractor_id,
+                   r.report_date,
+                   r.progress_percent,
+                   r.accomplishments,
+                   r.issues,
+                   r.status AS report_status,
+                   p.project_code,
+                   p.name AS project_name,
+                   c.name AS contractor_name,
+                   i.id AS inspection_id,
+                   i.inspection_date,
+                   i.actual_progress_percent,
+                   i.findings,
+                   i.recommendation
+            FROM engineer_project_assignments a
+            INNER JOIN projects p ON p.id = a.project_id
+            INNER JOIN contractor_reports r ON r.project_id = p.id
+            INNER JOIN contractors c ON c.id = r.contractor_id
+            LEFT JOIN inspections i ON i.progress_report_id = r.id
+            WHERE a.engineer_id = ?
+              AND a.status = 'active'
+            ORDER BY r.report_date DESC, r.id DESC
         ");
         $stmt->execute([$engineerId]);
         respond(['data' => $stmt->fetchAll()]);
@@ -447,6 +495,72 @@ if ($method === 'POST') {
 
         $db->prepare("UPDATE projects SET progress = ?, status = ? WHERE id = ?")
             ->execute([$progress, $status, $projectId]);
+
+        respond(['success' => true, 'id' => (int) $db->lastInsertId()], 201);
+    }
+
+    if ($action === 'inspection') {
+        $body = requestBody();
+        $reportId = (int) ($body['progress_report_id'] ?? 0);
+        $actualProgress = max(0, min(100, (int) ($body['actual_progress_percent'] ?? 0)));
+        $recommendation = (string) ($body['recommendation'] ?? 'approved');
+        $findings = trim((string) ($body['findings'] ?? ''));
+        $inspectionDate = trim((string) ($body['inspection_date'] ?? date('Y-m-d')));
+
+        if ($reportId <= 0 || $findings === '') {
+            respond(['error' => 'Progress report and findings are required.'], 422);
+        }
+        if (!in_array($recommendation, ['approved', 'needs_correction', 'for_reinspection'], true)) {
+            $recommendation = 'approved';
+        }
+
+        $report = $db->prepare("
+            SELECT r.*, p.id AS project_id
+            FROM contractor_reports r
+            INNER JOIN projects p ON p.id = r.project_id
+            INNER JOIN engineer_project_assignments a ON a.project_id = p.id
+            WHERE r.id = ?
+              AND a.engineer_id = ?
+              AND a.status = 'active'
+            LIMIT 1
+        ");
+        $report->execute([$reportId, $engineerId]);
+        $reportRow = $report->fetch();
+        if (!$reportRow) {
+            respond(['error' => 'Progress report not found.'], 404);
+        }
+
+        $db->beginTransaction();
+        try {
+            $stmt = $db->prepare("
+                INSERT INTO inspections
+                    (project_id, progress_report_id, engineer_id, inspection_date, actual_progress_percent, findings, recommendation)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+            ");
+            $stmt->execute([
+                (int) $reportRow['project_id'],
+                $reportId,
+                $engineerId,
+                $inspectionDate !== '' ? $inspectionDate : date('Y-m-d'),
+                $actualProgress,
+                $findings,
+                $recommendation,
+            ]);
+
+            $reportStatus = $recommendation === 'approved' ? 'accepted' : 'returned';
+            $db->prepare("UPDATE contractor_reports SET status = ? WHERE id = ?")
+                ->execute([$reportStatus, $reportId]);
+
+            if ($recommendation === 'approved') {
+                $db->prepare("UPDATE projects SET progress = GREATEST(progress, ?), status = IF(status IN ('assigned','awarded'), 'active', status) WHERE id = ?")
+                    ->execute([$actualProgress, (int) $reportRow['project_id']]);
+            }
+
+            $db->commit();
+        } catch (Throwable $e) {
+            $db->rollBack();
+            respond(['error' => 'Unable to save inspection.'], 500);
+        }
 
         respond(['success' => true, 'id' => (int) $db->lastInsertId()], 201);
     }

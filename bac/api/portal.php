@@ -11,7 +11,7 @@ requireAnyRole(['super_admin', 'admin', 'bac']);
 requireCsrfProtection();
 
 $db = getDB();
-projectWorkflowEnsureBacTables($db);
+projectWorkflowEnsureRoleConnectionTables($db);
 
 $method = $_SERVER['REQUEST_METHOD'] ?? 'GET';
 $action = $_GET['action'] ?? 'summary';
@@ -122,10 +122,11 @@ function bacPortalSummary(PDO $db): array
 
     $recommendations = $db->query("
         SELECT r.*, p.project_code, p.name AS project_name,
-               c.name AS awardee
+               c.name AS awardee, ct.contract_no, ct.status AS contract_status
         FROM bac_award_recommendations r
         INNER JOIN projects p ON p.id = r.project_id
         INNER JOIN contractors c ON c.id = r.contractor_id
+        LEFT JOIN contracts ct ON ct.project_id = r.project_id
         ORDER BY r.updated_at DESC, r.id DESC
     ")->fetchAll();
 
@@ -156,6 +157,8 @@ function bacPortalSummary(PDO $db): array
                 'amount' => (float) $row['award_amount'],
                 'basis' => $row['basis'],
                 'status' => $row['status'],
+                'contract_no' => $row['contract_no'],
+                'contract_status' => $row['contract_status'],
                 'created_at' => $row['created_at'],
             ];
         }, $recommendations),
@@ -302,7 +305,7 @@ if ($action === 'recommend') {
     }
 
     $bidStmt = $db->prepare("
-        SELECT b.*, p.name AS project_name, c.name AS contractor_name
+        SELECT b.*, p.project_code, p.name AS project_name, p.start_date, p.end_date, c.name AS contractor_name
         FROM bac_bid_submissions b
         INNER JOIN projects p ON p.id = b.project_id
         INNER JOIN contractors c ON c.id = b.contractor_id
@@ -349,6 +352,32 @@ if ($action === 'recommend') {
 
         $db->prepare("UPDATE projects SET contractor_id = ?, status = 'awarded' WHERE id = ?")
             ->execute([$contractorId, $projectId]);
+
+        $contractNo = projectWorkflowContractNo($bid);
+        $contract = $db->prepare("
+            INSERT INTO contracts
+                (project_id, bid_submission_id, contractor_id, contract_no, contract_amount, contract_start_date, contract_end_date, status, approved_by)
+            VALUES (?, ?, ?, ?, ?, ?, ?, 'active', ?)
+            ON DUPLICATE KEY UPDATE
+                bid_submission_id = VALUES(bid_submission_id),
+                contractor_id = VALUES(contractor_id),
+                contract_amount = VALUES(contract_amount),
+                contract_start_date = VALUES(contract_start_date),
+                contract_end_date = VALUES(contract_end_date),
+                status = 'active',
+                approved_by = VALUES(approved_by),
+                updated_at = CURRENT_TIMESTAMP
+        ");
+        $contract->execute([
+            $projectId,
+            $bidId,
+            $contractorId,
+            $contractNo,
+            (float) $bid['bid_amount'],
+            $bid['start_date'] ?? null,
+            $bid['end_date'] ?? null,
+            $actorId ?: null,
+        ]);
 
         $db->commit();
     } catch (Throwable $e) {

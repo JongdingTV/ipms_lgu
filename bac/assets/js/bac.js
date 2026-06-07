@@ -317,7 +317,7 @@ function bacRenderRecommendation() {
             <div class="bac-row" data-bac-search="${bacEscape(`${item.project} ${item.awardee} ${item.basis}`)}">
               <div class="bac-row-main">
                 <strong>${bacEscape(item.project)}</strong>
-                <span>${bacEscape(item.basis || 'Award recommendation sent to admin.')}</span>
+                <span>${bacEscape(item.contract_no || 'Contract pending')} - ${bacEscape(item.basis || 'Award recommendation sent to admin.')}</span>
               </div>
               <div>
                 <strong class="bac-money">${bacMoney(item.amount)}</strong><br>

@@ -6,7 +6,7 @@ ALTER TABLE users
     MODIFY role ENUM('super_admin','admin','bac','engineer','contractor','citizen') NOT NULL DEFAULT 'citizen';
 
 INSERT INTO users (username, email, password_hash, full_name, role, status)
-VALUES ('bac', 'bac@ipms.local', '$2y$10$7zGMOurLkrd1k9Kkj4w4NeL5402YVTeYO4c.L1zve6aCHG.G4FVjm', 'BAC Secretariat', 'bac', 'active')
+VALUES ('bac', 'bac@ipms.local', '$2y$10$gsau.FpXkCWyPl4aLJRL.OCl9L31UJxF9opqo02CXNxGefX4buoCm', 'BAC Secretariat', 'bac', 'active')
 ON DUPLICATE KEY UPDATE
     email = VALUES(email),
     password_hash = VALUES(password_hash),

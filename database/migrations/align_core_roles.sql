@@ -43,7 +43,7 @@ SET username = 'engineer',
     email = 'engineer@ipms.local',
     full_name = 'Municipal Engineer',
     role = 'engineer',
-    password_hash = '$2y$10$VdpOg0pCQbBgBvy/a9JEnepahLOkR7Oy//W6nGfrZKR0XbHNIsAEW',
+    password_hash = '$2y$10$0YrZc94nbE.8tOJTnMhpg.EKaKWe8XAr.P9Zx7E4p.4y0Q/ejDoPa',
     status = 'active'
 WHERE username = 'manager';
 
@@ -52,7 +52,7 @@ SET username = 'contractor',
     email = 'contractor@ipms.local',
     full_name = 'Accredited Contractor',
     role = 'contractor',
-    password_hash = '$2y$10$j1aSpoztS.H6zIHCag.J4O7oQFBh/I3FWa1JysczZaoSWqqz1cwDu',
+    password_hash = '$2y$10$agsoq.Rb6H.46p12Yi9cTuG8c0so8mlUzWUt2O8Q8uu7E/E5NeEt6',
     status = 'active'
 WHERE username = 'staff';
 
@@ -61,18 +61,18 @@ SET username = 'citizen',
     email = 'citizen@ipms.local',
     full_name = 'Citizen Viewer',
     role = 'citizen',
-    password_hash = '$2y$10$2TKc4G0kzPoHoaxpuxtiLuxJexEHos62W5/98pjMxEXaAyrxZ8PWS',
+    password_hash = '$2y$10$EPJR1ZCkgGpwf0cAyBao..6qZ.NjFoOX0LrzzOTO8fxpuketSttwK',
     status = 'active'
 WHERE username = 'viewer';
 
 INSERT INTO users (username, email, password_hash, full_name, role, status)
 VALUES
-('superadmin', 'superadmin@ipms.local', '$2y$10$2TKc4G0kzPoHoaxpuxtiLuxJexEHos62W5/98pjMxEXaAyrxZ8PWS', 'System Super Admin', 'super_admin', 'active'),
-('admin', 'admin@ipms.local', '$2y$10$2TKc4G0kzPoHoaxpuxtiLuxJexEHos62W5/98pjMxEXaAyrxZ8PWS', 'Infrastructure Admin', 'admin', 'active'),
-('bac', 'bac@ipms.local', '$2y$10$7zGMOurLkrd1k9Kkj4w4NeL5402YVTeYO4c.L1zve6aCHG.G4FVjm', 'BAC Secretariat', 'bac', 'active'),
-('engineer', 'engineer@ipms.local', '$2y$10$VdpOg0pCQbBgBvy/a9JEnepahLOkR7Oy//W6nGfrZKR0XbHNIsAEW', 'Municipal Engineer', 'engineer', 'active'),
-('contractor', 'contractor@ipms.local', '$2y$10$j1aSpoztS.H6zIHCag.J4O7oQFBh/I3FWa1JysczZaoSWqqz1cwDu', 'Accredited Contractor', 'contractor', 'active'),
-('citizen', 'citizen@ipms.local', '$2y$10$2TKc4G0kzPoHoaxpuxtiLuxJexEHos62W5/98pjMxEXaAyrxZ8PWS', 'Citizen Viewer', 'citizen', 'active')
+('superadmin', 'superadmin@ipms.local', '$2y$10$EPJR1ZCkgGpwf0cAyBao..6qZ.NjFoOX0LrzzOTO8fxpuketSttwK', 'System Super Admin', 'super_admin', 'active'),
+('admin', 'admin@ipms.local', '$2y$10$EPJR1ZCkgGpwf0cAyBao..6qZ.NjFoOX0LrzzOTO8fxpuketSttwK', 'Infrastructure Admin', 'admin', 'active'),
+('bac', 'bac@ipms.local', '$2y$10$gsau.FpXkCWyPl4aLJRL.OCl9L31UJxF9opqo02CXNxGefX4buoCm', 'BAC Secretariat', 'bac', 'active'),
+('engineer', 'engineer@ipms.local', '$2y$10$0YrZc94nbE.8tOJTnMhpg.EKaKWe8XAr.P9Zx7E4p.4y0Q/ejDoPa', 'Municipal Engineer', 'engineer', 'active'),
+('contractor', 'contractor@ipms.local', '$2y$10$agsoq.Rb6H.46p12Yi9cTuG8c0so8mlUzWUt2O8Q8uu7E/E5NeEt6', 'Accredited Contractor', 'contractor', 'active'),
+('citizen', 'citizen@ipms.local', '$2y$10$EPJR1ZCkgGpwf0cAyBao..6qZ.NjFoOX0LrzzOTO8fxpuketSttwK', 'Citizen Viewer', 'citizen', 'active')
 ON DUPLICATE KEY UPDATE
     email = VALUES(email),
     password_hash = VALUES(password_hash),

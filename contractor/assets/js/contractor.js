@@ -346,9 +346,10 @@ function contractorRenderContractDetails() {
           </div>
           <div class="contractor-detail-grid">
             <div class="contractor-detail-box"><span>Location</span><strong>${contractorEscape(project.location || '-')}</strong></div>
-            <div class="contractor-detail-box"><span>Contract Value</span><strong>${contractorFullMoney(project.budget)}</strong></div>
+            <div class="contractor-detail-box"><span>Contract No.</span><strong>${contractorEscape(project.contract_no || 'Pending')}</strong></div>
+            <div class="contractor-detail-box"><span>Contract Value</span><strong>${contractorFullMoney(project.contract_amount || project.budget)}</strong></div>
             <div class="contractor-detail-box"><span>Schedule</span><strong>${contractorDate(project.start_date)} to ${contractorDate(project.end_date)}</strong></div>
-            <div class="contractor-detail-box"><span>Status</span><strong>${contractorStatus(project.status)}</strong></div>
+            <div class="contractor-detail-box"><span>Contract Status</span><strong>${contractorStatus(project.contract_status || project.status)}</strong></div>
             <div class="contractor-detail-box"><span>Progress</span><strong>${Number(project.progress || 0)}%</strong></div>
             <div class="contractor-detail-box"><span>Milestones</span><strong>${Number(project.milestone_count || 0)}</strong></div>
           </div>
@@ -364,8 +365,9 @@ function contractorRenderPaymentStatus() {
     <div class="page-header">
       <div>
         <h1 class="page-title">View Payment Status</h1>
-        <p class="contractor-scope-note">Payment status is computed from assigned project progress and released amounts.</p>
+        <p class="contractor-scope-note">Payment requests are linked to your latest submitted progress report.</p>
       </div>
+      <button class="btn-primary" type="button" onclick="contractorOpenPaymentRequestForm()">Request Payment</button>
     </div>
     <div class="table-card">
       <table class="data-table">
@@ -376,7 +378,7 @@ function contractorRenderPaymentStatus() {
             <th>Contract Value</th>
             <th>Eligible</th>
             <th>Released</th>
-            <th>Balance</th>
+            <th>Amount / Balance</th>
             <th>Status</th>
           </tr>
         </thead>
@@ -388,7 +390,7 @@ function contractorRenderPaymentStatus() {
               <td>${contractorFullMoney(payment.budget)}</td>
               <td>${contractorFullMoney(payment.eligible_amount)}</td>
               <td>${contractorFullMoney(payment.released_amount)}</td>
-              <td><strong>${contractorFullMoney(payment.balance_amount)}</strong></td>
+              <td><strong>${contractorFullMoney(payment.requested_amount || payment.balance_amount)}</strong><br><span class="contractor-scope-note">${contractorEscape(payment.billing_no || payment.source || '')}</span></td>
               <td>${contractorBadge(payment.status, payment.label)}</td>
             </tr>
           `).join('') : '<tr><td colspan="7"><p class="empty-state">No payment records yet.</p></td></tr>'}
@@ -396,6 +398,31 @@ function contractorRenderPaymentStatus() {
       </table>
     </div>
   `;
+}
+
+function contractorOpenPaymentRequestForm() {
+  contractorOpenModal('Submit Payment Request', `
+    <form id="contractorPaymentRequestForm">
+      <div class="form-group">
+        <label>Assigned Project</label>
+        <select class="form-input" name="project_id" required>${contractorProjectOptions()}</select>
+      </div>
+      <div class="form-group" style="margin-top:12px;">
+        <label>Requested Amount</label>
+        <input class="form-input" type="number" min="1" step="0.01" name="requested_amount" required>
+      </div>
+      <div class="form-group" style="margin-top:12px;">
+        <label>Remarks</label>
+        <textarea class="form-input" name="remarks" rows="3" placeholder="Billing period, accomplishment reference, or notes"></textarea>
+      </div>
+      <div class="form-actions">
+        <button class="btn-secondary" type="button" onclick="contractorCloseModal()">Cancel</button>
+        <button class="btn-primary" type="submit">Submit Request</button>
+      </div>
+    </form>
+  `);
+
+  document.getElementById('contractorPaymentRequestForm').addEventListener('submit', contractorSubmitPaymentRequest);
 }
 
 async function contractorSubmitReport(event) {
@@ -428,6 +455,25 @@ async function contractorSubmitDocument(event) {
     event.target.reset();
     await contractorRefreshData();
     contractorRenderDocumentsPage();
+  } catch (error) {
+    contractorToast(error.message, 'error');
+  }
+}
+
+async function contractorSubmitPaymentRequest(event) {
+  event.preventDefault();
+  const form = new FormData(event.target);
+
+  try {
+    await contractorPostJson('payment_request', {
+      project_id: form.get('project_id'),
+      requested_amount: form.get('requested_amount'),
+      remarks: form.get('remarks'),
+    });
+    contractorCloseModal();
+    contractorToast('Payment request submitted.');
+    await contractorRefreshData();
+    contractorRenderPaymentStatus();
   } catch (error) {
     contractorToast(error.message, 'error');
   }
@@ -686,6 +732,7 @@ window.contractorShowPage = contractorShowPage;
 window.contractorGoToReport = contractorGoToReport;
 window.contractorOpenProject = contractorOpenProject;
 window.contractorCloseModal = contractorCloseModal;
+window.contractorOpenPaymentRequestForm = contractorOpenPaymentRequestForm;
 window.showProfileSettings = showProfileSettings;
 window.showChangePassword = showChangePassword;
 

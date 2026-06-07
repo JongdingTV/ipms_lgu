@@ -1,5 +1,6 @@
 /* Engineer portal frontend */
 const ENGINEER_API = window.BASE_PATH + 'engineer/api/portal.php';
+const ENGINEER_WORKFLOW_API = window.BASE_PATH + 'api/workflow.php';
 const ENGINEER_USER_API = window.BASE_PATH + 'api/user.php';
 const ENGINEER_CSRF_HEADERS = window.CSRF_TOKEN ? { 'X-CSRF-Token': window.CSRF_TOKEN } : {};
 
@@ -11,6 +12,8 @@ let engineerState = {
   photos: [],
   delays: [],
   issues: [],
+  inspections: [],
+  paymentRequests: [],
   budgetWatch: [],
 };
 
@@ -312,6 +315,176 @@ function engineerRenderMilestoneRows() {
       <strong>${Number(row.completed) === 1 ? 'Done' : engineerDate(row.due_date)}</strong>
     </div>
   `).join('');
+}
+
+async function engineerWorkflowGet(action = 'summary') {
+  const response = await fetch(`${ENGINEER_WORKFLOW_API}?action=${encodeURIComponent(action)}`);
+  const data = await response.json();
+  if (!response.ok || data.error) {
+    throw new Error(data.error || `HTTP ${response.status}`);
+  }
+  return data;
+}
+
+async function engineerWorkflowPost(action, body) {
+  const response = await fetch(`${ENGINEER_WORKFLOW_API}?action=${encodeURIComponent(action)}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...ENGINEER_CSRF_HEADERS },
+    body: JSON.stringify(body),
+  });
+  const data = await response.json();
+  if (!response.ok || data.error) {
+    throw new Error(data.error || `HTTP ${response.status}`);
+  }
+  return data;
+}
+
+function engineerInspectionOptions() {
+  const rows = engineerState.inspections.filter(row => !row.inspection_id || row.report_status === 'submitted' || row.report_status === 'under_review');
+  if (!rows.length) {
+    return '<option value="">No contractor reports pending inspection</option>';
+  }
+
+  return rows.map(row => `
+    <option value="${row.report_id}">
+      ${engineerEscape(row.project_code)} - ${engineerDate(row.report_date)} - ${Number(row.progress_percent || 0)}%
+    </option>
+  `).join('');
+}
+
+function engineerRenderInspectionPage() {
+  const page = document.getElementById('page-inspection-review');
+  page.innerHTML = `
+    <div class="page-header">
+      <div>
+        <h1 class="page-title">Inspection Review</h1>
+        <p class="engineer-scope-note">Validate contractor progress reports for assigned projects.</p>
+      </div>
+    </div>
+    <section class="engineer-layout">
+      <article class="engineer-form-card">
+        <h2>New Inspection</h2>
+        <form id="engineerInspectionForm">
+          <div class="form-group">
+            <label>Contractor Report</label>
+            <select class="form-input" name="progress_report_id" required>${engineerInspectionOptions()}</select>
+          </div>
+          <div class="form-grid" style="margin-top:12px;">
+            <div class="form-group">
+              <label>Inspection Date</label>
+              <input class="form-input" type="date" name="inspection_date" required value="${new Date().toISOString().slice(0, 10)}">
+            </div>
+            <div class="form-group">
+              <label>Actual Progress Percent</label>
+              <input class="form-input" type="number" min="0" max="100" name="actual_progress_percent" required placeholder="0">
+            </div>
+          </div>
+          <div class="form-group" style="margin-top:12px;">
+            <label>Recommendation</label>
+            <select class="form-input" name="recommendation">
+              <option value="approved">Approved</option>
+              <option value="needs_correction">Needs Correction</option>
+              <option value="for_reinspection">For Reinspection</option>
+            </select>
+          </div>
+          <div class="form-group" style="margin-top:12px;">
+            <label>Findings</label>
+            <textarea class="form-input" name="findings" rows="4" required placeholder="Inspection findings and validation notes"></textarea>
+          </div>
+          <div class="form-actions">
+            <button class="btn-primary" type="submit">Save Inspection</button>
+          </div>
+        </form>
+      </article>
+      <article class="engineer-history-card">
+        <h2>Contractor Reports</h2>
+        <div class="engineer-mini-list">${engineerRenderInspectionRows()}</div>
+      </article>
+    </section>
+  `;
+
+  document.getElementById('engineerInspectionForm').addEventListener('submit', engineerSubmitInspection);
+}
+
+function engineerRenderInspectionRows() {
+  if (!engineerState.inspections.length) {
+    return '<p class="empty-state">No contractor reports submitted yet.</p>';
+  }
+
+  return engineerState.inspections.slice(0, 14).map(row => `
+    <div class="engineer-mini-row">
+      <span>${engineerEscape(row.project_code)} - ${engineerEscape(row.contractor_name)} - ${engineerDate(row.report_date)}</span>
+      <strong>${engineerBadge(row.recommendation || row.report_status, row.recommendation ? engineerStatus(row.recommendation) : engineerStatus(row.report_status))}</strong>
+    </div>
+  `).join('');
+}
+
+function engineerRenderPaymentReviewPage() {
+  const page = document.getElementById('page-payment-review');
+  const rows = engineerState.paymentRequests || [];
+
+  page.innerHTML = `
+    <div class="page-header">
+      <div>
+        <h1 class="page-title">Payment Review</h1>
+        <p class="engineer-scope-note">Technical review of contractor payment requests for assigned projects.</p>
+      </div>
+      <button class="btn-secondary" type="button" onclick="engineerRefreshData().then(() => engineerShowPage('payment-review'))">Refresh</button>
+    </div>
+    <div class="table-card">
+      <table class="data-table">
+        <thead>
+          <tr>
+            <th>Billing</th>
+            <th>Project</th>
+            <th>Contractor</th>
+            <th>Progress Report</th>
+            <th>Amount</th>
+            <th>Status</th>
+            <th>Action</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${rows.length ? rows.map(row => `
+            <tr>
+              <td><span class="proj-id">${engineerEscape(row.billing_no)}</span><br><small>${engineerDate(row.submitted_at)}</small></td>
+              <td><strong>${engineerEscape(row.project_code)}</strong><br><small>${engineerEscape(row.project_name)}</small></td>
+              <td>${engineerEscape(row.contractor_name)}</td>
+              <td>${engineerDate(row.report_date)}<br><small>${Number(row.progress_percent || 0)}%</small></td>
+              <td>${engineerMoney(row.requested_amount)}</td>
+              <td>${engineerBadge(row.status)}</td>
+              <td>
+                <button class="btn-primary btn-compact" type="button" onclick="engineerOpenPaymentReview(${row.id}, 'approve')">Approve</button>
+                <button class="btn-secondary btn-compact" type="button" onclick="engineerOpenPaymentReview(${row.id}, 'return')">Return</button>
+                <button class="btn-secondary btn-compact" type="button" onclick="engineerOpenPaymentReview(${row.id}, 'reject')">Reject</button>
+              </td>
+            </tr>
+          `).join('') : '<tr><td colspan="7"><p class="empty-state">No payment requests for assigned projects yet.</p></td></tr>'}
+        </tbody>
+      </table>
+    </div>
+  `;
+}
+
+function engineerOpenPaymentReview(paymentId, recommendation) {
+  engineerOpenModal(`${engineerStatus(recommendation)} Payment Request`, `
+    <form id="engineerPaymentReviewForm">
+      <div class="form-group">
+        <label>Recommendation</label>
+        <input class="form-input" disabled value="${engineerStatus(recommendation)}">
+      </div>
+      <div class="form-group" style="margin-top:12px;">
+        <label>Technical Review Remarks</label>
+        <textarea class="form-input" name="remarks" rows="4" placeholder="Progress validation, inspection notes, or reason"></textarea>
+      </div>
+      <div class="form-actions">
+        <button class="btn-secondary" type="button" onclick="engineerCloseModal()">Cancel</button>
+        <button class="btn-primary" type="submit">Save Review</button>
+      </div>
+    </form>
+  `);
+
+  document.getElementById('engineerPaymentReviewForm').addEventListener('submit', event => engineerSubmitPaymentReview(event, paymentId, recommendation));
 }
 
 function engineerRenderPhotosPage(selectedProjectId = '') {
@@ -659,13 +832,15 @@ async function engineerOpenProject(projectId) {
 }
 
 async function engineerRefreshData() {
-  const [summary, projects, milestones, photos, delays, issues, tracker] = await Promise.all([
+  const [summary, projects, milestones, photos, delays, issues, inspections, workflow, tracker] = await Promise.all([
     engineerGet('summary'),
     engineerGet('projects'),
     engineerGet('milestones'),
     engineerGet('photos'),
     engineerGet('delays'),
     engineerGet('issues'),
+    engineerGet('inspections'),
+    engineerWorkflowGet('summary'),
     engineerGet('tracker'),
   ]);
 
@@ -675,6 +850,8 @@ async function engineerRefreshData() {
   engineerState.photos = photos.data || [];
   engineerState.delays = delays.data || [];
   engineerState.issues = issues.data || [];
+  engineerState.inspections = inspections.data || [];
+  engineerState.paymentRequests = workflow.payment_requests || [];
   engineerState.budgetWatch = tracker.budget_watch || summary.budget_watch || [];
   engineerRenderDashboard();
 }
@@ -691,6 +868,8 @@ function engineerShowPage(page, selectedProjectId = '') {
   if (page === 'dashboard') engineerRenderDashboard();
   if (page === 'assigned-projects') engineerRenderAssignedProjects();
   if (page === 'milestone-update') engineerRenderMilestonePage();
+  if (page === 'inspection-review') engineerRenderInspectionPage();
+  if (page === 'payment-review') engineerRenderPaymentReviewPage();
   if (page === 'progress-photos') engineerRenderPhotosPage(selectedProjectId);
   if (page === 'delay-report') engineerRenderDelayPage();
   if (page === 'issue-reporting') engineerRenderIssuePage();
@@ -712,6 +891,46 @@ async function engineerSubmitMilestone(event) {
     engineerToast('Milestone update saved.');
     await engineerRefreshData();
     engineerShowPage('milestone-update');
+  } catch (error) {
+    engineerToast(error.message, 'error');
+  }
+}
+
+async function engineerSubmitInspection(event) {
+  event.preventDefault();
+  const form = new FormData(event.target);
+
+  try {
+    await engineerPostJson('inspection', {
+      progress_report_id: form.get('progress_report_id'),
+      inspection_date: form.get('inspection_date'),
+      actual_progress_percent: form.get('actual_progress_percent'),
+      recommendation: form.get('recommendation'),
+      findings: form.get('findings'),
+    });
+    engineerToast('Inspection saved.');
+    event.target.reset();
+    await engineerRefreshData();
+    engineerShowPage('inspection-review');
+  } catch (error) {
+    engineerToast(error.message, 'error');
+  }
+}
+
+async function engineerSubmitPaymentReview(event, paymentId, recommendation) {
+  event.preventDefault();
+  const form = new FormData(event.target);
+
+  try {
+    await engineerWorkflowPost('payment_review', {
+      payment_request_id: paymentId,
+      recommendation,
+      remarks: form.get('remarks'),
+    });
+    engineerCloseModal();
+    engineerToast('Payment review saved.');
+    await engineerRefreshData();
+    engineerShowPage('payment-review');
   } catch (error) {
     engineerToast(error.message, 'error');
   }
@@ -969,6 +1188,7 @@ async function submitPasswordForm(event) {
 window.engineerShowPage = engineerShowPage;
 window.engineerOpenProject = engineerOpenProject;
 window.engineerCloseModal = engineerCloseModal;
+window.engineerOpenPaymentReview = engineerOpenPaymentReview;
 window.showProfileSettings = showProfileSettings;
 window.showChangePassword = showChangePassword;
 

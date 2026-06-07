@@ -50,7 +50,7 @@ CREATE TABLE IF NOT EXISTS contractor_documents (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 INSERT INTO users (username, email, password_hash, full_name, role, status)
-VALUES ('contractor', 'contractor@ipms.local', '$2y$10$j1aSpoztS.H6zIHCag.J4O7oQFBh/I3FWa1JysczZaoSWqqz1cwDu', 'Accredited Contractor', 'contractor', 'active')
+VALUES ('contractor', 'contractor@ipms.local', '$2y$10$agsoq.Rb6H.46p12Yi9cTuG8c0so8mlUzWUt2O8Q8uu7E/E5NeEt6', 'Accredited Contractor', 'contractor', 'active')
 ON DUPLICATE KEY UPDATE
     email = VALUES(email),
     password_hash = VALUES(password_hash),
