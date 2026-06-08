@@ -212,7 +212,7 @@ $civilStatuses = ['Single', 'Married', 'Divorced', 'Widowed', 'Separated'];
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;600;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" crossorigin="anonymous">
-    <meta http-equiv="Content-Security-Policy" content="default-src 'self' https:; script-src 'self' https://cdnjs.cloudflare.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://cdnjs.cloudflare.com; font-src https://fonts.gstatic.com; img-src 'self' data:; connect-src 'self';">
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self' https: blob:; script-src 'self' https://cdnjs.cloudflare.com https://cdn.jsdelivr.net blob:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://cdnjs.cloudflare.com; font-src https://fonts.gstatic.com; img-src 'self' data: blob:; connect-src 'self' blob:;">
     <style>
         * {
             margin: 0;
@@ -350,6 +350,7 @@ $civilStatuses = ['Single', 'Married', 'Divorced', 'Widowed', 'Separated'];
             background: #f8f9fa;
             cursor: pointer;
             transition: all 0.3s;
+            display: block;
         }
 
         .file-upload:hover {
@@ -463,6 +464,188 @@ $civilStatuses = ['Single', 'Married', 'Divorced', 'Widowed', 'Separated'];
             .form-actions {
                 grid-template-columns: 1fr;
             }
+        }
+
+        /* AI Detection Styles */
+        .ai-detection-container {
+            background: #f8f9fa;
+            border-radius: 8px;
+            padding: 1rem;
+            margin-top: 1rem;
+        }
+
+        .preview-section {
+            display: none;
+            text-align: center;
+            margin-bottom: 1rem;
+        }
+
+        .preview-section.active {
+            display: block;
+        }
+
+        #id_preview {
+            max-width: 100%;
+            max-height: 300px;
+            border-radius: 6px;
+            border: 2px solid #2563eb;
+        }
+
+        .detection-status {
+            display: none;
+            margin-top: 1rem;
+            padding: 1rem;
+            border-radius: 6px;
+            font-size: 0.9rem;
+        }
+
+        .detection-status.active {
+            display: block;
+        }
+
+        .detection-status.processing {
+            background: #e3f2fd;
+            color: #1976d2;
+            border: 1px solid #1976d2;
+        }
+
+        .detection-status.success {
+            background: #e8f5e9;
+            color: #2e7d32;
+            border: 1px solid #2e7d32;
+        }
+
+        .detection-status.warning {
+            background: #fff3e0;
+            color: #e65100;
+            border: 1px solid #e65100;
+        }
+
+        .detection-status.error {
+            background: #ffebee;
+            color: #c62828;
+            border: 1px solid #c62828;
+        }
+
+        .detection-spinner {
+            display: inline-block;
+            width: 16px;
+            height: 16px;
+            border: 3px solid rgba(25, 118, 210, 0.3);
+            border-top-color: #1976d2;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+            margin-right: 0.5rem;
+            vertical-align: middle;
+        }
+
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+
+        .detection-results {
+            display: none;
+            margin-top: 1rem;
+        }
+
+        .detection-results.active {
+            display: block;
+        }
+
+        .result-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 0.75rem;
+            background: white;
+            border-radius: 6px;
+            margin-bottom: 0.5rem;
+            font-size: 0.9rem;
+        }
+
+        .result-label {
+            font-weight: 600;
+            color: #333;
+            flex: 0 0 150px;
+        }
+
+        .result-value {
+            flex: 1;
+            color: #666;
+            margin: 0 1rem;
+            word-break: break-word;
+        }
+
+        .result-confidence {
+            flex: 0 0 80px;
+            text-align: right;
+        }
+
+        .confidence-badge {
+            display: inline-block;
+            padding: 0.3rem 0.6rem;
+            border-radius: 4px;
+            font-size: 0.8rem;
+            font-weight: 600;
+        }
+
+        .confidence-high {
+            background: #c8e6c9;
+            color: #2e7d32;
+        }
+
+        .confidence-medium {
+            background: #ffe0b2;
+            color: #e65100;
+        }
+
+        .confidence-low {
+            background: #ffcdd2;
+            color: #c62828;
+        }
+
+        .ai-actions {
+            display: flex;
+            gap: 1rem;
+            margin-top: 1rem;
+        }
+
+        .btn-small {
+            padding: 0.6rem 1rem;
+            border: none;
+            border-radius: 6px;
+            font-size: 0.85rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+
+        .btn-accept {
+            background: #4caf50;
+            color: white;
+        }
+
+        .btn-accept:hover {
+            background: #45a049;
+        }
+
+        .btn-retry {
+            background: #ff9800;
+            color: white;
+        }
+
+        .btn-retry:hover {
+            background: #e68900;
+        }
+
+        .verification-notice {
+            background: #fff9c4;
+            border-left: 4px solid #fbc02d;
+            padding: 1rem;
+            border-radius: 4px;
+            margin-bottom: 1rem;
+            font-size: 0.9rem;
+            color: #594000;
         }
     </style>
 </head>
@@ -601,8 +784,12 @@ $civilStatuses = ['Single', 'Married', 'Divorced', 'Widowed', 'Separated'];
 
                 <!-- Identification -->
                 <div class="form-section">
-                    <h3 class="section-title">Identification <span style="color: #e74c3c; font-size: 0.9rem;">(Required for Verification)</span></h3>
+                    <h3 class="section-title">Identification <span style="color: #e74c3c; font-size: 0.9rem;">(AI-Powered Verification)</span></h3>
                     
+                    <div class="verification-notice">
+                        <strong>🤖 AI-Powered Verification:</strong> Upload your ID photo. Our AI will detect your face and extract information automatically.
+                    </div>
+
                     <div class="form-row">
                         <div class="form-group">
                             <label for="id_type">ID Type <span class="required">*</span></label>
@@ -623,10 +810,53 @@ $civilStatuses = ['Single', 'Married', 'Divorced', 'Widowed', 'Separated'];
 
                     <div class="form-group">
                         <label for="id_photo">ID Photo/Document <span class="required">*</span></label>
-                        <div class="file-upload" onclick="document.getElementById('id_photo').click()">
-                            <input type="file" id="id_photo" name="id_photo" accept="image/*" required>
+                        <label for="id_photo" class="file-upload" id="uploadLabel">
+                            <input type="file" id="id_photo" name="id_photo" accept="image/jpeg,image/png,image/gif,image/webp" required>
                             <p>📷 Click to upload your ID photo</p>
                             <p style="font-size: 0.8rem; color: #999; margin-top: 0.5rem;">JPG, PNG, or GIF (Max 5MB)</p>
+                        </label>
+                        
+                        <!-- AI Detection Container -->
+                        <div class="ai-detection-container">
+                            <div class="preview-section" id="previewSection">
+                                <img id="id_preview" alt="ID Preview">
+                            </div>
+
+                            <div class="detection-status" id="detectionStatus">
+                                <span class="detection-spinner"></span>
+                                <span id="statusText">Processing ID image...</span>
+                            </div>
+
+                            <div class="detection-results" id="detectionResults">
+                                <div class="result-item">
+                                    <div class="result-label">Face Detected</div>
+                                    <div class="result-value" id="resultFace">-</div>
+                                    <div class="result-confidence"><span class="confidence-badge confidence-high" id="faceBadge">-</span></div>
+                                </div>
+
+                                <div class="result-item">
+                                    <div class="result-label">Name</div>
+                                    <div class="result-value" id="resultName">-</div>
+                                    <div class="result-confidence"><span class="confidence-badge confidence-medium" id="nameBadge">-</span></div>
+                                </div>
+
+                                <div class="result-item">
+                                    <div class="result-label">ID Number</div>
+                                    <div class="result-value" id="resultIDNumber">-</div>
+                                    <div class="result-confidence"><span class="confidence-badge confidence-medium" id="idnumBadge">-</span></div>
+                                </div>
+
+                                <div class="result-item">
+                                    <div class="result-label">Address</div>
+                                    <div class="result-value" id="resultAddress">-</div>
+                                    <div class="result-confidence"><span class="confidence-badge confidence-medium" id="addressBadge">-</span></div>
+                                </div>
+
+                                <div class="ai-actions">
+                                    <button type="button" class="btn-small btn-accept" onclick="acceptDetectedData()">✓ Accept & Fill</button>
+                                    <button type="button" class="btn-small btn-retry" onclick="retryDetection()">↻ Try Again</button>
+                                </div>
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -686,6 +916,256 @@ $civilStatuses = ['Single', 'Married', 'Divorced', 'Widowed', 'Separated'];
 
         passwordInput.addEventListener('input', validatePassword);
         validatePassword(); // Initial check
+
+        // ========== AI DETECTION =========
+        let detectedData = null;
+        const idPhotoInput = document.getElementById('id_photo');
+        const previewSection = document.getElementById('previewSection');
+        const preview = document.getElementById('id_preview');
+        const detectionStatus = document.getElementById('detectionStatus');
+        const statusText = document.getElementById('statusText');
+        const detectionResults = document.getElementById('detectionResults');
+
+        // Load AI libraries
+        const loadAILibraries = async () => {
+            // Load face-api
+            if (!window.faceapi) {
+                const script1 = document.createElement('script');
+                script1.src = 'https://cdn.jsdelivr.net/npm/face-api.js@0.22.2/dist/face-api.min.js';
+                document.head.appendChild(script1);
+                await new Promise(r => script1.onload = r);
+            }
+
+            // Load Tesseract OCR
+            if (!window.Tesseract) {
+                const script2 = document.createElement('script');
+                script2.src = 'https://cdn.jsdelivr.net/npm/tesseract.js@4.1.1/dist/tesseract.min.js';
+                document.head.appendChild(script2);
+                await new Promise(r => script2.onload = r);
+            }
+        };
+
+        // Handle file selection
+        idPhotoInput.addEventListener('change', async (e) => {
+            const file = e.target.files[0];
+            if (!file) return;
+
+            // Show preview
+            const reader = new FileReader();
+            reader.onload = async (event) => {
+                preview.src = event.target.result;
+                previewSection.classList.add('active');
+                
+                // Start detection
+                await detectID(event.target.result);
+            };
+            reader.readAsDataURL(file);
+        });
+
+        // Main detection function
+        async function detectID(imageSrc) {
+            try {
+                // Load libraries if not already loaded
+                await loadAILibraries();
+
+                // Show processing status
+                detectionStatus.classList.add('active', 'processing');
+                statusText.textContent = '🔍 Analyzing ID document...';
+                detectionResults.classList.remove('active');
+                detectedData = null;
+
+                detectedData = {
+                    faceDetected: false,
+                    faceConfidence: 0,
+                    name: '',
+                    nameConfidence: 0,
+                    idNumber: '',
+                    idNumberConfidence: 0,
+                    address: '',
+                    addressConfidence: 0
+                };
+
+                // Step 1: Face Detection
+                await detectFace(imageSrc);
+
+                // Step 2: OCR Text Extraction
+                await extractText(imageSrc);
+
+                // Show results
+                displayResults();
+
+            } catch (error) {
+                console.error('Detection error:', error);
+                detectionStatus.classList.add('active', 'error');
+                statusText.textContent = '❌ Error processing ID: ' + error.message;
+            }
+        }
+
+        // Detect face in image
+        async function detectFace(imageSrc) {
+            try {
+                const img = new Image();
+                img.src = imageSrc;
+                
+                await new Promise(r => {
+                    img.onload = r;
+                });
+
+                // Load models
+                const modelsUrl = 'https://cdn.jsdelivr.net/npm/face-api.js@0.22.2/weights/';
+                await faceapi.nets.tinyFaceDetector.load(modelsUrl);
+                await faceapi.nets.faceLandmark68Net.load(modelsUrl);
+
+                // Detect faces
+                const detections = await faceapi.detectAllFaces(img, new faceapi.TinyFaceDetectorOptions());
+
+                if (detections.length > 0) {
+                    detectedData.faceDetected = true;
+                    detectedData.faceConfidence = Math.round(detections[0].score * 100);
+                } else {
+                    detectedData.faceDetected = false;
+                    detectedData.faceConfidence = 0;
+                }
+
+            } catch (error) {
+                console.warn('Face detection not available:', error.message);
+                // Continue with OCR even if face detection fails
+            }
+        }
+
+        // Extract text from image using OCR
+        async function extractText(imageSrc) {
+            try {
+                statusText.textContent = '📝 Extracting text from ID...';
+
+                const result = await Tesseract.recognize(imageSrc, 'eng', {
+                    logger: m => console.log('OCR progress:', m.progress)
+                });
+
+                const text = result.data.text;
+                console.log('OCR Text:', text);
+
+                // Pattern matching for Philippines ID formats
+                extractIDInfo(text);
+
+            } catch (error) {
+                console.error('OCR error:', error);
+                detectedData.name = 'N/A';
+                detectedData.idNumber = 'N/A';
+                detectedData.address = 'N/A';
+            }
+        }
+
+        // Extract specific info from OCR text
+        function extractIDInfo(text) {
+            const lines = text.split('\n');
+            
+            // Name extraction (usually 2-3 words uppercase)
+            const nameMatch = text.match(/^([A-Z\s]+?)(?:\n|$)/m);
+            if (nameMatch) {
+                detectedData.name = nameMatch[1].trim();
+                detectedData.nameConfidence = 75;
+            }
+
+            // ID Number - look for digits separated by space/dash
+            const idPatterns = [
+                /ID\s*[:=]?\s*(\d{2,}[-\s]?\d{2,}[-\s]?\d{2,})/i,
+                /(\d{4}[-\s]?\d{4}[-\s]?\d{4}[-\s]?\d{4})/,
+                /(\d{12,})/
+            ];
+
+            for (let pattern of idPatterns) {
+                const match = text.match(pattern);
+                if (match) {
+                    detectedData.idNumber = match[1].replace(/[-\s]/g, '');
+                    detectedData.idNumberConfidence = 70;
+                    break;
+                }
+            }
+
+            // Address - look for keywords like "Address:", "Purok", "Barangay", etc.
+            const addressPatterns = [
+                /(?:Address|Address:)\s*[:=]?\s*([^\n]{10,})/i,
+                /(.*?(?:Purok|Brgy|Barangay|St\.|Ave|Rd)[^\n]*)/i,
+                /([A-Z][a-z\s,]{15,})/
+            ];
+
+            for (let pattern of addressPatterns) {
+                const match = text.match(pattern);
+                if (match) {
+                    detectedData.address = match[1].trim().substring(0, 100);
+                    detectedData.addressConfidence = 60;
+                    break;
+                }
+            }
+        }
+
+        // Display detection results
+        function displayResults() {
+            detectionStatus.classList.remove('processing', 'error');
+            statusText.textContent = '✓ Detection complete! Please review the extracted information below.';
+            detectionResults.classList.add('active');
+
+            // Update result displays
+            document.getElementById('resultFace').textContent = detectedData.faceDetected ? '✓ Yes' : '✗ No';
+            document.getElementById('faceBadge').textContent = detectedData.faceDetected ? 'Yes' : 'No';
+            document.getElementById('faceBadge').className = detectedData.faceDetected ? 'confidence-badge confidence-high' : 'confidence-badge confidence-low';
+
+            document.getElementById('resultName').textContent = detectedData.name || 'Not detected';
+            document.getElementById('nameBadge').textContent = detectedData.nameConfidence + '%';
+            updateConfidenceBadge('nameBadge', detectedData.nameConfidence);
+
+            document.getElementById('resultIDNumber').textContent = detectedData.idNumber || 'Not detected';
+            document.getElementById('idnumBadge').textContent = detectedData.idNumberConfidence + '%';
+            updateConfidenceBadge('idnumBadge', detectedData.idNumberConfidence);
+
+            document.getElementById('resultAddress').textContent = detectedData.address || 'Not detected';
+            document.getElementById('addressBadge').textContent = detectedData.addressConfidence + '%';
+            updateConfidenceBadge('addressBadge', detectedData.addressConfidence);
+        }
+
+        // Update confidence badge color
+        function updateConfidenceBadge(elementId, confidence) {
+            const el = document.getElementById(elementId);
+            el.className = 'confidence-badge';
+            if (confidence >= 75) {
+                el.classList.add('confidence-high');
+            } else if (confidence >= 50) {
+                el.classList.add('confidence-medium');
+            } else {
+                el.classList.add('confidence-low');
+            }
+        }
+
+        // Accept and fill detected data
+        function acceptDetectedData() {
+            if (detectedData.name) {
+                const nameParts = detectedData.name.split(' ');
+                document.getElementById('first_name').value = nameParts[0] || '';
+                document.getElementById('last_name').value = nameParts.slice(1).join(' ') || '';
+            }
+
+            if (detectedData.idNumber) {
+                document.getElementById('id_number').value = detectedData.idNumber;
+            }
+
+            if (detectedData.address) {
+                document.getElementById('address').value = detectedData.address;
+            }
+
+            alert('✓ Detected information filled into form. Please verify and complete any remaining fields.');
+        }
+
+        // Retry detection
+        function retryDetection() {
+            if (idPhotoInput.files[0]) {
+                const reader = new FileReader();
+                reader.onload = (event) => {
+                    detectID(event.target.result);
+                };
+                reader.readAsDataURL(idPhotoInput.files[0]);
+            }
+        }
     </script>
 </body>
 </html>
