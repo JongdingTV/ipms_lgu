@@ -106,18 +106,18 @@ require_once '../includes/sidebar.php';
       </article>
     </section>
 
-    <section class="lower-row">
+    <section class="lower-row reveal">
       <article class="info-card">
         <h2 class="info-card-title">Top Delayed Projects</h2>
         <div class="delayed-list">
-          <p class="empty-state">Loading delayed projects...</p>
+          <div class="skeleton-group"><div class="skeleton-row"></div><div class="skeleton-row"></div><div class="skeleton-row"></div></div>
         </div>
       </article>
 
       <article class="info-card">
         <h2 class="info-card-title">Budget Anomalies</h2>
         <div class="anomaly-list">
-          <p class="empty-state">Scanning budget activity...</p>
+          <div class="skeleton-group"><div class="skeleton-row"></div><div class="skeleton-row"></div></div>
         </div>
         <div class="anomaly-footer">
           <button class="btn-review" type="button" onclick="navigate('budget-monitoring')">Review Budget</button>
@@ -127,12 +127,12 @@ require_once '../includes/sidebar.php';
       <article class="info-card">
         <h2 class="info-card-title">Recent Citizen Feedback</h2>
         <div class="feedback-list">
-          <p class="empty-state">Loading feedback...</p>
+          <div class="skeleton-group"><div class="skeleton-row"></div><div class="skeleton-row"></div><div class="skeleton-row"></div></div>
         </div>
       </article>
     </section>
 
-    <section class="ai-insights">
+    <section class="ai-insights reveal" style="transition-delay:.08s;">
       <div class="ai-grid">
         <article class="ai-card ai-red">
           <div class="ai-card-title">Delay Risk: <strong>Loading</strong></div>
@@ -149,18 +149,18 @@ require_once '../includes/sidebar.php';
       </div>
     </section>
 
-    <section class="lower-row" style="margin-top:18px;">
+    <section class="lower-row reveal" style="margin-top:18px; transition-delay:.16s;">
       <article class="info-card">
         <h2 class="info-card-title">Workflow Connections</h2>
         <div id="workflowConnectionList" class="anomaly-list">
-          <p class="empty-state">Loading role connections...</p>
+          <div class="skeleton-group"><div class="skeleton-row"></div><div class="skeleton-row"></div></div>
         </div>
       </article>
 
       <article class="info-card" style="grid-column: span 2;">
         <h2 class="info-card-title">Recent Contract, Inspection, and Payment Records</h2>
         <div id="workflowActivityList" class="feedback-list">
-          <p class="empty-state">Loading workflow activity...</p>
+          <div class="skeleton-group"><div class="skeleton-row"></div><div class="skeleton-row"></div><div class="skeleton-row"></div></div>
         </div>
       </article>
     </section>

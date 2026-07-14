@@ -3,7 +3,7 @@ require_once __DIR__ . '/../auth/session.php';
 
 $user = requireLogin(['engineer']);
 $topbarSearchPlaceholder = 'Search assigned projects...';
-$extraStylesheets = ['engineer/assets/css/engineer.css'];
+$extraStylesheets = ['assets/css/pagination.css', 'engineer/assets/css/engineer.css'];
 
 require_once __DIR__ . '/../includes/header.php';
 require_once __DIR__ . '/sidebar.php';
@@ -64,14 +64,31 @@ require_once __DIR__ . '/sidebar.php';
         </article>
       </section>
 
-      <section class="engineer-dashboard-grid">
+      <section class="charts-row reveal">
+        <article class="chart-card">
+          <div class="chart-header">
+            <h2 class="chart-title">Project Status Mix</h2>
+          </div>
+          <div class="chart-body budget-body">
+            <div class="donut-wrapper">
+              <canvas id="engineerStatusChart"></canvas>
+              <div class="donut-center">
+                <span class="donut-pct" id="engineerStatusChartTotal">0</span>
+              </div>
+            </div>
+            <div class="budget-legend" id="engineerStatusChartLegend"></div>
+          </div>
+        </article>
+      </section>
+
+      <section class="engineer-dashboard-grid reveal">
         <article class="engineer-panel engineer-panel-wide">
           <div class="engineer-panel-head">
             <h2>My Assigned Projects</h2>
             <button class="btn-secondary btn-compact" type="button" onclick="engineerShowPage('assigned-projects')">View All</button>
           </div>
           <div id="engineerProjectPreview" class="engineer-project-list">
-            <p class="empty-state">Loading assigned projects...</p>
+            <div class="skeleton-group"><div class="skeleton-row"></div><div class="skeleton-row"></div></div>
           </div>
         </article>
 
@@ -81,30 +98,30 @@ require_once __DIR__ . '/sidebar.php';
             <span class="engineer-readonly-pill">Read-only</span>
           </div>
           <div id="engineerBudgetPreview" class="engineer-mini-list">
-            <p class="empty-state">Loading budget data...</p>
+            <div class="skeleton-group"><div class="skeleton-row"></div><div class="skeleton-row"></div></div>
           </div>
         </article>
       </section>
 
-      <section class="lower-row">
+      <section class="lower-row reveal" style="transition-delay:.08s;">
         <article class="info-card">
           <h2 class="info-card-title">Upcoming Milestones</h2>
           <div id="engineerMilestonePreview" class="engineer-mini-list">
-            <p class="empty-state">Loading milestones...</p>
+            <div class="skeleton-group"><div class="skeleton-row"></div><div class="skeleton-row"></div></div>
           </div>
         </article>
 
         <article class="info-card">
           <h2 class="info-card-title">Recent Issues</h2>
           <div id="engineerIssuePreview" class="engineer-mini-list">
-            <p class="empty-state">Loading issues...</p>
+            <div class="skeleton-group"><div class="skeleton-row"></div><div class="skeleton-row"></div></div>
           </div>
         </article>
 
         <article class="info-card">
           <h2 class="info-card-title">Photo Submissions</h2>
           <div id="engineerPhotoPreview" class="engineer-mini-list">
-            <p class="empty-state">Loading progress photos...</p>
+            <div class="skeleton-group"><div class="skeleton-row"></div><div class="skeleton-row"></div></div>
           </div>
         </article>
       </section>
@@ -131,17 +148,10 @@ require_once __DIR__ . '/sidebar.php';
   </div>
 </div>
 
-<div class="notif-panel" id="notifPanel">
-  <div class="notif-panel-header">
-    <span>Engineer Updates</span>
-    <button class="notif-clear" id="notifClear" type="button">Clear all</button>
-  </div>
-  <div class="notif-item notif-low">
-    <div class="notif-dot"></div>
-    <div><p class="notif-msg">Field monitoring workspace is ready.</p><span class="notif-time">Engineer portal</span></div>
-  </div>
-</div>
+<?php $notifPanelTitle = 'Engineer Updates'; include __DIR__ . '/../includes/notifications-panel.php'; ?>
 
-<script src="<?= htmlspecialchars($BASE_PATH) ?>engineer/assets/js/engineer.js"></script>
+<script src="<?= htmlspecialchars(assetUrl('/assets/js/notifications.js')) ?>"></script>
+<script src="<?= htmlspecialchars(assetUrl('/assets/js/pagination.js')) ?>"></script>
+<script src="<?= htmlspecialchars(assetUrl('/engineer/assets/js/engineer.js')) ?>"></script>
 </body>
 </html>

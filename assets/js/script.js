@@ -23,6 +23,7 @@ const API = {
   user:        window.BASE_PATH + 'api/user.php',
   users:       window.BASE_PATH + 'api/users.php',
   workflow:    window.BASE_PATH + 'api/workflow.php',
+  staffAccounts: window.BASE_PATH + 'superadmin/api/accounts.php',
 };
 
 const CSRF_HEADERS = window.CSRF_TOKEN ? { 'X-CSRF-Token': window.CSRF_TOKEN } : {};
@@ -54,6 +55,22 @@ async function post(url, body) {
   });
   return res.json();
 }
+async function postForm(url, formData) {
+  const res = await fetch(url, {
+    method: 'POST',
+    headers: { ...CSRF_HEADERS },
+    body: formData,
+  });
+  return res.json();
+}
+async function postAction(url, action, body) {
+  const res = await fetch(`${url}?action=${encodeURIComponent(action)}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...CSRF_HEADERS },
+    body: JSON.stringify(body),
+  });
+  return res.json();
+}
 async function put(url, id, body) {
   const res = await fetch(`${url}?id=${id}`, {
     method:'PUT',
@@ -78,6 +95,16 @@ function toast(msg, type = 'success') {
   document.body.appendChild(t);
   requestAnimationFrame(() => t.classList.add('show'));
   setTimeout(() => { t.classList.remove('show'); setTimeout(() => t.remove(), 300); }, 3000);
+}
+
+/* ── HTML-escape any server-sourced text before it reaches innerHTML ── */
+function escapeHtml(value) {
+  return String(value ?? '')
+    .replaceAll('&', '&amp;')
+    .replaceAll('<', '&lt;')
+    .replaceAll('>', '&gt;')
+    .replaceAll('"', '&quot;')
+    .replaceAll("'", '&#039;');
 }
 
 /* ── Loading overlay on cards ── */
@@ -201,9 +228,32 @@ function navigate(page) {
     reports: loadReportsPage,
     'ai-risk-insights': loadAIRiskInsightsPage,
     'citizen-feedback': () => loadFeedbackPage('page-citizen-feedback', 'Citizen Feedback Review', false),
+    'staff-requests': loadStaffRequestsPage,
   };
   if (loaders[page]) loaders[page]();
 }
+
+window.GLOBAL_SEARCH_NAVIGATE = navigate;
+window.GLOBAL_SEARCH_SOURCES = [
+  {
+    label: 'Projects',
+    url: API.projects,
+    mapItem: (row) => ({
+      title: row.name,
+      meta: `${row.project_code || ''} · ${row.status || ''}`.replace(/^ · /, ''),
+      page: 'project-registration',
+    }),
+  },
+  {
+    label: 'Contractors',
+    url: API.contractors,
+    mapItem: (row) => ({
+      title: row.name,
+      meta: row.contact_person || row.email || '',
+      page: 'contractor-assignment',
+    }),
+  },
+];
 
 /* ============================================================
    DASHBOARD
@@ -249,10 +299,6 @@ async function loadDashboard() {
     renderAIInsights(d.ai_insights);
 
     renderWorkflowConnections(d.workflow_connections, d.recent_workflow);
-
-    // Notif badge
-    const badge = document.querySelector('.notif-badge');
-    if (badge) badge.textContent = d.high_risk_alerts + d.delayed_projects;
 
   } catch (e) {
     toast('Failed to load dashboard data', 'error');
@@ -353,7 +399,7 @@ function renderTopDelayed(projects) {
   list.innerHTML = projects.length ? projects.map(p => `
     <div class="delayed-item">
       <span class="proj-id">#${p.id}</span>
-      <span class="proj-name">${p.name}</span>
+      <span class="proj-name">${escapeHtml(p.name)}</span>
       <button class="btn-view" onclick="openProjectModal(${p.id})">View</button>
     </div>
   `).join('') : '<p class="empty-state">No delayed projects 🎉</p>';
@@ -384,8 +430,8 @@ function renderFeedbackWidget(items) {
       <div class="feedback-icon feedback-red">
         <span aria-hidden="true">!</span>
       </div>
-      <span class="feedback-text">${f.message.slice(0,50)}${f.message.length>50?'…':''}</span>
-      <span class="badge ${priorityClass[f.priority] || 'badge-resolved'}">${priorityLabel[f.priority]}</span>
+      <span class="feedback-text">${escapeHtml(f.message.slice(0,50))}${f.message.length>50?'…':''}</span>
+      <span class="badge ${priorityClass[f.priority] || 'badge-resolved'}">${priorityLabel[f.priority] || 'Normal'}</span>
     </div>
   `).join('') || '<p class="empty-state">No feedback yet</p>';
 }
@@ -499,9 +545,15 @@ function renderWorkflowManagement(data) {
               <td>${statusBadgeForWorkflow(row.status)}</td>
               <td>${row.latest_review || 'No review yet'}</td>
               <td>
-                <button class="btn-primary btn-compact" onclick="openPaymentReviewModal(${row.id}, 'approve')">Approve</button>
-                <button class="btn-secondary btn-compact" onclick="openPaymentReviewModal(${row.id}, 'return')">Return</button>
-                <button class="btn-secondary btn-compact" onclick="openPaymentReviewModal(${row.id}, 'reject')">Reject</button>
+                ${row.status === 'approved' ? `
+                  <button class="btn-primary btn-compact" onclick="markPaymentPaid(${row.id})">Mark as Paid</button>
+                ` : ['paid', 'rejected'].includes(row.status) ? `
+                  <small>No further action</small>
+                ` : `
+                  <button class="btn-primary btn-compact" onclick="openPaymentReviewModal(${row.id}, 'approve')">Approve</button>
+                  <button class="btn-secondary btn-compact" onclick="openPaymentReviewModal(${row.id}, 'return')">Return</button>
+                  <button class="btn-secondary btn-compact" onclick="openPaymentReviewModal(${row.id}, 'reject')">Reject</button>
+                `}
               </td>
             </tr>
           `).join('') : '<tr><td colspan="8"><p class="empty-state">No payment requests yet.</p></td></tr>'}
@@ -578,6 +630,18 @@ function openPaymentReviewModal(paymentId, recommendation) {
   `);
 }
 
+async function markPaymentPaid(paymentId) {
+  if (!confirm('Mark this payment request as paid? This finalizes the payment lifecycle.')) return;
+  try {
+    await workflowPost('mark_paid', { payment_request_id: paymentId });
+    toast('Payment marked as paid.');
+    loadWorkflowManagementPage();
+    loadDashboard();
+  } catch (error) {
+    toast(error.message || 'Unable to mark payment as paid.', 'error');
+  }
+}
+
 async function submitPaymentReview(event, paymentId, recommendation) {
   event.preventDefault();
   const form = new FormData(event.target);
@@ -603,7 +667,7 @@ async function openProjectModal(id) {
   try {
     const p = await get(API.projects, { id });
     const color = p.progress >= 70 ? '#22c55e' : p.progress >= 40 ? '#f97316' : '#ef4444';
-    openModal(`Project #${p.id} — ${p.name}`, `
+    openModal(`Project #${p.id} — ${escapeHtml(p.name)}`, `
       <div style="display:flex;flex-direction:column;gap:14px;">
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">
           <div><p class="modal-label">LOCATION</p><p class="modal-val">${p.location || '—'}</p></div>
@@ -644,6 +708,40 @@ async function openProjectModal(id) {
    PROJECTS PAGE
    ============================================================ */
 let projectsState = { page: 1, search: '', status: '' };
+
+const PROJECT_DOC_TYPES = [
+  'Feasibility Study',
+  'Site Assessment',
+  'Budget Justification',
+  'Environmental Compliance Certificate',
+  'Other',
+];
+
+function projectDocRowHtml(index) {
+  return `
+    <div class="doc-row" data-doc-index="${index}">
+      <select class="form-input" name="documents[${index}][document_type]">
+        ${PROJECT_DOC_TYPES.map(type => `<option value="${escapeHtml(type)}">${escapeHtml(type)}</option>`).join('')}
+      </select>
+      <input class="form-input" type="text" name="documents[${index}][title]" placeholder="Document title">
+      <input class="form-input" type="file" name="document_files[${index}]">
+      <button type="button" class="doc-row-remove" aria-label="Remove document row">&times;</button>
+    </div>
+  `;
+}
+
+function wireProjectDocRows(container, addBtn) {
+  let nextIndex = 1;
+  addBtn.addEventListener('click', () => {
+    container.insertAdjacentHTML('beforeend', projectDocRowHtml(nextIndex));
+    nextIndex += 1;
+  });
+  container.addEventListener('click', event => {
+    if (event.target.classList.contains('doc-row-remove')) {
+      event.target.closest('.doc-row')?.remove();
+    }
+  });
+}
 
 async function loadProjectsPage(containerId = 'page-project-registration', title = 'Project Registration') {
   const container = document.getElementById(containerId);
@@ -704,9 +802,9 @@ function renderProjectsTable(rows) {
           const bar  = p.progress >= 70 ? '#22c55e' : p.progress >= 40 ? '#f97316' : '#ef4444';
           return `
           <tr>
-            <td><span class="proj-id">${p.project_code}</span></td>
-            <td><strong>${p.name}</strong><br><small style="color:#94a3b8">${p.location||''}</small></td>
-            <td>${p.location || '—'}</td>
+            <td><span class="proj-id">${escapeHtml(p.project_code)}</span></td>
+            <td><strong>${escapeHtml(p.name)}</strong><br><small style="color:#94a3b8">${escapeHtml(p.location||'')}</small></td>
+            <td>${escapeHtml(p.location || '—')}</td>
             <td>${p.contractor_name || '—'}</td>
             <td>₱${Number(p.budget).toLocaleString()}</td>
             <td>₱${Number(p.total_spent).toLocaleString()} <small style="color:${pct>100?'#ef4444':'#94a3b8'}">(${pct}%)</small></td>
@@ -748,8 +846,8 @@ async function showProjectForm(id = null) {
           <input name="name" class="form-input" required value="${p?.name||''}" />
         </div>
         <div class="form-group">
-          <label>Location</label>
-          <input name="location" class="form-input" value="${p?.location||''}" />
+          <label>Location *</label>
+          <input name="location" class="form-input" required value="${p?.location||''}" />
         </div>
         <div class="form-group">
           <label>Budget (₱) *</label>
@@ -775,25 +873,41 @@ async function showProjectForm(id = null) {
         ` : '<input type="hidden" name="status" value="draft" />'}
       </div>
       <div class="form-group" style="margin-top:8px;">
-        <label>Description</label>
-        <textarea name="description" class="form-input" rows="3">${p?.description||''}</textarea>
+        <label>Description *</label>
+        <textarea name="description" class="form-input" rows="3" required>${p?.description||''}</textarea>
       </div>
+      ${!id ? `
+        <div class="form-group" style="margin-top:8px;">
+          <label>Supporting Documents * <small>(at least one required — feasibility study, site assessment, budget justification, etc.)</small></label>
+          <div class="doc-rows" id="projectDocRows">${projectDocRowHtml(0)}</div>
+          <button type="button" class="doc-add-btn" id="projectDocAddBtn">+ Add another document</button>
+        </div>
+      ` : ''}
       <div class="form-actions">
         <button type="button" class="btn-secondary" onclick="closeModal()">Cancel</button>
-        <button type="submit" class="btn-primary">${id ? 'Update' : 'Create'} Project</button>
+        <button type="submit" class="btn-primary">${id ? 'Update' : 'Submit for Registration'}</button>
       </div>
     </form>
   `);
+
+  if (!id) {
+    wireProjectDocRows(document.getElementById('projectDocRows'), document.getElementById('projectDocAddBtn'));
+  }
 }
 
 async function submitProjectForm(e, id) {
   e.preventDefault();
-  const fd = new FormData(e.target);
-  const body = Object.fromEntries(fd.entries());
   try {
-    const res = id ? await put(API.projects, id, body) : await post(API.projects, body);
+    let res;
+    if (id) {
+      const fd = new FormData(e.target);
+      const body = Object.fromEntries(fd.entries());
+      res = await put(API.projects, id, body);
+    } else {
+      res = await postForm(API.projects, new FormData(e.target));
+    }
     if (res.error) { toast(res.error, 'error'); return; }
-    toast(id ? 'Project updated!' : 'Project created!');
+    toast(id ? 'Project updated!' : 'Project registered — awaiting Super Admin approval.');
     closeModal();
     fetchProjects();
   } catch { toast('Something went wrong', 'error'); }
@@ -874,6 +988,8 @@ function renderApprovalTable(rows) {
     return;
   }
 
+  const isSuperAdmin = window.CURRENT_USER_ROLE === 'super_admin';
+
   wrap.innerHTML = `
     <table class="data-table">
       <thead>
@@ -883,16 +999,18 @@ function renderApprovalTable(rows) {
         ${rows.map(p => `
           <tr>
             <td><span class="proj-id">${p.project_code}</span></td>
-            <td><strong>${p.name}</strong><br><small style="color:#94a3b8">${p.location || '-'}</small></td>
+            <td><strong>${escapeHtml(p.name)}</strong><br><small style="color:#94a3b8">${escapeHtml(p.location || '-')}</small></td>
             <td>${formatMoney(p.budget)}</td>
             <td>${formatDate(p.start_date)} to ${formatDate(p.end_date)}</td>
             <td>${p.contractor_name || 'Unassigned'}</td>
             <td>${statusBadge(p.status)}</td>
             <td>
               <div class="inline-actions">
-                <button class="btn-primary btn-compact" onclick="updateProjectStatus(${p.id}, 'approved')" ${p.status === 'approved' ? 'disabled' : ''}>Approve</button>
-                <button class="btn-secondary btn-compact" onclick="updateProjectStatus(${p.id}, 'returned')" ${p.status === 'returned' ? 'disabled' : ''}>Return</button>
-                <button class="btn-secondary btn-compact" onclick="updateProjectStatus(${p.id}, 'cancelled')" ${p.status === 'cancelled' ? 'disabled' : ''}>Reject</button>
+                ${isSuperAdmin ? `
+                  <button class="btn-primary btn-compact" onclick="openProjectDecisionModal(${p.id}, 'approve')" ${p.status === 'approved' ? 'disabled' : ''}>Approve</button>
+                  <button class="btn-secondary btn-compact" onclick="openProjectDecisionModal(${p.id}, 'return')" ${p.status === 'returned' ? 'disabled' : ''}>Return</button>
+                  <button class="btn-secondary btn-compact" onclick="openProjectDecisionModal(${p.id}, 'reject')" ${p.status === 'cancelled' ? 'disabled' : ''}>Reject</button>
+                ` : '<small>Awaiting Super Admin review</small>'}
                 <button class="btn-secondary btn-compact" onclick="openProjectModal(${p.id})">View</button>
               </div>
             </td>
@@ -903,14 +1021,36 @@ function renderApprovalTable(rows) {
   `;
 }
 
-async function updateProjectStatus(id, status, refresh = fetchApprovalProjects) {
+function openProjectDecisionModal(id, decision) {
+  const labels = { approve: 'Approve', return: 'Return for Revision', reject: 'Reject' };
+  const reasonRequired = decision !== 'approve';
+
+  openModal(`${labels[decision]} Project`, `
+    <form id="projectDecisionForm" onsubmit="submitProjectDecision(event, ${id}, '${decision}')">
+      <div class="form-group">
+        <label>Reason${reasonRequired ? ' *' : ' (optional)'}</label>
+        <textarea name="reason" class="form-input" rows="4" placeholder="Explain the decision" ${reasonRequired ? 'required' : ''}></textarea>
+      </div>
+      <div class="form-actions">
+        <button type="button" class="btn-secondary" onclick="closeModal()">Cancel</button>
+        <button type="submit" class="btn-primary">Confirm ${labels[decision]}</button>
+      </div>
+    </form>
+  `);
+}
+
+async function submitProjectDecision(e, id, decision) {
+  e.preventDefault();
+  const reason = new FormData(e.target).get('reason') || '';
   try {
-    const res = await put(API.projects, id, { status });
+    const res = await postAction(API.projects, 'decide', { project_id: id, decision, reason });
     if (res.error) { toast(res.error, 'error'); return; }
-    toast(`Project marked ${formatStatus(status)}.`);
-    if (typeof refresh === 'function') refresh();
+    toast(`Project ${res.status}.`);
+    closeModal();
+    fetchApprovalProjects();
+    loadDashboard();
   } catch {
-    toast('Failed to update project status', 'error');
+    toast('Failed to record decision', 'error');
   }
 }
 
@@ -955,7 +1095,7 @@ async function loadAssignmentContractors() {
     const filter = document.getElementById('assignmentContractorFilter');
     if (filter) {
       filter.innerHTML = '<option value="">All Contractors</option>' + assignmentContractors
-        .map(c => `<option value="${c.id}">${c.name}</option>`)
+        .map(c => `<option value="${c.id}">${escapeHtml(c.name)}</option>`)
         .join('');
     }
     renderAssignmentSummary();
@@ -1028,7 +1168,7 @@ function renderAssignmentTable(rows) {
         ${rows.map(p => `
           <tr>
             <td><span class="proj-id">${p.project_code}</span></td>
-            <td><strong>${p.name}</strong><br><small style="color:#94a3b8">${p.location || '-'}</small></td>
+            <td><strong>${escapeHtml(p.name)}</strong><br><small style="color:#94a3b8">${escapeHtml(p.location || '-')}</small></td>
             <td>${p.contractor_name || '<span style="color:#ef4444;">Unassigned</span>'}</td>
             <td>${statusBadge(p.status)}</td>
             <td>
@@ -1036,7 +1176,7 @@ function renderAssignmentTable(rows) {
                 <option value="">Unassigned</option>
                 ${assignmentContractors.map(c => `
                   <option value="${c.id}" ${String(p.contractor_id || '') === String(c.id) ? 'selected' : ''}>
-                    ${c.name} (${c.performance_score})
+                    ${escapeHtml(c.name)} (${c.performance_score})
                   </option>
                 `).join('')}
               </select>
@@ -1153,8 +1293,8 @@ function renderMilestoneCards(projects) {
       <article class="milestone-card">
         <div class="milestone-card-head">
           <div>
-            <span class="proj-id">${p.project_code}</span>
-            <h3>${p.name}</h3>
+            <span class="proj-id">${escapeHtml(p.project_code)}</span>
+            <h3>${escapeHtml(p.name)}</h3>
           </div>
           ${statusBadge(p.status)}
         </div>
@@ -1230,7 +1370,7 @@ function renderReports(dashboard, contractors, openFeedback, expenseSummary) {
         <h3>Delayed Projects</h3>
         ${delayed.length ? delayed.map(p => `
           <div class="report-row">
-            <span>${p.name}</span>
+            <span>${escapeHtml(p.name)}</span>
             <strong>${p.days_overdue || 0} days</strong>
           </div>
         `).join('') : '<p class="empty-state">No delayed projects.</p>'}
@@ -1239,7 +1379,7 @@ function renderReports(dashboard, contractors, openFeedback, expenseSummary) {
         <h3>Top Contractors</h3>
         ${topContractors.length ? topContractors.map(c => `
           <div class="report-row">
-            <span>${c.name}</span>
+            <span>${escapeHtml(c.name)}</span>
             <strong>${c.performance_score}</strong>
           </div>
         `).join('') : '<p class="empty-state">No contractor data.</p>'}
@@ -1319,7 +1459,7 @@ function renderAIRiskInsights(dashboard) {
         <h3>Priority Delays</h3>
         ${delayed.length ? delayed.map(p => `
           <div class="report-row">
-            <span>${p.name}</span>
+            <span>${escapeHtml(p.name)}</span>
             <button class="btn-secondary btn-compact" onclick="openProjectModal(${p.id})">Review</button>
           </div>
         `).join('') : '<p class="empty-state">No delayed projects.</p>'}
@@ -1453,7 +1593,7 @@ async function showExpenseForm() {
           <label>Project *</label>
           <select name="project_id" class="form-input" required>
             <option value="">— Select —</option>
-            ${projects.map(p => `<option value="${p.id}">${p.project_code} — ${p.name}</option>`).join('')}
+            ${projects.map(p => `<option value="${p.id}">${escapeHtml(p.project_code)} — ${escapeHtml(p.name)}</option>`).join('')}
           </select>
         </div>
         <div class="form-group">
@@ -1515,82 +1655,67 @@ async function deleteExpense(id) {
 }
 
 /* ============================================================
-   CONTRACTORS PAGE
+   STAFF REQUESTS (Engineer/BAC accounts) — admin submits a request,
+   only Super Admin can approve it and actually create the login
+   (maker-checker; admin has no direct account-creation path).
    ============================================================ */
-let contractorsState = { page: 1, search: '' };
-
-async function loadContractorsPage() {
-  const container = document.getElementById('page-contractors');
+async function loadStaffRequestsPage() {
+  const container = document.getElementById('page-staff-requests');
   if (!container) return;
 
   container.innerHTML = `
     <div class="page-header">
-      <h2 class="page-title">Contractors</h2>
-      <button class="btn-primary" onclick="showContractorForm()">+ Add Contractor</button>
+      <h2 class="page-title">Staff Requests</h2>
     </div>
-    <div class="filter-bar">
-      <input class="filter-input" placeholder="Search contractors…"
-        oninput="contractorsState.search=this.value;contractorsState.page=1;fetchContractors()" />
+    <p style="color:#64748b;margin-bottom:16px;max-width:640px;">
+      Request a new Engineer or BAC account. A Super Admin must review and approve the
+      request before the login is created — you cannot create staff accounts directly.
+    </p>
+    <div class="table-card" style="padding:20px;max-width:520px;">
+      <form id="staffRequestForm">
+        <div class="form-group">
+          <label>Role *</label>
+          <select name="requested_role" class="form-input" required>
+            <option value="engineer">Engineer</option>
+            <option value="bac">BAC</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>Full Name *</label>
+          <input name="full_name" class="form-input" required />
+        </div>
+        <div class="form-group">
+          <label>Username *</label>
+          <input name="username" class="form-input" required />
+        </div>
+        <div class="form-group">
+          <label>Email *</label>
+          <input name="email" type="email" class="form-input" required />
+        </div>
+        <div class="form-actions">
+          <button type="submit" class="btn-primary">Submit Request</button>
+        </div>
+      </form>
     </div>
-    <div id="contractorsGrid" class="contractors-grid"></div>
-    <div id="contractorsPager" class="pager"></div>
   `;
-  fetchContractors();
+
+  document.getElementById('staffRequestForm').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const body = Object.fromEntries(new FormData(e.target).entries());
+    try {
+      const res = await postAction(API.staffAccounts, 'request_staff_account', body);
+      if (res.error) { toast(res.error, 'error'); return; }
+      toast('Request submitted — awaiting Super Admin approval.');
+      e.target.reset();
+    } catch { toast('Something went wrong', 'error'); }
+  });
 }
 
-async function fetchContractors() {
-  const wrap = document.getElementById('contractorsGrid');
-  if (!wrap) return;
-  setLoading(wrap, true);
-  try {
-    const d = await get(API.contractors, { page: contractorsState.page, search: contractorsState.search });
-    renderContractors(d.data);
-    renderPager('contractorsPager', d.page, d.last_page, p => { contractorsState.page = p; fetchContractors(); });
-  } catch {
-    wrap.innerHTML = '<p class="empty-state">Failed to load contractors.</p>';
-  } finally {
-    setLoading(wrap, false);
-  }
-}
-
-function renderContractors(rows) {
-  const wrap = document.getElementById('contractorsGrid');
-  if (!rows.length) { wrap.innerHTML = '<p class="empty-state">No contractors found.</p>'; return; }
-  wrap.innerHTML = rows.map(c => {
-    const scoreColor = c.performance_score >= 80 ? '#22c55e' : c.performance_score >= 60 ? '#f97316' : '#ef4444';
-    return `
-      <div class="contractor-card">
-        <div class="contractor-header">
-          <div class="contractor-avatar">${c.name.charAt(0)}</div>
-          <div>
-            <p class="contractor-name">${c.name}</p>
-            <p class="contractor-contact">${c.contact_person || '—'}</p>
-          </div>
-          <div style="margin-left:auto;text-align:center;">
-            <div style="font-size:1.4rem;font-weight:800;color:${scoreColor};font-family:monospace">${c.performance_score}</div>
-            <div style="font-size:.65rem;color:#94a3b8;">SCORE</div>
-          </div>
-        </div>
-        <div class="contractor-info">
-          <span>📧 ${c.email || '—'}</span>
-          <span>📞 ${c.phone || '—'}</span>
-        </div>
-        <div class="contractor-stats">
-          <div class="cstat"><span class="cstat-val">${c.total_projects||0}</span><span class="cstat-lbl">Total</span></div>
-          <div class="cstat"><span class="cstat-val" style="color:#22c55e">${c.active_projects||0}</span><span class="cstat-lbl">Active</span></div>
-          <div class="cstat"><span class="cstat-val" style="color:#ef4444">${c.delayed_projects||0}</span><span class="cstat-lbl">Delayed</span></div>
-          <div class="cstat"><span class="cstat-val" style="color:#3b82f6">${c.completed_projects||0}</span><span class="cstat-lbl">Done</span></div>
-        </div>
-        <div class="contractor-footer">
-          <span class="badge ${c.status==='active'?'badge-highprio':'badge-resolved'}">${c.status}</span>
-          <div class="action-btns">
-            <button class="btn-icon" onclick="showContractorForm(${c.id})" title="Edit">✏️</button>
-            <button class="btn-icon btn-danger" onclick="deleteContractor(${c.id})" title="Delete">🗑</button>
-          </div>
-        </div>
-      </div>`;
-  }).join('');
-}
+/* ============================================================
+   CONTRACTOR FORM (used by the "+ Add Contractor" button on the
+   Contractor Assignment page — there is no standalone contractors
+   list page; that was removed as dead/unreachable code)
+   ============================================================ */
 
 async function showContractorForm(id = null) {
   let c = null;
@@ -1616,8 +1741,8 @@ async function showContractorForm(id = null) {
           <input name="phone" class="form-input" value="${c?.phone||''}" />
         </div>
         <div class="form-group">
-          <label>Performance Score (0–100)</label>
-          <input name="performance_score" type="number" min="0" max="100" class="form-input" value="${c?.performance_score||0}" />
+          <label>Performance Score</label>
+          <input class="form-input" disabled value="${id ? `${c?.performance_score||0} / 100 (computed from project history)` : 'Computed after first project assignment'}" />
         </div>
         <div class="form-group">
           <label>Status</label>
@@ -1647,22 +1772,11 @@ async function submitContractorForm(e, id) {
     if (res.error) { toast(res.error, 'error'); return; }
     toast(id ? 'Contractor updated!' : 'Contractor added!');
     closeModal();
-    if (document.getElementById('contractorsGrid')) fetchContractors();
     if (document.getElementById('assignmentTable')) {
       await loadAssignmentContractors();
       fetchAssignmentProjects();
     }
   } catch { toast('Something went wrong', 'error'); }
-}
-
-async function deleteContractor(id) {
-  if (!confirm('Delete this contractor?')) return;
-  try {
-    const res = await del(API.contractors, id);
-    if (res.error) { toast(res.error, 'error'); return; }
-    toast('Contractor deleted');
-    fetchContractors();
-  } catch { toast('Delete failed', 'error'); }
 }
 
 /* ============================================================
@@ -1733,10 +1847,10 @@ function renderFeedbackTable(rows) {
       <tbody>
         ${rows.map(f => `
           <tr>
-            <td>${f.citizen_name || '<em style="color:#94a3b8">Anonymous</em>'}</td>
-            <td>${f.project_name || '—'}</td>
-            <td style="max-width:200px;">${f.message}</td>
-            <td>${f.category}</td>
+            <td>${f.citizen_name ? escapeHtml(f.citizen_name) : '<em style="color:#94a3b8">Anonymous</em>'}</td>
+            <td>${escapeHtml(f.project_name || '—')}</td>
+            <td style="max-width:200px;">${escapeHtml(f.message)}</td>
+            <td>${escapeHtml(f.category)}</td>
             <td><span class="badge ${pBadge[f.priority]||'badge-resolved'}">${f.priority}</span></td>
             <td><span class="badge ${sBadge[f.status]||'badge-resolved'}">${f.status}</span></td>
             <td style="font-size:.75rem;color:#94a3b8;">${f.created_at?.slice(0,10)}</td>
@@ -1767,7 +1881,7 @@ async function showFeedbackForm() {
           <label>Related Project</label>
           <select name="project_id" class="form-input">
             <option value="">— None —</option>
-            ${projects.map(p => `<option value="${p.id}">${p.project_code} — ${p.name}</option>`).join('')}
+            ${projects.map(p => `<option value="${p.id}">${escapeHtml(p.project_code)} — ${escapeHtml(p.name)}</option>`).join('')}
           </select>
         </div>
         <div class="form-group">
@@ -1884,22 +1998,7 @@ document.querySelectorAll('.nav-item').forEach(item => {
   });
 });
 
-// ── Notification ──
-const notifBtn   = document.getElementById('notifBtn');
-const notifPanel = document.getElementById('notifPanel');
-notifBtn?.addEventListener('click', e => {
-  e.stopPropagation();
-  notifPanel?.classList.toggle('open');
-});
-document.addEventListener('click', e => {
-  if (!notifPanel?.contains(e.target) && e.target !== notifBtn) {
-    notifPanel?.classList.remove('open');
-  }
-});
-document.getElementById('notifClear')?.addEventListener('click', () => {
-  notifPanel?.querySelectorAll('.notif-item').forEach(el => el.remove());
-  document.querySelector('.notif-badge').style.display = 'none';
-});
+// ── Notification bell/panel toggle + polling is handled by assets/js/notifications.js. ──
 
 // ── Search ──
 document.getElementById('searchInput')?.addEventListener('keydown', e => {
@@ -1952,6 +2051,7 @@ document.addEventListener('DOMContentLoaded', () => {
     <div id="page-reports" class="page-section" style="display:none;"></div>
     <div id="page-ai-risk-insights" class="page-section" style="display:none;"></div>
     <div id="page-citizen-feedback" class="page-section" style="display:none;"></div>
+    <div id="page-staff-requests" class="page-section" style="display:none;"></div>
   `;
 
   loadDashboard();

@@ -166,9 +166,15 @@
 
 .status-risk,
 .status-needs_review,
-.status-disqualified {
+.status-disqualified,
+.status-rejected {
   background: #fee2e2;
   color: #b91c1c;
+}
+
+.status-verified {
+  background: #dcfce7;
+  color: #15803d;
 }
 
 .bac-timeline {
@@ -277,4 +283,51 @@
     align-items: flex-start;
     flex-direction: column;
   }
+}
+
+/* Panel-head inline filter controls (search boxes, selects) */
+.bac-filters {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.bac-filters input,
+.bac-filters select,
+.bac-panel-head input,
+.bac-panel-head select {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 7px 10px;
+  font-size: .8rem;
+  font-family: var(--font);
+  outline: none;
+  background: var(--card-bg);
+  transition: border-color .2s, box-shadow .2s;
+}
+.bac-filters input:focus,
+.bac-filters select:focus,
+.bac-panel-head input:focus,
+.bac-panel-head select:focus {
+  border-color: var(--primary);
+  box-shadow: 0 0 0 3px rgba(37,99,235,.12);
+}
+
+/* ── Motion polish (previously fully static) ── */
+.bac-panel {
+  transition: transform .2s ease, box-shadow .2s ease;
+}
+.bac-panel:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 10px 26px rgba(15,23,42,.1);
+}
+.bac-row {
+  transition: background-color .15s ease;
+}
+.bac-row:hover {
+  background-color: rgba(37,99,235,.04);
+  border-radius: var(--radius-sm);
+}
+.bac-hero {
+  transition: box-shadow .25s ease;
 }

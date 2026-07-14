@@ -3,6 +3,8 @@ require_once __DIR__ . '/../../includes/db.php';
 require_once __DIR__ . '/../../includes/auth.php';
 require_once __DIR__ . '/../includes/scope.php';
 require_once __DIR__ . '/../../includes/workflow.php';
+require_once __DIR__ . '/../../includes/Validator.php';
+require_once __DIR__ . '/../../includes/Pagination.php';
 
 apiHeaders();
 requireAnyRole(['engineer']);
@@ -122,12 +124,54 @@ function engineerPortalProjectExtras(PDO $db, array $project, int $engineerId): 
     return $project;
 }
 
-function engineerPortalSafeFileName(string $name): string
-{
-    $name = preg_replace('/[^A-Za-z0-9._-]+/', '-', $name);
-    $name = trim((string) $name, '.-');
+const ENGINEER_PHOTO_MAX_SIZE = 8 * 1024 * 1024;
+const ENGINEER_PHOTO_EXTENSIONS = ['png', 'jpg', 'jpeg', 'webp'];
 
-    return $name !== '' ? $name : 'progress-photo';
+/** Same dynamic-row convention used by superadmin/bac/contractor: photos[N][title]/[caption] + photo_files[N]. */
+function engineerCollectPhotoRows(array $textRows, array $filesField): array
+{
+    $indices = array_keys($textRows);
+    foreach (array_keys($filesField['name'] ?? []) as $idx) {
+        if (!in_array($idx, $indices, true)) {
+            $indices[] = $idx;
+        }
+    }
+
+    $rows = [];
+    foreach ($indices as $idx) {
+        $title = trim((string) ($textRows[$idx]['title'] ?? ''));
+        $caption = trim((string) ($textRows[$idx]['caption'] ?? ''));
+        $file = FileUpload::fromNestedFiles($filesField, (int) $idx);
+
+        if ($title === '' && $file === null) {
+            continue;
+        }
+
+        if ($title === '') {
+            $error = 'Title is required when a photo is attached.';
+        } else {
+            $error = FileUpload::validate($file, [
+                'required' => true,
+                'max_size' => ENGINEER_PHOTO_MAX_SIZE,
+                'extensions' => ENGINEER_PHOTO_EXTENSIONS,
+                'sniff_pdf' => false,
+            ]);
+        }
+
+        $rows[] = ['title' => $title, 'caption' => $caption, 'file' => $file, 'error' => $error];
+    }
+
+    return $rows;
+}
+
+function engineerCleanupFiles(array $relativePaths): void
+{
+    foreach ($relativePaths as $path) {
+        $full = dirname(__DIR__, 2) . '/' . $path;
+        if (is_file($full)) {
+            @unlink($full);
+        }
+    }
 }
 
 if ($method === 'GET') {
@@ -228,43 +272,51 @@ if ($method === 'GET') {
     }
 
     if ($action === 'photos') {
-        $stmt = $db->prepare("
+        $page = max(1, (int) ($_GET['page'] ?? 1));
+        $perPage = min(100, max(1, (int) ($_GET['per_page'] ?? 12)));
+        $select = "
             SELECT ph.*, p.project_code, p.name AS project_name
             FROM engineer_progress_photos ph
             INNER JOIN projects p ON p.id = ph.project_id
             WHERE ph.engineer_id = ?
             ORDER BY ph.created_at DESC, ph.id DESC
-        ");
-        $stmt->execute([$engineerId]);
-        respond(['data' => $stmt->fetchAll()]);
+        ";
+        $count = "SELECT COUNT(*) FROM engineer_progress_photos ph WHERE ph.engineer_id = ?";
+        respond(paginate($db, $select, $count, [$engineerId], $page, $perPage));
     }
 
     if ($action === 'delays') {
-        $stmt = $db->prepare("
+        $page = max(1, (int) ($_GET['page'] ?? 1));
+        $perPage = min(100, max(1, (int) ($_GET['per_page'] ?? 10)));
+        $select = "
             SELECT d.*, p.project_code, p.name AS project_name
             FROM engineer_delay_reports d
             INNER JOIN projects p ON p.id = d.project_id
             WHERE d.engineer_id = ?
             ORDER BY d.created_at DESC, d.id DESC
-        ");
-        $stmt->execute([$engineerId]);
-        respond(['data' => $stmt->fetchAll()]);
+        ";
+        $count = "SELECT COUNT(*) FROM engineer_delay_reports d WHERE d.engineer_id = ?";
+        respond(paginate($db, $select, $count, [$engineerId], $page, $perPage));
     }
 
     if ($action === 'issues') {
-        $stmt = $db->prepare("
+        $page = max(1, (int) ($_GET['page'] ?? 1));
+        $perPage = min(100, max(1, (int) ($_GET['per_page'] ?? 10)));
+        $select = "
             SELECT i.*, p.project_code, p.name AS project_name
             FROM engineer_issue_reports i
             INNER JOIN projects p ON p.id = i.project_id
             WHERE i.engineer_id = ?
             ORDER BY FIELD(i.status, 'open', 'in_progress', 'resolved', 'closed'), i.created_at DESC
-        ");
-        $stmt->execute([$engineerId]);
-        respond(['data' => $stmt->fetchAll()]);
+        ";
+        $count = "SELECT COUNT(*) FROM engineer_issue_reports i WHERE i.engineer_id = ?";
+        respond(paginate($db, $select, $count, [$engineerId], $page, $perPage));
     }
 
     if ($action === 'inspections') {
-        $stmt = $db->prepare("
+        $page = max(1, (int) ($_GET['page'] ?? 1));
+        $perPage = min(100, max(1, (int) ($_GET['per_page'] ?? 10)));
+        $select = "
             SELECT r.id AS report_id,
                    r.project_id,
                    r.contractor_id,
@@ -289,13 +341,39 @@ if ($method === 'GET') {
             WHERE a.engineer_id = ?
               AND a.status = 'active'
             ORDER BY r.report_date DESC, r.id DESC
-        ");
-        $stmt->execute([$engineerId]);
-        respond(['data' => $stmt->fetchAll()]);
+        ";
+        $count = "
+            SELECT COUNT(*)
+            FROM engineer_project_assignments a
+            INNER JOIN projects p ON p.id = a.project_id
+            INNER JOIN contractor_reports r ON r.project_id = p.id
+            WHERE a.engineer_id = ?
+              AND a.status = 'active'
+        ";
+        respond(paginate($db, $select, $count, [$engineerId], $page, $perPage));
     }
 
     if ($action === 'tracker') {
         respond(['data' => $projects, 'budget_watch' => engineerPortalBudgetWatch($projects)]);
+    }
+
+    /** Small, uncapped picker for the inspection form's dropdown — reports not yet inspected only, not the full history. */
+    if ($action === 'pending_inspections') {
+        $stmt = $db->prepare("
+            SELECT r.id AS report_id, r.project_id, r.report_date, r.progress_percent,
+                   p.project_code, p.name AS project_name
+            FROM engineer_project_assignments a
+            INNER JOIN projects p ON p.id = a.project_id
+            INNER JOIN contractor_reports r ON r.project_id = p.id
+            LEFT JOIN inspections i ON i.progress_report_id = r.id
+            WHERE a.engineer_id = ?
+              AND a.status = 'active'
+              AND (i.id IS NULL OR r.status IN ('submitted', 'under_review'))
+            ORDER BY r.report_date DESC, r.id DESC
+            LIMIT 50
+        ");
+        $stmt->execute([$engineerId]);
+        respond(['data' => $stmt->fetchAll()]);
     }
 
     respond(['error' => 'Unknown action.'], 404);
@@ -303,15 +381,18 @@ if ($method === 'GET') {
 
 if ($method === 'POST') {
     if ($action === 'milestone') {
-        $body = requestBody();
-        $projectId = (int) ($body['project_id'] ?? 0);
-        $milestoneId = (int) ($body['milestone_id'] ?? 0);
-        $completed = !empty($body['completed']) ? 1 : 0;
-        $remarks = trim((string) ($body['remarks'] ?? ''));
+        $validated = Validator::make(requestBody(), [
+            'project_id' => 'required|integer',
+            'milestone_id' => 'required|integer',
+            'completed' => 'nullable',
+            'remarks' => 'nullable|string|max:2000',
+        ])->stopOnFailure();
 
-        if ($projectId <= 0 || $milestoneId <= 0) {
-            respond(['error' => 'Project and milestone are required.'], 422);
-        }
+        $projectId = (int) $validated['project_id'];
+        $milestoneId = (int) $validated['milestone_id'];
+        $completed = !empty($validated['completed']) ? 1 : 0;
+        $remarks = trim((string) ($validated['remarks'] ?? ''));
+
         if (!engineerScopeHasAssignedProject($db, $engineerId, $projectId)) {
             respond(['error' => 'Project not found.'], 404);
         }
@@ -345,80 +426,81 @@ if ($method === 'POST') {
 
     if ($action === 'photo') {
         $projectId = (int) ($_POST['project_id'] ?? 0);
-        $title = trim((string) ($_POST['title'] ?? ''));
-        $caption = trim((string) ($_POST['caption'] ?? ''));
 
-        if ($projectId <= 0 || $title === '' || empty($_FILES['photo'])) {
-            respond(['error' => 'Project, title, and photo are required.'], 422);
+        if ($projectId <= 0) {
+            respond(['error' => 'Project is required.'], 422);
         }
         if (!engineerScopeHasAssignedProject($db, $engineerId, $projectId)) {
             respond(['error' => 'Project not found.'], 404);
         }
 
-        $file = $_FILES['photo'];
-        if (($file['error'] ?? UPLOAD_ERR_NO_FILE) !== UPLOAD_ERR_OK) {
-            respond(['error' => 'Upload failed. Please choose a valid photo.'], 422);
+        $photoRows = engineerCollectPhotoRows($_POST['photos'] ?? [], $_FILES['photo_files'] ?? []);
+        if ($photoRows === []) {
+            respond(['error' => 'At least one photo (title + file) is required.'], 422);
         }
-        if ((int) $file['size'] > 8 * 1024 * 1024) {
-            respond(['error' => 'Photo size must be 8MB or smaller.'], 422);
-        }
-
-        $originalName = (string) $file['name'];
-        $extension = strtolower(pathinfo($originalName, PATHINFO_EXTENSION));
-        $allowedExtensions = ['png', 'jpg', 'jpeg', 'webp'];
-        if (!in_array($extension, $allowedExtensions, true)) {
-            respond(['error' => 'Allowed photos: PNG, JPG, JPEG, WEBP.'], 422);
+        foreach ($photoRows as $i => $row) {
+            if ($row['error'] !== null) {
+                respond(['error' => 'Photo row ' . ($i + 1) . ': ' . $row['error']], 422);
+            }
         }
 
-        $uploadRoot = dirname(__DIR__, 2) . '/uploads/engineer-progress/' . date('Y');
-        if (!is_dir($uploadRoot) && !mkdir($uploadRoot, 0775, true) && !is_dir($uploadRoot)) {
-            respond(['error' => 'Unable to prepare upload folder.'], 500);
+        $storedFiles = [];
+        $insertedIds = [];
+
+        $db->beginTransaction();
+        try {
+            $stmt = $db->prepare("
+                INSERT INTO engineer_progress_photos
+                    (project_id, engineer_id, title, caption, file_path, original_name, file_size, mime_type)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            ");
+
+            foreach ($photoRows as $row) {
+                $stored = FileUpload::store($row['file'], 'engineer-progress', [
+                    'max_size' => ENGINEER_PHOTO_MAX_SIZE,
+                    'extensions' => ENGINEER_PHOTO_EXTENSIONS,
+                    'sniff_pdf' => false,
+                ]);
+                $storedFiles[] = $stored['stored_path'];
+
+                $stmt->execute([
+                    $projectId,
+                    $engineerId,
+                    $row['title'],
+                    $row['caption'] !== '' ? $row['caption'] : null,
+                    $stored['stored_path'],
+                    $stored['original_name'],
+                    $stored['file_size'],
+                    $stored['mime_type'],
+                ]);
+                $insertedIds[] = (int) $db->lastInsertId();
+            }
+
+            $db->commit();
+        } catch (Throwable $e) {
+            $db->rollBack();
+            engineerCleanupFiles($storedFiles);
+            respond(['error' => $e->getMessage() !== '' ? $e->getMessage() : 'Unable to upload photos.'], 422);
         }
 
-        $safeName = engineerPortalSafeFileName(pathinfo($originalName, PATHINFO_FILENAME));
-        $storedName = $projectId . '-' . time() . '-' . bin2hex(random_bytes(4)) . '-' . $safeName . '.' . $extension;
-        $destination = $uploadRoot . '/' . $storedName;
-
-        if (!move_uploaded_file($file['tmp_name'], $destination)) {
-            respond(['error' => 'Unable to save uploaded photo.'], 500);
-        }
-
-        $relativePath = 'uploads/engineer-progress/' . date('Y') . '/' . $storedName;
-        $mimeType = function_exists('mime_content_type') ? mime_content_type($destination) : ($file['type'] ?? null);
-
-        $stmt = $db->prepare("
-            INSERT INTO engineer_progress_photos
-                (project_id, engineer_id, title, caption, file_path, original_name, file_size, mime_type)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-        ");
-        $stmt->execute([
-            $projectId,
-            $engineerId,
-            $title,
-            $caption !== '' ? $caption : null,
-            $relativePath,
-            $originalName,
-            (int) $file['size'],
-            $mimeType,
-        ]);
-
-        respond(['success' => true, 'id' => (int) $db->lastInsertId(), 'file_path' => $relativePath], 201);
+        respond(['success' => true, 'ids' => $insertedIds], 201);
     }
 
     if ($action === 'delay') {
-        $body = requestBody();
-        $projectId = (int) ($body['project_id'] ?? 0);
-        $severity = (string) ($body['severity'] ?? 'medium');
-        $impactDays = max(0, (int) ($body['impact_days'] ?? 0));
-        $cause = trim((string) ($body['cause'] ?? ''));
-        $mitigation = trim((string) ($body['mitigation_plan'] ?? ''));
+        $validated = Validator::make(requestBody(), [
+            'project_id' => 'required|integer',
+            'severity' => 'nullable|in:low,medium,high,critical',
+            'impact_days' => 'nullable|integer|min:0',
+            'cause' => 'required|string|min:3',
+            'mitigation_plan' => 'nullable|string|max:2000',
+        ])->stopOnFailure();
 
-        if ($projectId <= 0 || $cause === '') {
-            respond(['error' => 'Project and delay cause are required.'], 422);
-        }
-        if (!in_array($severity, ['low', 'medium', 'high', 'critical'], true)) {
-            $severity = 'medium';
-        }
+        $projectId = (int) $validated['project_id'];
+        $severity = (string) ($validated['severity'] ?? 'medium');
+        $impactDays = max(0, (int) ($validated['impact_days'] ?? 0));
+        $cause = trim((string) $validated['cause']);
+        $mitigation = trim((string) ($validated['mitigation_plan'] ?? ''));
+
         if (!engineerScopeHasAssignedProject($db, $engineerId, $projectId)) {
             respond(['error' => 'Project not found.'], 404);
         }
@@ -428,27 +510,29 @@ if ($method === 'POST') {
                 (project_id, engineer_id, severity, impact_days, cause, mitigation_plan)
             VALUES (?, ?, ?, ?, ?, ?)
         ")->execute([$projectId, $engineerId, $severity, $impactDays, $cause, $mitigation !== '' ? $mitigation : null]);
+        $newDelayId = (int) $db->lastInsertId();
 
         $db->prepare("UPDATE projects SET status = 'delayed' WHERE id = ? AND status NOT IN ('completed','cancelled')")
             ->execute([$projectId]);
 
-        respond(['success' => true, 'id' => (int) $db->lastInsertId()], 201);
+        respond(['success' => true, 'id' => $newDelayId], 201);
     }
 
     if ($action === 'issue') {
-        $body = requestBody();
-        $projectId = (int) ($body['project_id'] ?? 0);
-        $issueType = trim((string) ($body['issue_type'] ?? 'Site Issue'));
-        $priority = (string) ($body['priority'] ?? 'medium');
-        $description = trim((string) ($body['description'] ?? ''));
-        $recommendedAction = trim((string) ($body['recommended_action'] ?? ''));
+        $validated = Validator::make(requestBody(), [
+            'project_id' => 'required|integer',
+            'issue_type' => 'nullable|string|max:80',
+            'priority' => 'nullable|in:low,medium,high,urgent',
+            'description' => 'required|string|min:3',
+            'recommended_action' => 'nullable|string|max:2000',
+        ])->stopOnFailure();
 
-        if ($projectId <= 0 || $description === '') {
-            respond(['error' => 'Project and issue description are required.'], 422);
-        }
-        if (!in_array($priority, ['low', 'medium', 'high', 'urgent'], true)) {
-            $priority = 'medium';
-        }
+        $projectId = (int) $validated['project_id'];
+        $issueType = trim((string) ($validated['issue_type'] ?? 'Site Issue'));
+        $priority = (string) ($validated['priority'] ?? 'medium');
+        $description = trim((string) $validated['description']);
+        $recommendedAction = trim((string) ($validated['recommended_action'] ?? ''));
+
         if (!engineerScopeHasAssignedProject($db, $engineerId, $projectId)) {
             respond(['error' => 'Project not found.'], 404);
         }
@@ -470,19 +554,19 @@ if ($method === 'POST') {
     }
 
     if ($action === 'status') {
-        $body = requestBody();
-        $projectId = (int) ($body['project_id'] ?? 0);
-        $progress = max(0, min(100, (int) ($body['progress_percent'] ?? 0)));
-        $status = (string) ($body['status'] ?? 'active');
-        $notes = trim((string) ($body['notes'] ?? ''));
         $allowedStatuses = projectWorkflowStatuses();
+        $validated = Validator::make(requestBody(), [
+            'project_id' => 'required|integer',
+            'progress_percent' => 'required|integer|min:0|max:100',
+            'status' => 'required|in:' . implode(',', $allowedStatuses),
+            'notes' => 'nullable|string|max:2000',
+        ])->stopOnFailure();
 
-        if ($projectId <= 0) {
-            respond(['error' => 'Project is required.'], 422);
-        }
-        if (!in_array($status, $allowedStatuses, true)) {
-            respond(['error' => 'Invalid project status.'], 422);
-        }
+        $projectId = (int) $validated['project_id'];
+        $progress = max(0, min(100, (int) $validated['progress_percent']));
+        $status = (string) $validated['status'];
+        $notes = trim((string) ($validated['notes'] ?? ''));
+
         if (!engineerScopeHasAssignedProject($db, $engineerId, $projectId)) {
             respond(['error' => 'Project not found.'], 404);
         }
@@ -492,27 +576,28 @@ if ($method === 'POST') {
                 (project_id, engineer_id, progress_percent, status, notes)
             VALUES (?, ?, ?, ?, ?)
         ")->execute([$projectId, $engineerId, $progress, $status, $notes !== '' ? $notes : null]);
+        $newStatusUpdateId = (int) $db->lastInsertId();
 
         $db->prepare("UPDATE projects SET progress = ?, status = ? WHERE id = ?")
             ->execute([$progress, $status, $projectId]);
 
-        respond(['success' => true, 'id' => (int) $db->lastInsertId()], 201);
+        respond(['success' => true, 'id' => $newStatusUpdateId], 201);
     }
 
     if ($action === 'inspection') {
-        $body = requestBody();
-        $reportId = (int) ($body['progress_report_id'] ?? 0);
-        $actualProgress = max(0, min(100, (int) ($body['actual_progress_percent'] ?? 0)));
-        $recommendation = (string) ($body['recommendation'] ?? 'approved');
-        $findings = trim((string) ($body['findings'] ?? ''));
-        $inspectionDate = trim((string) ($body['inspection_date'] ?? date('Y-m-d')));
+        $validated = Validator::make(requestBody(), [
+            'progress_report_id' => 'required|integer',
+            'actual_progress_percent' => 'required|integer|min:0|max:100',
+            'recommendation' => 'nullable|in:approved,needs_correction,for_reinspection',
+            'findings' => 'required|string|min:3',
+            'inspection_date' => 'nullable|date',
+        ])->stopOnFailure();
 
-        if ($reportId <= 0 || $findings === '') {
-            respond(['error' => 'Progress report and findings are required.'], 422);
-        }
-        if (!in_array($recommendation, ['approved', 'needs_correction', 'for_reinspection'], true)) {
-            $recommendation = 'approved';
-        }
+        $reportId = (int) $validated['progress_report_id'];
+        $actualProgress = max(0, min(100, (int) $validated['actual_progress_percent']));
+        $recommendation = (string) ($validated['recommendation'] ?? 'approved');
+        $findings = trim((string) $validated['findings']);
+        $inspectionDate = ($validated['inspection_date'] ?? '') !== '' ? $validated['inspection_date'] : date('Y-m-d');
 
         $report = $db->prepare("
             SELECT r.*, p.id AS project_id
@@ -546,6 +631,7 @@ if ($method === 'POST') {
                 $findings,
                 $recommendation,
             ]);
+            $newInspectionId = (int) $db->lastInsertId();
 
             $reportStatus = $recommendation === 'approved' ? 'accepted' : 'returned';
             $db->prepare("UPDATE contractor_reports SET status = ? WHERE id = ?")
@@ -562,7 +648,7 @@ if ($method === 'POST') {
             respond(['error' => 'Unable to save inspection.'], 500);
         }
 
-        respond(['success' => true, 'id' => (int) $db->lastInsertId()], 201);
+        respond(['success' => true, 'id' => $newInspectionId], 201);
     }
 
     respond(['error' => 'Unknown action.'], 404);

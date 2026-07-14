@@ -9,12 +9,18 @@ let engineerState = {
   summary: null,
   projects: [],
   milestones: [],
-  photos: [],
-  delays: [],
-  issues: [],
-  inspections: [],
+  pendingInspections: [],
   paymentRequests: [],
   budgetWatch: [],
+};
+
+/* photos/delays/issues/inspections accumulate over time, so they're fetched
+   paginated, per-page, rather than bulk-loaded like the small/bounded lists above. */
+let engineerListState = {
+  photos: { page: 1, perPage: 12 },
+  delays: { page: 1, perPage: 10 },
+  issues: { page: 1, perPage: 10 },
+  inspections: { page: 1, perPage: 10 },
 };
 
 function engineerEscape(value) {
@@ -61,13 +67,17 @@ function engineerToast(message, type = 'success') {
   }, 3000);
 }
 
+function engineerErrorFrom(data, response) {
+  const err = new Error(data?.error || `HTTP ${response.status}`);
+  err.fieldErrors = data?.errors || null;
+  return err;
+}
+
 async function engineerGet(action, params = {}) {
   const qs = new URLSearchParams({ action, ...params }).toString();
   const response = await fetch(`${ENGINEER_API}?${qs}`);
   const data = await response.json();
-  if (!response.ok || data.error) {
-    throw new Error(data.error || `HTTP ${response.status}`);
-  }
+  if (!response.ok || data.error) throw engineerErrorFrom(data, response);
   return data;
 }
 
@@ -78,9 +88,7 @@ async function engineerPostJson(action, body) {
     body: JSON.stringify(body),
   });
   const data = await response.json();
-  if (!response.ok || data.error) {
-    throw new Error(data.error || `HTTP ${response.status}`);
-  }
+  if (!response.ok || data.error) throw engineerErrorFrom(data, response);
   return data;
 }
 
@@ -91,10 +99,54 @@ async function engineerPostForm(action, formData) {
     body: formData,
   });
   const data = await response.json();
-  if (!response.ok || data.error) {
-    throw new Error(data.error || `HTTP ${response.status}`);
-  }
+  if (!response.ok || data.error) throw engineerErrorFrom(data, response);
   return data;
+}
+
+/* ---- Inline field-error rendering -------------------------------------- */
+
+function engineerClearFieldErrors(form) {
+  form.querySelectorAll('.field-error-msg').forEach(el => el.remove());
+  form.querySelectorAll('.has-error').forEach(el => el.classList.remove('has-error'));
+}
+
+function engineerShowFieldErrors(form, fieldErrors) {
+  if (!fieldErrors) return;
+  Object.entries(fieldErrors).forEach(([field, message]) => {
+    const input = form.querySelector(`[name="${field}"]`);
+    if (!input) return;
+    input.classList.add('has-error');
+    const msg = document.createElement('div');
+    msg.className = 'field-error-msg';
+    msg.textContent = message;
+    input.insertAdjacentElement('afterend', msg);
+  });
+}
+
+/* ---- Dynamic photo rows (repeatable fields) ---------------------------- */
+
+function engineerPhotoRowHtml(index) {
+  return `
+    <div class="doc-row" data-doc-index="${index}">
+      <input class="form-input" type="text" name="photos[${index}][title]" placeholder="Photo title">
+      <input class="form-input" type="text" name="photos[${index}][caption]" placeholder="Caption (optional)">
+      <input class="form-input" type="file" name="photo_files[${index}]" accept=".png,.jpg,.jpeg,.webp">
+      <button type="button" class="doc-row-remove" aria-label="Remove photo row">&times;</button>
+    </div>
+  `;
+}
+
+function engineerWirePhotoRows(container, addBtn) {
+  let nextIndex = 1;
+  addBtn.addEventListener('click', () => {
+    container.insertAdjacentHTML('beforeend', engineerPhotoRowHtml(nextIndex));
+    nextIndex += 1;
+  });
+  container.addEventListener('click', event => {
+    if (event.target.classList.contains('doc-row-remove')) {
+      event.target.closest('.doc-row')?.remove();
+    }
+  });
 }
 
 function engineerOpenModal(title, html) {
@@ -174,12 +226,65 @@ function engineerProjectCard(project, compact = false) {
   `;
 }
 
+let engineerStatusChartInst = null;
+
+function engineerRenderStatusChart(stats) {
+  const ctx = document.getElementById('engineerStatusChart')?.getContext('2d');
+  if (!ctx) return;
+  if (engineerStatusChartInst) engineerStatusChartInst.destroy();
+
+  const assigned = Number(stats.assigned_projects || 0);
+  const active = Number(stats.active_projects || 0);
+  const delayed = Number(stats.delayed_projects || 0);
+  const other = Math.max(0, assigned - active - delayed);
+
+  const segments = [
+    { label: 'Active', value: active, color: '#22c55e' },
+    { label: 'Delayed', value: delayed, color: '#ef4444' },
+    { label: 'Other', value: other, color: '#94a3b8' },
+  ];
+
+  engineerStatusChartInst = new Chart(ctx, {
+    type: 'doughnut',
+    data: {
+      labels: segments.map(s => s.label),
+      datasets: [{
+        data: segments.map(s => s.value),
+        backgroundColor: segments.map(s => s.color),
+        borderColor: segments.map(() => '#fff'), borderWidth: 3, hoverOffset: 6,
+      }],
+    },
+    options: {
+      responsive: false, cutout: '70%',
+      animation: { duration: 900 },
+      plugins: {
+        legend: { display: false },
+        tooltip: { backgroundColor: '#1e2a3b', callbacks: { label: c => ` ${c.label}: ${c.raw}` } },
+      },
+    },
+  });
+
+  document.getElementById('engineerStatusChartTotal').textContent = assigned;
+  document.getElementById('engineerStatusChartLegend').innerHTML = segments.map(s => `
+    <div class="budget-legend-item">
+      <span class="legend-dot" style="background:${s.color};"></span>
+      <span>${s.label} <strong>${s.value}</strong></span>
+    </div>
+  `).join('');
+}
+
 function engineerRenderDashboard() {
   const stats = engineerState.summary?.stats || {};
   document.getElementById('engineerAssignedCount').textContent = stats.assigned_projects || 0;
   document.getElementById('engineerAverageProgress').textContent = `${stats.average_progress || 0}%`;
   document.getElementById('engineerDelayedCount').textContent = stats.delayed_projects || 0;
   document.getElementById('engineerOpenIssues').textContent = stats.open_issues || 0;
+
+  try {
+    engineerRenderStatusChart(stats);
+  } catch (error) {
+    console.error('Failed to render status chart:', error);
+  }
 
   const projectPreview = document.getElementById('engineerProjectPreview');
   if (projectPreview) {
@@ -340,7 +445,7 @@ async function engineerWorkflowPost(action, body) {
 }
 
 function engineerInspectionOptions() {
-  const rows = engineerState.inspections.filter(row => !row.inspection_id || row.report_status === 'submitted' || row.report_status === 'under_review');
+  const rows = engineerState.pendingInspections;
   if (!rows.length) {
     return '<option value="">No contractor reports pending inspection</option>';
   }
@@ -398,25 +503,39 @@ function engineerRenderInspectionPage() {
       </article>
       <article class="engineer-history-card">
         <h2>Contractor Reports</h2>
-        <div class="engineer-mini-list">${engineerRenderInspectionRows()}</div>
+        <div class="engineer-mini-list" id="engineerInspectionsList"><p class="empty-state">Loading...</p></div>
+        <div class="pagination-wrap" id="engineerInspectionsPager"></div>
       </article>
     </section>
   `;
 
   document.getElementById('engineerInspectionForm').addEventListener('submit', engineerSubmitInspection);
+  engineerLoadInspectionsList();
 }
 
-function engineerRenderInspectionRows() {
-  if (!engineerState.inspections.length) {
-    return '<p class="empty-state">No contractor reports submitted yet.</p>';
-  }
+async function engineerLoadInspectionsList() {
+  const container = document.getElementById('engineerInspectionsList');
+  const pager = document.getElementById('engineerInspectionsPager');
+  if (!container) return;
+  const state = engineerListState.inspections;
 
-  return engineerState.inspections.slice(0, 14).map(row => `
-    <div class="engineer-mini-row">
-      <span>${engineerEscape(row.project_code)} - ${engineerEscape(row.contractor_name)} - ${engineerDate(row.report_date)}</span>
-      <strong>${engineerBadge(row.recommendation || row.report_status, row.recommendation ? engineerStatus(row.recommendation) : engineerStatus(row.report_status))}</strong>
-    </div>
-  `).join('');
+  try {
+    const result = await engineerGet('inspections', { page: state.page, per_page: state.perPage });
+
+    container.innerHTML = result.data.length ? result.data.map(row => `
+      <div class="engineer-mini-row">
+        <span>${engineerEscape(row.project_code)} - ${engineerEscape(row.contractor_name)} - ${engineerDate(row.report_date)}</span>
+        <strong>${engineerBadge(row.recommendation || row.report_status, row.recommendation ? engineerStatus(row.recommendation) : engineerStatus(row.report_status))}</strong>
+      </div>
+    `).join('') : '<p class="empty-state">No contractor reports submitted yet.</p>';
+
+    renderPagination(pager, {
+      page: result.page, lastPage: result.last_page, total: result.total, perPage: result.per_page,
+      onPageChange: nextPage => { engineerListState.inspections.page = nextPage; engineerLoadInspectionsList(); },
+    });
+  } catch (error) {
+    container.innerHTML = '<p class="empty-state">Unable to load contractor reports.</p>';
+  }
 }
 
 function engineerRenderPaymentReviewPage() {
@@ -498,55 +617,61 @@ function engineerRenderPhotosPage(selectedProjectId = '') {
     </div>
     <section class="engineer-layout">
       <article class="engineer-form-card">
-        <h2>New Progress Photo</h2>
+        <h2>New Progress Photos</h2>
         <form id="engineerPhotoForm" enctype="multipart/form-data">
           <div class="form-group">
             <label>Assigned Project</label>
             <select class="form-input" name="project_id" required>${engineerProjectOptions(selectedProjectId)}</select>
           </div>
-          <div class="form-group" style="margin-top:12px;">
-            <label>Photo Title</label>
-            <input class="form-input" name="title" required placeholder="e.g. Excavation completed">
-          </div>
-          <div class="form-group" style="margin-top:12px;">
-            <label>Photo File</label>
-            <input class="form-input" type="file" name="photo" accept=".png,.jpg,.jpeg,.webp" required>
-          </div>
-          <div class="form-group" style="margin-top:12px;">
-            <label>Caption</label>
-            <textarea class="form-input" name="caption" rows="3" placeholder="Optional field notes"></textarea>
+          <div class="doc-section">
+            <label>Photos</label>
+            <div class="doc-rows" id="docRows">${engineerPhotoRowHtml(0)}</div>
+            <button type="button" class="doc-add-btn" id="docAddBtn">+ Add another photo</button>
           </div>
           <div class="form-actions">
-            <button class="btn-primary" type="submit">Upload Photo</button>
+            <button class="btn-primary" type="submit">Upload Photo(s)</button>
           </div>
         </form>
       </article>
       <article class="engineer-history-card">
         <h2>Uploaded Photos</h2>
-        <div class="engineer-mini-list">
-          ${engineerRenderPhotoRows()}
-        </div>
+        <div class="engineer-mini-list" id="engineerPhotosList"><p class="empty-state">Loading...</p></div>
+        <div class="pagination-wrap" id="engineerPhotosPager"></div>
       </article>
     </section>
   `;
 
+  engineerWirePhotoRows(document.getElementById('docRows'), document.getElementById('docAddBtn'));
   document.getElementById('engineerPhotoForm').addEventListener('submit', engineerSubmitPhoto);
+  engineerLoadPhotosList();
 }
 
-function engineerRenderPhotoRows() {
-  if (!engineerState.photos.length) {
-    return '<p class="empty-state">No photos uploaded yet.</p>';
-  }
+async function engineerLoadPhotosList() {
+  const container = document.getElementById('engineerPhotosList');
+  const pager = document.getElementById('engineerPhotosPager');
+  if (!container) return;
+  const state = engineerListState.photos;
 
-  return engineerState.photos.slice(0, 12).map(row => `
-    <a class="engineer-photo-row" href="${window.BASE_PATH}${engineerEscape(row.file_path)}" target="_blank" rel="noopener">
-      <img class="engineer-photo-thumb" src="${window.BASE_PATH}${engineerEscape(row.file_path)}" alt="">
-      <div>
-        <strong>${engineerEscape(row.title)}</strong>
-        <span>${engineerEscape(row.project_code)} - ${engineerDate(row.created_at)}</span>
-      </div>
-    </a>
-  `).join('');
+  try {
+    const result = await engineerGet('photos', { page: state.page, per_page: state.perPage });
+
+    container.innerHTML = result.data.length ? result.data.map(row => `
+      <a class="engineer-photo-row" href="${window.BASE_PATH}${engineerEscape(row.file_path)}" target="_blank" rel="noopener">
+        <img class="engineer-photo-thumb" src="${window.BASE_PATH}${engineerEscape(row.file_path)}" alt="">
+        <div>
+          <strong>${engineerEscape(row.title)}</strong>
+          <span>${engineerEscape(row.project_code)} - ${engineerDate(row.created_at)}</span>
+        </div>
+      </a>
+    `).join('') : '<p class="empty-state">No photos uploaded yet.</p>';
+
+    renderPagination(pager, {
+      page: result.page, lastPage: result.last_page, total: result.total, perPage: result.per_page,
+      onPageChange: nextPage => { engineerListState.photos.page = nextPage; engineerLoadPhotosList(); },
+    });
+  } catch (error) {
+    container.innerHTML = '<p class="empty-state">Unable to load photos.</p>';
+  }
 }
 
 function engineerRenderDelayPage() {
@@ -596,25 +721,39 @@ function engineerRenderDelayPage() {
       </article>
       <article class="engineer-history-card">
         <h2>Delay Reports</h2>
-        <div class="engineer-mini-list">${engineerRenderDelayRows()}</div>
+        <div class="engineer-mini-list" id="engineerDelaysList"><p class="empty-state">Loading...</p></div>
+        <div class="pagination-wrap" id="engineerDelaysPager"></div>
       </article>
     </section>
   `;
 
   document.getElementById('engineerDelayForm').addEventListener('submit', engineerSubmitDelay);
+  engineerLoadDelaysList();
 }
 
-function engineerRenderDelayRows() {
-  if (!engineerState.delays.length) {
-    return '<p class="empty-state">No delay reports yet.</p>';
-  }
+async function engineerLoadDelaysList() {
+  const container = document.getElementById('engineerDelaysList');
+  const pager = document.getElementById('engineerDelaysPager');
+  if (!container) return;
+  const state = engineerListState.delays;
 
-  return engineerState.delays.slice(0, 12).map(row => `
-    <div class="engineer-mini-row">
-      <span>${engineerEscape(row.project_code)} - ${engineerEscape(row.cause).slice(0, 68)}</span>
-      <strong>${engineerBadge(row.severity)}</strong>
-    </div>
-  `).join('');
+  try {
+    const result = await engineerGet('delays', { page: state.page, per_page: state.perPage });
+
+    container.innerHTML = result.data.length ? result.data.map(row => `
+      <div class="engineer-mini-row">
+        <span>${engineerEscape(row.project_code)} - ${engineerEscape(row.cause).slice(0, 68)}</span>
+        <strong>${engineerBadge(row.severity)}</strong>
+      </div>
+    `).join('') : '<p class="empty-state">No delay reports yet.</p>';
+
+    renderPagination(pager, {
+      page: result.page, lastPage: result.last_page, total: result.total, perPage: result.per_page,
+      onPageChange: nextPage => { engineerListState.delays.page = nextPage; engineerLoadDelaysList(); },
+    });
+  } catch (error) {
+    container.innerHTML = '<p class="empty-state">Unable to load delay reports.</p>';
+  }
 }
 
 function engineerRenderIssuePage() {
@@ -670,25 +809,39 @@ function engineerRenderIssuePage() {
       </article>
       <article class="engineer-history-card">
         <h2>Issue Reports</h2>
-        <div class="engineer-mini-list">${engineerRenderIssueRows()}</div>
+        <div class="engineer-mini-list" id="engineerIssuesList"><p class="empty-state">Loading...</p></div>
+        <div class="pagination-wrap" id="engineerIssuesPager"></div>
       </article>
     </section>
   `;
 
   document.getElementById('engineerIssueForm').addEventListener('submit', engineerSubmitIssue);
+  engineerLoadIssuesList();
 }
 
-function engineerRenderIssueRows() {
-  if (!engineerState.issues.length) {
-    return '<p class="empty-state">No issue reports yet.</p>';
-  }
+async function engineerLoadIssuesList() {
+  const container = document.getElementById('engineerIssuesList');
+  const pager = document.getElementById('engineerIssuesPager');
+  if (!container) return;
+  const state = engineerListState.issues;
 
-  return engineerState.issues.slice(0, 12).map(row => `
-    <div class="engineer-mini-row">
-      <span>${engineerEscape(row.project_code)} - ${engineerEscape(row.issue_type)}</span>
-      <strong>${engineerBadge(row.priority)}</strong>
-    </div>
-  `).join('');
+  try {
+    const result = await engineerGet('issues', { page: state.page, per_page: state.perPage });
+
+    container.innerHTML = result.data.length ? result.data.map(row => `
+      <div class="engineer-mini-row">
+        <span>${engineerEscape(row.project_code)} - ${engineerEscape(row.issue_type)}</span>
+        <strong>${engineerBadge(row.priority)}</strong>
+      </div>
+    `).join('') : '<p class="empty-state">No issue reports yet.</p>';
+
+    renderPagination(pager, {
+      page: result.page, lastPage: result.last_page, total: result.total, perPage: result.per_page,
+      onPageChange: nextPage => { engineerListState.issues.page = nextPage; engineerLoadIssuesList(); },
+    });
+  } catch (error) {
+    container.innerHTML = '<p class="empty-state">Unable to load issue reports.</p>';
+  }
 }
 
 function engineerRenderStatusTracker(selectedProjectId = '') {
@@ -832,14 +985,11 @@ async function engineerOpenProject(projectId) {
 }
 
 async function engineerRefreshData() {
-  const [summary, projects, milestones, photos, delays, issues, inspections, workflow, tracker] = await Promise.all([
+  const [summary, projects, milestones, pendingInspections, workflow, tracker] = await Promise.all([
     engineerGet('summary'),
     engineerGet('projects'),
     engineerGet('milestones'),
-    engineerGet('photos'),
-    engineerGet('delays'),
-    engineerGet('issues'),
-    engineerGet('inspections'),
+    engineerGet('pending_inspections'),
     engineerWorkflowGet('summary'),
     engineerGet('tracker'),
   ]);
@@ -847,10 +997,7 @@ async function engineerRefreshData() {
   engineerState.summary = summary;
   engineerState.projects = projects.data || [];
   engineerState.milestones = milestones.data || [];
-  engineerState.photos = photos.data || [];
-  engineerState.delays = delays.data || [];
-  engineerState.issues = issues.data || [];
-  engineerState.inspections = inspections.data || [];
+  engineerState.pendingInspections = pendingInspections.data || [];
   engineerState.paymentRequests = workflow.payment_requests || [];
   engineerState.budgetWatch = tracker.budget_watch || summary.budget_watch || [];
   engineerRenderDashboard();
@@ -878,7 +1025,9 @@ function engineerShowPage(page, selectedProjectId = '') {
 
 async function engineerSubmitMilestone(event) {
   event.preventDefault();
-  const form = new FormData(event.target);
+  const formEl = event.target;
+  engineerClearFieldErrors(formEl);
+  const form = new FormData(formEl);
   const [projectId, milestoneId] = String(form.get('milestone_ref') || '').split('|');
 
   try {
@@ -892,13 +1041,16 @@ async function engineerSubmitMilestone(event) {
     await engineerRefreshData();
     engineerShowPage('milestone-update');
   } catch (error) {
+    engineerShowFieldErrors(formEl, error.fieldErrors);
     engineerToast(error.message, 'error');
   }
 }
 
 async function engineerSubmitInspection(event) {
   event.preventDefault();
-  const form = new FormData(event.target);
+  const formEl = event.target;
+  engineerClearFieldErrors(formEl);
+  const form = new FormData(formEl);
 
   try {
     await engineerPostJson('inspection', {
@@ -909,10 +1061,12 @@ async function engineerSubmitInspection(event) {
       findings: form.get('findings'),
     });
     engineerToast('Inspection saved.');
-    event.target.reset();
+    formEl.reset();
     await engineerRefreshData();
+    engineerListState.inspections.page = 1;
     engineerShowPage('inspection-review');
   } catch (error) {
+    engineerShowFieldErrors(formEl, error.fieldErrors);
     engineerToast(error.message, 'error');
   }
 }
@@ -938,22 +1092,27 @@ async function engineerSubmitPaymentReview(event, paymentId, recommendation) {
 
 async function engineerSubmitPhoto(event) {
   event.preventDefault();
-  const form = new FormData(event.target);
+  const formEl = event.target;
+  engineerClearFieldErrors(formEl);
+  const form = new FormData(formEl);
 
   try {
     await engineerPostForm('photo', form);
-    engineerToast('Progress photo uploaded.');
-    event.target.reset();
-    await engineerRefreshData();
-    engineerShowPage('progress-photos');
+    engineerToast('Progress photo(s) uploaded.');
+    formEl.reset();
+    engineerListState.photos.page = 1;
+    await engineerLoadPhotosList();
   } catch (error) {
+    engineerShowFieldErrors(formEl, error.fieldErrors);
     engineerToast(error.message, 'error');
   }
 }
 
 async function engineerSubmitDelay(event) {
   event.preventDefault();
-  const form = new FormData(event.target);
+  const formEl = event.target;
+  engineerClearFieldErrors(formEl);
+  const form = new FormData(formEl);
 
   try {
     await engineerPostJson('delay', {
@@ -964,17 +1123,21 @@ async function engineerSubmitDelay(event) {
       mitigation_plan: form.get('mitigation_plan'),
     });
     engineerToast('Delay report submitted.');
-    event.target.reset();
+    formEl.reset();
     await engineerRefreshData();
+    engineerListState.delays.page = 1;
     engineerShowPage('delay-report');
   } catch (error) {
+    engineerShowFieldErrors(formEl, error.fieldErrors);
     engineerToast(error.message, 'error');
   }
 }
 
 async function engineerSubmitIssue(event) {
   event.preventDefault();
-  const form = new FormData(event.target);
+  const formEl = event.target;
+  engineerClearFieldErrors(formEl);
+  const form = new FormData(formEl);
 
   try {
     await engineerPostJson('issue', {
@@ -985,17 +1148,21 @@ async function engineerSubmitIssue(event) {
       recommended_action: form.get('recommended_action'),
     });
     engineerToast('Issue report submitted.');
-    event.target.reset();
+    formEl.reset();
     await engineerRefreshData();
+    engineerListState.issues.page = 1;
     engineerShowPage('issue-reporting');
   } catch (error) {
+    engineerShowFieldErrors(formEl, error.fieldErrors);
     engineerToast(error.message, 'error');
   }
 }
 
 async function engineerSubmitStatus(event) {
   event.preventDefault();
-  const form = new FormData(event.target);
+  const formEl = event.target;
+  engineerClearFieldErrors(formEl);
+  const form = new FormData(formEl);
 
   try {
     await engineerPostJson('status', {
@@ -1005,10 +1172,11 @@ async function engineerSubmitStatus(event) {
       notes: form.get('notes'),
     });
     engineerToast('Project status updated.');
-    event.target.reset();
+    formEl.reset();
     await engineerRefreshData();
     engineerShowPage('status-tracker');
   } catch (error) {
+    engineerShowFieldErrors(formEl, error.fieldErrors);
     engineerToast(error.message, 'error');
   }
 }
@@ -1032,27 +1200,13 @@ function engineerWireShell() {
     userMenu?.classList.toggle('open');
   });
 
-  const notifBtn = document.getElementById('notifBtn');
-  const notifPanel = document.getElementById('notifPanel');
-  notifBtn?.addEventListener('click', event => {
-    event.stopPropagation();
-    notifPanel?.classList.toggle('open');
-  });
-
   document.addEventListener('click', event => {
     if (userMenu && !userMenu.contains(event.target) && event.target !== userMenuBtn) {
       userMenu.classList.remove('open');
     }
-    if (notifPanel && !notifPanel.contains(event.target) && event.target !== notifBtn) {
-      notifPanel.classList.remove('open');
-    }
   });
 
-  document.getElementById('notifClear')?.addEventListener('click', () => {
-    document.querySelectorAll('.notif-item').forEach(item => item.remove());
-    const badge = document.querySelector('.notif-badge');
-    if (badge) badge.style.display = 'none';
-  });
+  // Notification bell/panel toggle + polling is handled by assets/js/notifications.js.
 
   document.getElementById('modalClose')?.addEventListener('click', engineerCloseModal);
   document.getElementById('modalOverlay')?.addEventListener('click', event => {

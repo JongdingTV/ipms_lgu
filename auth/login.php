@@ -1,5 +1,7 @@
 <?php
 require_once __DIR__ . '/session.php';
+require_once __DIR__ . '/../includes/Settings.php';
+require_once __DIR__ . '/../includes/OTPManager.php';
 
 if (isLoggedIn()) {
     redirectToRoleDashboard();
@@ -9,6 +11,10 @@ $error = '';
 $status = '';
 $selectedRole = trim((string) ($_POST['portal_role'] ?? ''));
 $portalRoles = [
+    'super_admin' => [
+        'label' => 'Super Admin',
+        'description' => 'Platform governance',
+    ],
     'admin' => [
         'label' => 'Admin',
         'description' => 'Project office',
@@ -29,6 +35,8 @@ $portalRoles = [
 
 if (isset($_GET['timeout'])) {
     $status = 'Your session expired after 30 minutes of inactivity. Please sign in again.';
+} elseif (isset($_GET['reset'])) {
+    $status = 'Password reset! Please log in with your new password.';
 } elseif (isset($_GET['error'])) {
     $status = trim((string) $_GET['error']);
 }
@@ -44,11 +52,74 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
         $error = 'Please enter your username/email and password.';
     } else {
         $result = authenticateUser($identifier, $password, $selectedRole);
-        if ($result['success']) {
-            redirectToRoleDashboard($result['user']['role']);
-        }
 
-        $error = $result['message'];
+        if ($result['success']) {
+            $authedUser = $result['user'];
+            $staff2faRoles = ['super_admin', 'admin', 'bac'];
+
+            if (in_array($authedUser['role'], $staff2faRoles, true) && getSetting('require_staff_2fa', false)) {
+                // authenticateUser() already fully established the session (auth_user +
+                // mirror keys). Undo that here so isLoggedIn() is false again until the
+                // OTP step passes — mirrors the existing pending_otp_user_id pattern
+                // citizen registration already uses (see citizen/verify-otp.php).
+                unset(
+                    $_SESSION['auth_user'],
+                    $_SESSION['user_id'],
+                    $_SESSION['username'],
+                    $_SESSION['email'],
+                    $_SESSION['full_name'],
+                    $_SESSION['role']
+                );
+                unset($_SESSION['dev_otp_preview']);
+
+                $_SESSION['pending_2fa_user_id'] = $authedUser['user_id'];
+                $_SESSION['pending_2fa_role'] = $authedUser['role'];
+                $_SESSION['pending_2fa_email'] = $authedUser['email'];
+                $_SESSION['pending_2fa_name'] = $authedUser['full_name'];
+                $_SESSION['pending_2fa_started_at'] = time();
+                $_SESSION['pending_2fa_last_sent_at'] = time();
+
+                $otp = new OTPManager();
+                $otpResult = $otp->createOTP($authedUser['user_id'], 'staff_login');
+                $sendOk = false;
+
+                if ($otpResult['success']) {
+                    $sendResult = $otp->sendOTPEmail($authedUser['email'], $authedUser['full_name'], $otpResult['otp_code']);
+                    if ($sendResult['success']) {
+                        $sendOk = true;
+                        logActivity($authedUser['user_id'], 'otp_challenge_sent', 'Staff 2FA code sent (' . $authedUser['role'] . ')');
+                    } elseif (!empty($sendResult['dev_fallback'])) {
+                        $sendOk = true;
+                        $_SESSION['dev_otp_preview'] = $otpResult['otp_code'];
+                        logActivity($authedUser['user_id'], 'otp_challenge_sent', 'Staff 2FA code generated (dev preview, ' . $authedUser['role'] . ')');
+                    } else {
+                        logActivity($authedUser['user_id'], 'otp_challenge_send_failed', $sendResult['message'] ?? '');
+                    }
+                } else {
+                    logActivity($authedUser['user_id'], 'otp_challenge_send_failed', $otpResult['message'] ?? 'Unable to generate OTP');
+                }
+
+                if ($sendOk) {
+                    header('Location: ' . appUrl('/auth/verify-otp.php'));
+                    exit;
+                }
+
+                // Fail-closed: never silently grant access when 2FA can't be delivered.
+                unset(
+                    $_SESSION['pending_2fa_user_id'],
+                    $_SESSION['pending_2fa_role'],
+                    $_SESSION['pending_2fa_email'],
+                    $_SESSION['pending_2fa_name'],
+                    $_SESSION['pending_2fa_started_at'],
+                    $_SESSION['pending_2fa_last_sent_at']
+                );
+                $error = 'Unable to send verification code, contact your administrator.';
+            } else {
+                redirectToRoleDashboard($authedUser['role']);
+            }
+        } else {
+            $error = $result['message'];
+        }
     }
 }
 ?>
@@ -395,6 +466,16 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
             line-height: 1.5;
         }
 
+        .footer a {
+            color: var(--primary);
+            font-weight: 600;
+            text-decoration: none;
+        }
+
+        .footer a:hover {
+            text-decoration: underline;
+        }
+
         /* ── Responsive ── */
         @media (max-width: 920px) {
             body { padding: 18px; }
@@ -523,12 +604,25 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
                 <button type="submit">Login</button>
             </form>
 
+            <div class="footer">
+                <a href="<?= htmlspecialchars(appUrl('/auth/forgot-password.php?from=staff')) ?>">Forgot your password?</a>
+            </div>
             <div class="footer">&copy; <?= date('Y') ?> <?= htmlspecialchars(APP_NAME) ?></div>
         </section>
     </main>
 
     <script>
         const portalThemes = {
+            super_admin: {
+                bodyBg:       '#1a0d2e',
+                brandFrom:    '#1a0d2e',
+                brandTo:      '#4c1d95',
+                brandAccent:  'rgba(109,40,217,0.92)',
+                primary:      '#7c3aed',
+                secondary:    '#a78bfa',
+                accent:       '#c4b5fd',
+                eyebrow:      'Super Admin Portal',
+            },
             admin: {
                 bodyBg:       '#0d0d0d',
                 brandFrom:    '#0a0a0a',

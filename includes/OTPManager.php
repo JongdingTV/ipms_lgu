@@ -1,228 +1,336 @@
 <?php
 /**
  * OTP Management System
- * Implements OTP with 1-2 minute expiration as per panelist requirements
+ * Implements OTP with 1-2 minute expiration as per panelist requirements.
  */
 
-require_once __DIR__ . '/../includes/config.php';
+require_once __DIR__ . '/config.php';
+require_once __DIR__ . '/db.php';
 
-class OTPManager {
-    private $db;
-    private $otp_validity_minutes = 2; // 1-2 minutes (configurable)
-    
-    public function __construct() {
-        global $pdo;
-        $this->db = $pdo;
+class OTPManager
+{
+    private PDO $db;
+    private int $otp_validity_minutes = 2; // 1-2 minutes (configurable)
+
+    public function __construct()
+    {
+        $this->db = getDB();
+        $this->ensureTable();
     }
-    
-    /**
-     * Generate OTP code
-     */
-    public function generateOTP($length = 6): string {
-        return str_pad(random_int(0, pow(10, $length) - 1), $length, '0', STR_PAD_LEFT);
-    }
-    
-    /**
-     * Create OTP for user
-     */
-    public function createOTP($user_id): array {
+
+    private function ensureTable(): void
+    {
+        $this->db->exec("
+            CREATE TABLE IF NOT EXISTS otp_tokens (
+              id INT AUTO_INCREMENT PRIMARY KEY,
+              user_id INT NOT NULL,
+              otp_code VARCHAR(10) NOT NULL,
+              verified TINYINT(1) NOT NULL DEFAULT 0,
+              attempts INT UNSIGNED NOT NULL DEFAULT 0,
+              max_attempts INT UNSIGNED NOT NULL DEFAULT 3,
+              expires_at DATETIME NOT NULL,
+              verified_at DATETIME NULL,
+              created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+              INDEX idx_otp_user (user_id),
+              INDEX idx_otp_expires (expires_at),
+              CONSTRAINT fk_otp_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+        ");
+
+        // Self-healing column add: this repo has no migration runner, so any
+        // environment that only ever relied on this class to create the table
+        // (rather than running database/migrations/add_purpose_to_otp_tokens.sql)
+        // still ends up with the purpose column present.
         try {
+            $this->db->exec("ALTER TABLE otp_tokens ADD COLUMN IF NOT EXISTS purpose VARCHAR(30) NOT NULL DEFAULT 'general' AFTER user_id");
+        } catch (Throwable $e) {
+        }
+    }
+
+    /** Generate a numeric OTP code of the given length. */
+    public function generateOTP($length = 6): string
+    {
+        return str_pad((string) random_int(0, (int) pow(10, $length) - 1), $length, '0', STR_PAD_LEFT);
+    }
+
+    /** Create and persist a new OTP for a user, scoped to $purpose. */
+    public function createOTP($user_id, string $purpose = 'general'): array
+    {
+        try {
+            $this->cleanExpiredOTPs();
+
             $otp_code = $this->generateOTP();
             $expires_at = date('Y-m-d H:i:s', strtotime("+{$this->otp_validity_minutes} minutes"));
-            
+
             $stmt = $this->db->prepare('
-                INSERT INTO otp_tokens (user_id, otp_code, expires_at)
-                VALUES (?, ?, ?)
+                INSERT INTO otp_tokens (user_id, purpose, otp_code, expires_at)
+                VALUES (?, ?, ?, ?)
             ');
-            
-            $stmt->execute([$user_id, $otp_code, $expires_at]);
-            
+            $stmt->execute([$user_id, $purpose, $otp_code, $expires_at]);
+
             return [
                 'success' => true,
                 'otp_code' => $otp_code,
                 'expires_in_minutes' => $this->otp_validity_minutes,
-                'expires_at' => $expires_at
+                'expires_at' => $expires_at,
             ];
         } catch (Exception $e) {
             return [
                 'success' => false,
-                'message' => 'Failed to generate OTP: ' . $e->getMessage()
+                'message' => 'Failed to generate OTP: ' . $e->getMessage(),
             ];
         }
     }
-    
+
     /**
-     * Send OTP via email
+     * True if $user_id already has an unexpired, unverified OTP for $purpose
+     * created within the last $withinSeconds — used to throttle unauthenticated
+     * senders (e.g. forgot-password) against repeated-submission email spam.
      */
-    public function sendOTPEmail($user_email, $user_name, $otp_code): array {
+    public function hasRecentOTP($user_id, string $purpose, int $withinSeconds): bool
+    {
         try {
-            $subject = 'Your IPMS One-Time Password (OTP)';
-            
-            $message = "
-            <html>
-            <head>
-                <style>
-                    body { font-family: Arial, sans-serif; background-color: #f4f4f4; }
-                    .container { max-width: 600px; margin: 20px auto; background-color: #ffffff; padding: 20px; border-radius: 5px; }
-                    .header { color: #116466; font-size: 24px; font-weight: bold; margin-bottom: 20px; }
-                    .content { color: #333; line-height: 1.6; }
-                    .otp-box { background-color: #f0f0f0; padding: 20px; text-align: center; margin: 20px 0; border-radius: 5px; }
-                    .otp-code { font-size: 32px; font-weight: bold; color: #116466; letter-spacing: 5px; }
-                    .footer { color: #666; font-size: 12px; margin-top: 20px; border-top: 1px solid #ddd; padding-top: 10px; }
-                </style>
-            </head>
-            <body>
-                <div class='container'>
-                    <div class='header'>Infrastructure Project Management System (IPMS)</div>
-                    <div class='content'>
-                        <p>Hello <strong>{$user_name}</strong>,</p>
-                        <p>Your One-Time Password (OTP) for IPMS login is:</p>
-                        <div class='otp-box'>
-                            <div class='otp-code'>{$otp_code}</div>
-                        </div>
-                        <p><strong>⏱️ Validity:</strong> This OTP expires in {$this->otp_validity_minutes} minute(s)</p>
-                        <p><strong>🔒 Security Note:</strong> Never share this OTP with anyone. The IPMS team will never ask you for this code.</p>
-                        <p>If you did not request this OTP, please ignore this email or contact support immediately.</p>
+            $stmt = $this->db->prepare('
+                SELECT created_at FROM otp_tokens
+                WHERE user_id = ? AND purpose = ?
+                ORDER BY created_at DESC
+                LIMIT 1
+            ');
+            $stmt->execute([$user_id, $purpose]);
+            $createdAt = $stmt->fetchColumn();
+
+            return $createdAt !== false && (time() - strtotime((string) $createdAt)) < $withinSeconds;
+        } catch (Exception $e) {
+            return false;
+        }
+    }
+
+    /** Send an OTP code to a user's email. */
+    public function sendOTPEmail($user_email, $user_name, $otp_code): array
+    {
+        $subject = 'Your IPMS One-Time Password (OTP)';
+
+        $message = "
+        <html>
+        <head>
+            <style>
+                body { font-family: Arial, sans-serif; background-color: #f4f4f4; }
+                .container { max-width: 600px; margin: 20px auto; background-color: #ffffff; padding: 20px; border-radius: 5px; }
+                .header { color: #116466; font-size: 24px; font-weight: bold; margin-bottom: 20px; }
+                .content { color: #333; line-height: 1.6; }
+                .otp-box { background-color: #f0f0f0; padding: 20px; text-align: center; margin: 20px 0; border-radius: 5px; }
+                .otp-code { font-size: 32px; font-weight: bold; color: #116466; letter-spacing: 5px; }
+                .footer { color: #666; font-size: 12px; margin-top: 20px; border-top: 1px solid #ddd; padding-top: 10px; }
+            </style>
+        </head>
+        <body>
+            <div class='container'>
+                <div class='header'>Infrastructure Project Management System (IPMS)</div>
+                <div class='content'>
+                    <p>Hello <strong>" . htmlspecialchars((string) $user_name, ENT_QUOTES, 'UTF-8') . "</strong>,</p>
+                    <p>Your One-Time Password (OTP) for IPMS is:</p>
+                    <div class='otp-box'>
+                        <div class='otp-code'>" . htmlspecialchars((string) $otp_code, ENT_QUOTES, 'UTF-8') . "</div>
                     </div>
-                    <div class='footer'>
-                        <p>This is an automated message. Please do not reply to this email.</p>
-                        <p>&copy; 2026 Infrastructure Project Management System. All rights reserved.</p>
-                    </div>
+                    <p><strong>Validity:</strong> This OTP expires in {$this->otp_validity_minutes} minute(s)</p>
+                    <p><strong>Security note:</strong> Never share this OTP with anyone. The IPMS team will never ask you for this code.</p>
+                    <p>If you did not request this OTP, please ignore this email or contact support immediately.</p>
                 </div>
-            </body>
-            </html>
-            ";
-            
-            return $this->sendEmail($user_email, $subject, $message);
-        } catch (Exception $e) {
+                <div class='footer'>
+                    <p>This is an automated message. Please do not reply to this email.</p>
+                    <p>&copy; " . date('Y') . " Infrastructure Project Management System. All rights reserved.</p>
+                </div>
+            </div>
+        </body>
+        </html>
+        ";
+
+        return $this->sendEmail($user_email, $subject, $message);
+    }
+
+    /**
+     * Sends a plain (non-OTP) notification email — e.g. "your application was
+     * approved" — reusing the same SMTP sender as sendOTPEmail(). $bodyHtml is
+     * wrapped in the same visual shell so approval emails look consistent
+     * with OTP emails.
+     */
+    public function sendPlainEmail(string $to, string $subject, string $bodyHtml): array
+    {
+        $message = "
+        <html>
+        <head>
+            <style>
+                body { font-family: Arial, sans-serif; background-color: #f4f4f4; }
+                .container { max-width: 600px; margin: 20px auto; background-color: #ffffff; padding: 20px; border-radius: 5px; }
+                .header { color: #116466; font-size: 24px; font-weight: bold; margin-bottom: 20px; }
+                .content { color: #333; line-height: 1.6; }
+                .footer { color: #666; font-size: 12px; margin-top: 20px; border-top: 1px solid #ddd; padding-top: 10px; }
+            </style>
+        </head>
+        <body>
+            <div class='container'>
+                <div class='header'>Infrastructure Project Management System (IPMS)</div>
+                <div class='content'>{$bodyHtml}</div>
+                <div class='footer'>
+                    <p>This is an automated message. Please do not reply to this email.</p>
+                    <p>&copy; " . date('Y') . " Infrastructure Project Management System. All rights reserved.</p>
+                </div>
+            </div>
+        </body>
+        </html>
+        ";
+
+        return $this->sendEmail($to, $subject, $message);
+    }
+
+    /** Sends via real SMTP when credentials are configured. */
+    private function sendEmail($to, $subject, $message): array
+    {
+        if (MAIL_PASSWORD === '') {
+            // No SMTP credentials configured. Fail closed in production so a
+            // misconfigured server never silently skips verification; outside
+            // production the caller may fall back to showing the code
+            // directly so the flow stays demoable without real mail setup.
             return [
                 'success' => false,
-                'message' => 'Failed to send OTP email: ' . $e->getMessage()
+                'dev_fallback' => APP_ENV !== 'production',
+                'message' => 'Mail is not configured on this server.',
             ];
         }
-    }
-    
-    /**
-     * Send email using SMTP (PHP mail or SMTP service)
-     */
-    private function sendEmail($to, $subject, $message): array {
+
         try {
-            $from = MAIL_FROM_EMAIL;
-            $from_name = MAIL_FROM_NAME;
-            
-            // Email headers
-            $headers = "MIME-Version: 1.0\r\n";
-            $headers .= "Content-type: text/html; charset=UTF-8\r\n";
-            $headers .= "From: {$from_name} <{$from}>\r\n";
-            $headers .= "Reply-To: {$from}\r\n";
-            $headers .= "X-Mailer: IPMS System\r\n";
-            
-            // Send email
-            if (mail($to, $subject, $message, $headers)) {
-                return [
-                    'success' => true,
-                    'message' => 'OTP sent successfully to ' . $to
-                ];
-            } else {
-                return [
-                    'success' => false,
-                    'message' => 'Failed to send email. Please try again later.'
-                ];
-            }
-        } catch (Exception $e) {
-            error_log('Email sending error: ' . $e->getMessage());
-            return [
-                'success' => false,
-                'message' => 'Email service error: ' . $e->getMessage()
-            ];
+            $this->smtpSend((string) $to, $subject, $message);
+            return ['success' => true, 'message' => 'OTP sent successfully to ' . $to];
+        } catch (Throwable $e) {
+            error_log('OTP email send failed: ' . $e->getMessage());
+            return ['success' => false, 'message' => 'Failed to send the verification email. Please try again later.'];
         }
     }
-    
+
+    /** Minimal dependency-free SMTP client (STARTTLS/AUTH LOGIN) for MAIL_* config. */
+    private function smtpSend(string $to, string $subject, string $htmlBody): void
+    {
+        $host = MAIL_HOST;
+        $port = (int) MAIL_PORT;
+        $encryption = strtolower(MAIL_ENCRYPTION);
+        $scheme = $encryption === 'ssl' ? 'ssl' : 'tcp';
+
+        $socket = @stream_socket_client("{$scheme}://{$host}:{$port}", $errno, $errstr, 15);
+        if (!$socket) {
+            throw new RuntimeException("Unable to connect to mail server ({$errstr}).");
+        }
+        stream_set_timeout($socket, 15);
+
+        $domain = ltrim((string) strrchr(MAIL_FROM_EMAIL, '@'), '@') ?: 'localhost';
+
+        $this->smtpReadResponse($socket, '220');
+        $this->smtpCommand($socket, "EHLO {$domain}", '250');
+
+        if ($encryption === 'tls') {
+            $this->smtpCommand($socket, 'STARTTLS', '220');
+            if (!stream_socket_enable_crypto($socket, true, STREAM_CRYPTO_METHOD_TLS_CLIENT)) {
+                throw new RuntimeException('STARTTLS negotiation failed.');
+            }
+            $this->smtpCommand($socket, "EHLO {$domain}", '250');
+        }
+
+        $this->smtpCommand($socket, 'AUTH LOGIN', '334');
+        $this->smtpCommand($socket, base64_encode(MAIL_USERNAME), '334');
+        $this->smtpCommand($socket, base64_encode(MAIL_PASSWORD), '235');
+
+        $this->smtpCommand($socket, 'MAIL FROM:<' . MAIL_FROM_EMAIL . '>', '250');
+        $this->smtpCommand($socket, 'RCPT TO:<' . $to . '>', '250');
+        $this->smtpCommand($socket, 'DATA', '354');
+
+        $headers = implode("\r\n", [
+            'From: ' . MAIL_FROM_NAME . ' <' . MAIL_FROM_EMAIL . '>',
+            'To: <' . $to . '>',
+            'Subject: =?UTF-8?B?' . base64_encode($subject) . '?=',
+            'MIME-Version: 1.0',
+            'Content-Type: text/html; charset=UTF-8',
+            'Date: ' . date('r'),
+        ]);
+        $body = str_replace("\n.", "\n..", $htmlBody);
+        $this->smtpCommand($socket, $headers . "\r\n\r\n" . $body . "\r\n.", '250');
+
+        fwrite($socket, "QUIT\r\n");
+        fclose($socket);
+    }
+
+    private function smtpCommand($socket, string $command, string $expectedCode): string
+    {
+        fwrite($socket, $command . "\r\n");
+        return $this->smtpReadResponse($socket, $expectedCode);
+    }
+
+    private function smtpReadResponse($socket, string $expectedCode): string
+    {
+        $response = '';
+        while (($line = fgets($socket, 515)) !== false) {
+            $response .= $line;
+            if (!isset($line[3]) || $line[3] !== '-') {
+                break;
+            }
+        }
+        if (substr($response, 0, 3) !== $expectedCode) {
+            throw new RuntimeException('Unexpected SMTP response: ' . trim($response));
+        }
+        return $response;
+    }
+
     /**
-     * Verify OTP code
+     * Verify an OTP code for a user. Looks up the user's latest token (not
+     * one matching the guessed code) so wrong guesses can actually be
+     * counted against max_attempts — the original version compared
+     * user_id+otp_code together, which meant a wrong guess matched zero rows
+     * and attempts could never be incremented.
      */
-    public function verifyOTP($user_id, $otp_code): array {
+    public function verifyOTP($user_id, $otp_code, string $purpose = 'general'): array
+    {
         try {
             $stmt = $this->db->prepare('
-                SELECT id, verified, attempts, max_attempts, expires_at
+                SELECT id, otp_code, verified, attempts, max_attempts, expires_at
                 FROM otp_tokens
-                WHERE user_id = ? AND otp_code = ?
+                WHERE user_id = ? AND purpose = ?
                 ORDER BY created_at DESC
                 LIMIT 1
             ');
-            
-            $stmt->execute([$user_id, $otp_code]);
+            $stmt->execute([$user_id, $purpose]);
             $token = $stmt->fetch(PDO::FETCH_ASSOC);
-            
+
             if (!$token) {
-                return ['success' => false, 'message' => 'Invalid OTP code'];
+                return ['success' => false, 'message' => 'No OTP was requested for this account.'];
             }
-            
-            // Check if already verified
-            if ($token['verified']) {
-                return ['success' => false, 'message' => 'OTP already used'];
+            if ((int) $token['verified'] === 1) {
+                return ['success' => false, 'message' => 'This code was already used. Please request a new one.'];
             }
-            
-            // Check if expired
             if (strtotime($token['expires_at']) < time()) {
-                return ['success' => false, 'message' => 'OTP has expired'];
+                return ['success' => false, 'message' => 'This code has expired. Please request a new one.'];
             }
-            
-            // Check attempt limit
-            if ($token['attempts'] >= $token['max_attempts']) {
-                return ['success' => false, 'message' => 'Maximum OTP verification attempts exceeded'];
+            if ((int) $token['attempts'] >= (int) $token['max_attempts']) {
+                return ['success' => false, 'message' => 'Too many incorrect attempts. Please request a new code.'];
             }
-            
-            // Mark as verified
-            $update_stmt = $this->db->prepare('
-                UPDATE otp_tokens
-                SET verified = 1, verified_at = NOW()
-                WHERE id = ?
-            ');
-            $update_stmt->execute([$token['id']]);
-            
-            return [
-                'success' => true,
-                'message' => 'OTP verified successfully',
-                'token_id' => $token['id']
-            ];
+
+            if (!hash_equals((string) $token['otp_code'], (string) $otp_code)) {
+                $this->db->prepare('UPDATE otp_tokens SET attempts = attempts + 1 WHERE id = ?')->execute([$token['id']]);
+                $remaining = max(0, (int) $token['max_attempts'] - (int) $token['attempts'] - 1);
+                return ['success' => false, 'message' => "Incorrect code. {$remaining} attempt(s) remaining."];
+            }
+
+            $this->db->prepare('UPDATE otp_tokens SET verified = 1, verified_at = NOW() WHERE id = ?')
+                ->execute([$token['id']]);
+
+            return ['success' => true, 'message' => 'OTP verified successfully', 'token_id' => $token['id']];
         } catch (Exception $e) {
-            return [
-                'success' => false,
-                'message' => 'OTP verification failed: ' . $e->getMessage()
-            ];
+            return ['success' => false, 'message' => 'OTP verification failed: ' . $e->getMessage()];
         }
     }
-    
-    /**
-     * Increment OTP attempt counter
-     */
-    public function incrementAttempt($user_id, $otp_code): void {
+
+    /** Clean expired OTPs. */
+    public function cleanExpiredOTPs(): int
+    {
         try {
-            $stmt = $this->db->prepare('
-                UPDATE otp_tokens
-                SET attempts = attempts + 1
-                WHERE user_id = ? AND otp_code = ?
-                ORDER BY created_at DESC
-                LIMIT 1
-            ');
-            
-            $stmt->execute([$user_id, $otp_code]);
-        } catch (Exception $e) {
-            error_log('OTP attempt increment failed: ' . $e->getMessage());
-        }
-    }
-    
-    /**
-     * Clean expired OTPs
-     */
-    public function cleanExpiredOTPs(): int {
-        try {
-            $stmt = $this->db->prepare('
-                DELETE FROM otp_tokens
-                WHERE expires_at < NOW()
-            ');
-            
+            $stmt = $this->db->prepare('DELETE FROM otp_tokens WHERE expires_at < NOW()');
             $stmt->execute();
             return $stmt->rowCount();
         } catch (Exception $e) {
@@ -230,24 +338,16 @@ class OTPManager {
             return 0;
         }
     }
-    
-    /**
-     * Get OTP validity period in minutes
-     */
-    public function getValidityMinutes(): int {
+
+    public function getValidityMinutes(): int
+    {
         return $this->otp_validity_minutes;
     }
-    
-    /**
-     * Set OTP validity period
-     */
-    public function setValidityMinutes(int $minutes): void {
+
+    public function setValidityMinutes(int $minutes): void
+    {
         if ($minutes >= 1 && $minutes <= 5) {
             $this->otp_validity_minutes = $minutes;
         }
     }
 }
-
-// Cleanup expired OTPs on every instantiation
-$cleaner = new OTPManager();
-$cleaner->cleanExpiredOTPs();

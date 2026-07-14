@@ -1,10 +1,18 @@
 <?php
 // ============================================================
 // bac/api/portal.php - live BAC procurement workflow API
+// Document upload/review lives in the sibling bac/api/documents.php
+// (multipart handling is a structurally different shape from this
+// file's pure-JSON actions — mirrors the superadmin portal split).
 // ============================================================
 require_once __DIR__ . '/../../includes/db.php';
 require_once __DIR__ . '/../../includes/auth.php';
 require_once __DIR__ . '/../../includes/workflow.php';
+require_once __DIR__ . '/../../includes/ContractorScoring.php';
+require_once __DIR__ . '/../../includes/Validator.php';
+require_once __DIR__ . '/../../includes/Pagination.php';
+require_once __DIR__ . '/../../includes/Notifications.php';
+require_once __DIR__ . '/../../includes/OTPManager.php';
 
 apiHeaders();
 requireAnyRole(['super_admin', 'admin', 'bac']);
@@ -12,6 +20,8 @@ requireCsrfProtection();
 
 $db = getDB();
 projectWorkflowEnsureRoleConnectionTables($db);
+contractorRefreshPerformanceScores($db);
+contractorsEnsureApplicationSchema($db);
 
 $method = $_SERVER['REQUEST_METHOD'] ?? 'GET';
 $action = $_GET['action'] ?? 'summary';
@@ -48,86 +58,111 @@ function bacPortalProject(PDO $db, int $projectId): ?array
     return $project ?: null;
 }
 
+function bacPortalMapBidRow(array $row): array
+{
+    $amount = (float) $row['bid_amount'];
+    $budget = (float) $row['budget'];
+    return [
+        'id' => (int) $row['id'],
+        'project_id' => (int) $row['project_id'],
+        'project_code' => $row['project_code'],
+        'project' => $row['project_name'],
+        'contractor_id' => (int) $row['contractor_id'],
+        'contractor' => $row['contractor_name'],
+        'bid' => $amount,
+        'budget' => $budget,
+        'variance' => bacPortalMoneyVariance($amount, $budget),
+        'technical' => (int) $row['technical_score'],
+        'deliveryDays' => (int) ($row['delivery_days'] ?? 0),
+        'status' => $row['status'],
+        'submitted_at' => $row['submitted_at'],
+        'remarks' => $row['remarks'],
+    ];
+}
+
+function bacPortalMapRecommendationRow(array $row): array
+{
+    return [
+        'id' => (int) $row['id'],
+        'project_id' => (int) $row['project_id'],
+        'bid_submission_id' => (int) ($row['bid_submission_id'] ?? 0),
+        'project_code' => $row['project_code'],
+        'project' => $row['project_name'],
+        'contractor_id' => (int) $row['contractor_id'],
+        'awardee' => $row['awardee'],
+        'amount' => (float) $row['award_amount'],
+        'basis' => $row['basis'],
+        'status' => $row['status'],
+        'contract_no' => $row['contract_no'],
+        'contract_status' => $row['contract_status'],
+        'created_at' => $row['created_at'],
+    ];
+}
+
+function bacPortalMapLogRow(array $row): array
+{
+    return [
+        'id' => (int) $row['id'],
+        'date' => $row['created_at'],
+        'project' => $row['project_name'],
+        'project_code' => $row['project_code'],
+        'title' => $row['action'],
+        'detail' => $row['details'],
+        'actor' => $row['actor_name'],
+        'status' => 'complete',
+    ];
+}
+
+function bacPortalMapEvaluationRow(array $row): array
+{
+    $score = (int) ($row['performance_score'] ?? 0);
+    return [
+        'contractor_id' => (int) $row['id'],
+        'contractor' => $row['name'],
+        'eligibility' => $score >= 70 ? 'qualified' : 'needs_review',
+        'performance' => $score,
+        'compliance' => $score >= 85 ? 'complete' : ($score >= 70 ? 'under_review' : 'pending'),
+        'risk' => $score >= 85 ? 'low' : ($score >= 70 ? 'medium' : 'high'),
+        'total_projects' => (int) ($row['total_projects'] ?? 0),
+    ];
+}
+
+/** Dashboard-tab payload only: stats + short previews. Full lists live in the list_* actions below. */
 function bacPortalSummary(PDO $db): array
 {
-    $approved = $db->query("
-        SELECT p.*, c.name AS contractor_name
-        FROM projects p
-        LEFT JOIN contractors c ON c.id = p.contractor_id
-        WHERE p.status = 'approved'
-        ORDER BY p.updated_at DESC, p.id DESC
-    ")->fetchAll();
+    $stats = [
+        'open_bids' => (int) $db->query("SELECT COUNT(*) FROM bac_bid_announcements WHERE status IN ('posted', 'pre_bid', 'open')")->fetchColumn(),
+        'for_evaluation' => (int) $db->query("SELECT COUNT(*) FROM bac_bid_submissions WHERE status IN ('submitted', 'for_review')")->fetchColumn(),
+        'recommendations' => (int) $db->query("SELECT COUNT(*) FROM bac_award_recommendations")->fetchColumn(),
+        'logs' => (int) $db->query("SELECT COUNT(*) FROM bac_procurement_logs")->fetchColumn(),
+        'approved_waiting' => (int) $db->query("SELECT COUNT(*) FROM projects WHERE status = 'approved'")->fetchColumn(),
+    ];
 
     $announcements = $db->query("
-        SELECT a.*, p.project_code, p.name AS project_name, p.location,
-               p.budget, p.status AS project_status
-        FROM bac_bid_announcements a
-        INNER JOIN projects p ON p.id = a.project_id
-        ORDER BY a.published_at DESC, a.id DESC
+        SELECT a.*, p.project_code, p.name AS project_name, p.location, p.budget, p.status AS project_status
+        FROM bac_bid_announcements a INNER JOIN projects p ON p.id = a.project_id
+        ORDER BY a.published_at DESC, a.id DESC LIMIT 3
     ")->fetchAll();
-
-    $contractors = $db->query("
-        SELECT c.*,
-               COUNT(p.id) AS total_projects,
-               COALESCE(AVG(p.progress), 0) AS average_project_progress
-        FROM contractors c
-        LEFT JOIN projects p ON p.contractor_id = c.id
-        WHERE c.status = 'active'
-        GROUP BY c.id
-        ORDER BY c.performance_score DESC, c.name ASC
-    ")->fetchAll();
-
-    $evaluations = array_map(static function (array $row): array {
-        $score = (int) ($row['performance_score'] ?? 0);
-        return [
-            'contractor_id' => (int) $row['id'],
-            'contractor' => $row['name'],
-            'eligibility' => $score >= 70 ? 'qualified' : 'needs_review',
-            'performance' => $score,
-            'compliance' => $score >= 85 ? 'complete' : ($score >= 70 ? 'under_review' : 'pending'),
-            'risk' => $score >= 85 ? 'low' : ($score >= 70 ? 'medium' : 'high'),
-            'total_projects' => (int) ($row['total_projects'] ?? 0),
-        ];
-    }, $contractors);
-
-    $bidRows = $db->query("
-        SELECT b.*, p.project_code, p.name AS project_name, p.budget,
-               c.name AS contractor_name
-        FROM bac_bid_submissions b
-        INNER JOIN projects p ON p.id = b.project_id
-        INNER JOIN contractors c ON c.id = b.contractor_id
-        ORDER BY b.updated_at DESC, b.id DESC
-    ")->fetchAll();
-
-    $bids = array_map(static function (array $row): array {
-        $amount = (float) $row['bid_amount'];
-        $budget = (float) $row['budget'];
-        return [
-            'id' => (int) $row['id'],
-            'project_id' => (int) $row['project_id'],
-            'project_code' => $row['project_code'],
-            'project' => $row['project_name'],
-            'contractor_id' => (int) $row['contractor_id'],
-            'contractor' => $row['contractor_name'],
-            'bid' => $amount,
-            'budget' => $budget,
-            'variance' => bacPortalMoneyVariance($amount, $budget),
-            'technical' => (int) $row['technical_score'],
-            'deliveryDays' => (int) ($row['delivery_days'] ?? 0),
-            'status' => $row['status'],
-            'submitted_at' => $row['submitted_at'],
-            'remarks' => $row['remarks'],
-        ];
-    }, $bidRows);
 
     $recommendations = $db->query("
-        SELECT r.*, p.project_code, p.name AS project_name,
-               c.name AS awardee, ct.contract_no, ct.status AS contract_status
+        SELECT r.*, p.project_code, p.name AS project_name, c.name AS awardee, ct.contract_no, ct.status AS contract_status
         FROM bac_award_recommendations r
         INNER JOIN projects p ON p.id = r.project_id
         INNER JOIN contractors c ON c.id = r.contractor_id
         LEFT JOIN contracts ct ON ct.project_id = r.project_id
-        ORDER BY r.updated_at DESC, r.id DESC
+        ORDER BY r.updated_at DESC, r.id DESC LIMIT 3
+    ")->fetchAll();
+
+    $evaluations = $db->query("
+        SELECT * FROM contractors WHERE status = 'active' ORDER BY performance_score DESC, name ASC LIMIT 3
+    ")->fetchAll();
+
+    $bids = $db->query("
+        SELECT b.*, p.project_code, p.name AS project_name, p.budget, c.name AS contractor_name
+        FROM bac_bid_submissions b
+        INNER JOIN projects p ON p.id = b.project_id
+        INNER JOIN contractors c ON c.id = b.contractor_id
+        ORDER BY b.updated_at DESC, b.id DESC LIMIT 3
     ")->fetchAll();
 
     $logs = $db->query("
@@ -135,58 +170,206 @@ function bacPortalSummary(PDO $db): array
         FROM bac_procurement_logs l
         LEFT JOIN projects p ON p.id = l.project_id
         LEFT JOIN users u ON u.id = l.actor_id
-        ORDER BY l.created_at DESC, l.id DESC
-        LIMIT 25
+        ORDER BY l.created_at DESC, l.id DESC LIMIT 3
     ")->fetchAll();
 
     return [
-        'approved_projects' => $approved,
-        'announcements' => $announcements,
-        'evaluations' => $evaluations,
-        'contractors' => $contractors,
-        'bids' => $bids,
-        'recommendations' => array_map(static function (array $row): array {
-            return [
-                'id' => (int) $row['id'],
-                'project_id' => (int) $row['project_id'],
-                'bid_submission_id' => (int) ($row['bid_submission_id'] ?? 0),
-                'project_code' => $row['project_code'],
-                'project' => $row['project_name'],
-                'contractor_id' => (int) $row['contractor_id'],
-                'awardee' => $row['awardee'],
-                'amount' => (float) $row['award_amount'],
-                'basis' => $row['basis'],
-                'status' => $row['status'],
-                'contract_no' => $row['contract_no'],
-                'contract_status' => $row['contract_status'],
-                'created_at' => $row['created_at'],
-            ];
-        }, $recommendations),
-        'logs' => array_map(static function (array $row): array {
-            return [
-                'id' => (int) $row['id'],
-                'date' => $row['created_at'],
-                'project' => $row['project_name'],
-                'project_code' => $row['project_code'],
-                'title' => $row['action'],
-                'detail' => $row['details'],
-                'actor' => $row['actor_name'],
-                'status' => 'complete',
-            ];
-        }, $logs),
-        'stats' => [
-            'open_bids' => count(array_filter($announcements, static fn (array $row): bool => in_array($row['status'], ['posted', 'pre_bid', 'open'], true))),
-            'for_evaluation' => count(array_filter($bids, static fn (array $row): bool => in_array($row['status'], ['submitted', 'for_review'], true))),
-            'recommendations' => count($recommendations),
-            'logs' => count($logs),
-            'approved_waiting' => count($approved),
-        ],
+        'stats' => $stats,
+        'announcements_preview' => $announcements,
+        'recommendations_preview' => array_map('bacPortalMapRecommendationRow', $recommendations),
+        'evaluations_preview' => array_map('bacPortalMapEvaluationRow', $evaluations),
+        'bids_preview' => array_map('bacPortalMapBidRow', $bids),
+        'logs_preview' => array_map('bacPortalMapLogRow', $logs),
     ];
 }
 
+function bacListAnnouncements(PDO $db, int $page, int $perPage, string $search): array
+{
+    $where = ['1=1'];
+    $params = [];
+    if ($search !== '') {
+        $where[] = '(a.reference_no LIKE ? OR p.name LIKE ? OR p.project_code LIKE ?)';
+        $like = '%' . $search . '%';
+        array_push($params, $like, $like, $like);
+    }
+    $whereSql = implode(' AND ', $where);
+    $select = "SELECT a.*, p.project_code, p.name AS project_name, p.location, p.budget, p.status AS project_status
+               FROM bac_bid_announcements a INNER JOIN projects p ON p.id = a.project_id
+               WHERE $whereSql ORDER BY a.published_at DESC, a.id DESC";
+    $count = "SELECT COUNT(*) FROM bac_bid_announcements a INNER JOIN projects p ON p.id = a.project_id WHERE $whereSql";
+    return paginate($db, $select, $count, $params, $page, $perPage);
+}
+
+function bacListBids(PDO $db, int $page, int $perPage, string $search): array
+{
+    $where = ['1=1'];
+    $params = [];
+    if ($search !== '') {
+        $where[] = '(p.name LIKE ? OR p.project_code LIKE ? OR c.name LIKE ?)';
+        $like = '%' . $search . '%';
+        array_push($params, $like, $like, $like);
+    }
+    $whereSql = implode(' AND ', $where);
+    $select = "SELECT b.*, p.project_code, p.name AS project_name, p.budget, c.name AS contractor_name
+               FROM bac_bid_submissions b
+               INNER JOIN projects p ON p.id = b.project_id
+               INNER JOIN contractors c ON c.id = b.contractor_id
+               WHERE $whereSql ORDER BY b.updated_at DESC, b.id DESC";
+    $count = "SELECT COUNT(*) FROM bac_bid_submissions b
+               INNER JOIN projects p ON p.id = b.project_id
+               INNER JOIN contractors c ON c.id = b.contractor_id
+               WHERE $whereSql";
+    return paginate($db, $select, $count, $params, $page, $perPage);
+}
+
+function bacListRecommendations(PDO $db, int $page, int $perPage, string $search): array
+{
+    $where = ['1=1'];
+    $params = [];
+    if ($search !== '') {
+        $where[] = '(p.name LIKE ? OR c.name LIKE ?)';
+        $like = '%' . $search . '%';
+        array_push($params, $like, $like);
+    }
+    $whereSql = implode(' AND ', $where);
+    $select = "SELECT r.*, p.project_code, p.name AS project_name, c.name AS awardee, ct.contract_no, ct.status AS contract_status
+               FROM bac_award_recommendations r
+               INNER JOIN projects p ON p.id = r.project_id
+               INNER JOIN contractors c ON c.id = r.contractor_id
+               LEFT JOIN contracts ct ON ct.project_id = r.project_id
+               WHERE $whereSql ORDER BY r.updated_at DESC, r.id DESC";
+    $count = "SELECT COUNT(*) FROM bac_award_recommendations r
+               INNER JOIN projects p ON p.id = r.project_id
+               INNER JOIN contractors c ON c.id = r.contractor_id
+               WHERE $whereSql";
+    return paginate($db, $select, $count, $params, $page, $perPage);
+}
+
+function bacListLogs(PDO $db, int $page, int $perPage, string $search): array
+{
+    $where = ['1=1'];
+    $params = [];
+    if ($search !== '') {
+        $where[] = '(l.action LIKE ? OR l.details LIKE ?)';
+        $like = '%' . $search . '%';
+        array_push($params, $like, $like);
+    }
+    $whereSql = implode(' AND ', $where);
+    $select = "SELECT l.*, p.project_code, p.name AS project_name, u.full_name AS actor_name
+               FROM bac_procurement_logs l
+               LEFT JOIN projects p ON p.id = l.project_id
+               LEFT JOIN users u ON u.id = l.actor_id
+               WHERE $whereSql ORDER BY l.created_at DESC, l.id DESC";
+    $count = "SELECT COUNT(*) FROM bac_procurement_logs l WHERE $whereSql";
+    return paginate($db, $select, $count, $params, $page, $perPage);
+}
+
+/** Picker lists (not paginated — naturally small working-sets, not historical logs). */
+function bacListApprovedProjects(PDO $db): array
+{
+    return $db->query("
+        SELECT p.*, c.name AS contractor_name
+        FROM projects p LEFT JOIN contractors c ON c.id = p.contractor_id
+        WHERE p.status = 'approved'
+        ORDER BY p.updated_at DESC, p.id DESC
+        LIMIT 100
+    ")->fetchAll();
+}
+
+function bacListActiveContractors(PDO $db): array
+{
+    return $db->query("
+        SELECT c.*, COUNT(p.id) AS total_projects, COALESCE(AVG(p.progress), 0) AS average_project_progress
+        FROM contractors c LEFT JOIN projects p ON p.contractor_id = c.id
+        WHERE c.status = 'active' AND c.application_status = 'approved'
+        GROUP BY c.id
+        ORDER BY c.performance_score DESC, c.name ASC
+        LIMIT 200
+    ")->fetchAll();
+}
+
+/** Bids not yet recommended — feeds the Award Recommendation queue panel. */
+function bacListCandidateBids(PDO $db): array
+{
+    return $db->query("
+        SELECT b.*, p.project_code, p.name AS project_name, p.budget, c.name AS contractor_name
+        FROM bac_bid_submissions b
+        INNER JOIN projects p ON p.id = b.project_id
+        INNER JOIN contractors c ON c.id = b.contractor_id
+        WHERE b.status != 'recommended'
+        ORDER BY b.updated_at DESC, b.id DESC
+        LIMIT 10
+    ")->fetchAll();
+}
+
 if ($method === 'GET') {
+    $page = max(1, (int) ($_GET['page'] ?? 1));
+    $perPage = min(100, max(1, (int) ($_GET['per_page'] ?? 10)));
+    $search = trim((string) ($_GET['search'] ?? ''));
+
     if ($action === 'summary') {
         respond(bacPortalSummary($db));
+    }
+
+    if ($action === 'list_announcements') {
+        respond(bacListAnnouncements($db, $page, $perPage, $search));
+    }
+
+    if ($action === 'list_bids') {
+        $result = bacListBids($db, $page, $perPage, $search);
+        $result['data'] = array_map('bacPortalMapBidRow', $result['data']);
+        respond($result);
+    }
+
+    if ($action === 'list_recommendations') {
+        $result = bacListRecommendations($db, $page, $perPage, $search);
+        $result['data'] = array_map('bacPortalMapRecommendationRow', $result['data']);
+        respond($result);
+    }
+
+    if ($action === 'list_logs') {
+        $result = bacListLogs($db, $page, $perPage, $search);
+        $result['data'] = array_map('bacPortalMapLogRow', $result['data']);
+        respond($result);
+    }
+
+    if ($action === 'list_approved_projects') {
+        respond(['data' => bacListApprovedProjects($db)]);
+    }
+
+    if ($action === 'list_contractors') {
+        respond(['data' => bacListActiveContractors($db)]);
+    }
+
+    if ($action === 'list_evaluations') {
+        respond(['data' => array_map('bacPortalMapEvaluationRow', bacListActiveContractors($db))]);
+    }
+
+    if ($action === 'list_candidate_bids') {
+        respond(['data' => array_map('bacPortalMapBidRow', bacListCandidateBids($db))]);
+    }
+
+    if ($action === 'list_contractor_applications') {
+        $select = "SELECT c.id, c.name, c.contact_person, c.email, c.phone, c.address, c.pcab_license_no, c.pcab_classification, c.application_status, c.created_at
+                   FROM contractors c
+                   WHERE c.application_status = 'pending'
+                   ORDER BY c.created_at ASC";
+        $count = "SELECT COUNT(*) FROM contractors c WHERE c.application_status = 'pending'";
+        $result = paginate($db, $select, $count, [], $page, $perPage);
+
+        foreach ($result['data'] as &$row) {
+            $docStmt = $db->prepare("
+                SELECT id, document_type, title, original_name, file_path, created_at
+                FROM supporting_documents
+                WHERE owner_type = 'contractor' AND owner_id = ?
+                ORDER BY created_at ASC
+            ");
+            $docStmt->execute([$row['id']]);
+            $row['documents'] = $docStmt->fetchAll();
+        }
+        unset($row);
+
+        respond($result);
     }
 
     respond(['error' => 'Unknown action.'], 404);
@@ -199,13 +382,17 @@ if ($method !== 'POST') {
 $body = requestBody();
 
 if ($action === 'publish') {
-    $projectId = (int) ($body['project_id'] ?? 0);
-    $deadline = trim((string) ($body['deadline'] ?? ''));
-    $notes = trim((string) ($body['notes'] ?? ''));
+    $validated = Validator::make($body, [
+        'project_id' => 'required|integer',
+        'deadline' => 'nullable|date',
+        'notes' => 'nullable|string|max:1000',
+        'reference_no' => 'nullable|string|max:40',
+        'published_at' => 'nullable|date',
+    ])->stopOnFailure();
 
-    if ($projectId <= 0) {
-        respond(['error' => 'Project is required.'], 422);
-    }
+    $projectId = (int) $validated['project_id'];
+    $deadline = trim((string) ($validated['deadline'] ?? ''));
+    $notes = trim((string) ($validated['notes'] ?? ''));
 
     $project = bacPortalProject($db, $projectId);
     if (!$project) {
@@ -215,8 +402,8 @@ if ($action === 'publish') {
         respond(['error' => 'Only approved projects can be posted for bidding.'], 422);
     }
 
-    $referenceNo = $body['reference_no'] ?? bacPortalReferenceNo($db, $projectId);
-    $publishedAt = trim((string) ($body['published_at'] ?? date('Y-m-d')));
+    $referenceNo = ($validated['reference_no'] ?? '') !== '' ? $validated['reference_no'] : bacPortalReferenceNo($db, $projectId);
+    $publishedAt = ($validated['published_at'] ?? '') !== '' ? $validated['published_at'] : date('Y-m-d');
 
     $db->beginTransaction();
     try {
@@ -253,16 +440,22 @@ if ($action === 'publish') {
 }
 
 if ($action === 'bid') {
-    $projectId = (int) ($body['project_id'] ?? 0);
-    $contractorId = (int) ($body['contractor_id'] ?? 0);
-    $amount = (float) ($body['bid_amount'] ?? 0);
-    $technicalScore = max(0, min(100, (int) ($body['technical_score'] ?? 0)));
-    $deliveryDays = (int) ($body['delivery_days'] ?? 0);
-    $remarks = trim((string) ($body['remarks'] ?? ''));
+    $validated = Validator::make($body, [
+        'project_id' => 'required|integer',
+        'contractor_id' => 'required|integer',
+        'bid_amount' => 'required|numeric|min:1',
+        'technical_score' => 'nullable|integer|min:0|max:100',
+        'delivery_days' => 'nullable|integer|min:1',
+        'remarks' => 'nullable|string|max:1000',
+        'submitted_at' => 'nullable|date',
+    ])->stopOnFailure();
 
-    if ($projectId <= 0 || $contractorId <= 0 || $amount <= 0) {
-        respond(['error' => 'Project, contractor, and bid amount are required.'], 422);
-    }
+    $projectId = (int) $validated['project_id'];
+    $contractorId = (int) $validated['contractor_id'];
+    $amount = (float) $validated['bid_amount'];
+    $technicalScore = max(0, min(100, (int) ($validated['technical_score'] ?? 0)));
+    $deliveryDays = (int) ($validated['delivery_days'] ?? 0);
+    $remarks = trim((string) ($validated['remarks'] ?? ''));
 
     $announcement = $db->prepare("SELECT id FROM bac_bid_announcements WHERE project_id = ?");
     $announcement->execute([$projectId]);
@@ -288,21 +481,23 @@ if ($action === 'bid') {
         $amount,
         $technicalScore,
         $deliveryDays > 0 ? $deliveryDays : null,
-        $body['submitted_at'] ?? date('Y-m-d'),
+        ($validated['submitted_at'] ?? '') !== '' ? $validated['submitted_at'] : date('Y-m-d'),
         $remarks !== '' ? $remarks : null,
     ]);
+    $newBidId = (int) $db->lastInsertId();
 
     projectWorkflowLog($db, 'Contractor bid recorded', $projectId, $contractorRow['name'] . ' submitted a BAC bid.', $actorId ?: null);
-    respond(['success' => true, 'id' => (int) $db->lastInsertId()], 201);
+    respond(['success' => true, 'id' => $newBidId], 201);
 }
 
 if ($action === 'recommend') {
-    $bidId = (int) ($body['bid_id'] ?? 0);
-    $basis = trim((string) ($body['basis'] ?? 'Lowest calculated responsive bid with acceptable technical score.'));
+    $validated = Validator::make($body, [
+        'bid_id' => 'required|integer',
+        'basis' => 'nullable|string|max:1000',
+    ])->stopOnFailure();
 
-    if ($bidId <= 0) {
-        respond(['error' => 'Bid is required.'], 422);
-    }
+    $bidId = (int) $validated['bid_id'];
+    $basis = trim((string) ($validated['basis'] ?? 'Lowest calculated responsive bid with acceptable technical score.'));
 
     $bidStmt = $db->prepare("
         SELECT b.*, p.project_code, p.name AS project_name, p.start_date, p.end_date, c.name AS contractor_name
@@ -386,7 +581,111 @@ if ($action === 'recommend') {
     }
 
     projectWorkflowLog($db, 'Award recommendation sent', $projectId, $bid['contractor_name'] . ' was recommended for contractor assignment.', $actorId ?: null);
+
+    $cu = $db->prepare("SELECT user_id FROM contractors WHERE id = ?");
+    $cu->execute([$contractorId]);
+    notifyUser(
+        (int) ($cu->fetchColumn() ?: 0),
+        'info',
+        'Bid awarded',
+        'Your bid for ' . $bid['project_name'] . ' has been recommended for award.'
+    );
+
     respond(['success' => true], 201);
+}
+
+if ($action === 'review_contractor_application') {
+    // Narrower than the file-level gate (which also allows admin) — contractor
+    // applications are specifically BAC's call, with super_admin as a fallback.
+    requireAnyRole(['bac', 'super_admin']);
+
+    $validated = Validator::make($body, [
+        'contractor_id' => 'required|integer',
+        'decision' => 'required|in:approve,reject',
+        'remarks' => 'nullable|string|max:1000',
+    ])->stopOnFailure();
+
+    $contractorId = (int) $validated['contractor_id'];
+    $decision = (string) $validated['decision'];
+    $remarks = trim((string) ($validated['remarks'] ?? ''));
+
+    if ($decision === 'reject' && $remarks === '') {
+        respond(['error' => 'A reason is required to reject an application.'], 422);
+    }
+
+    $stmt = $db->prepare("SELECT id, name, email, application_status FROM contractors WHERE id = ?");
+    $stmt->execute([$contractorId]);
+    $contractor = $stmt->fetch();
+    if (!$contractor) {
+        respond(['error' => 'Application not found.'], 404);
+    }
+    if ($contractor['application_status'] !== 'pending') {
+        respond(['error' => 'This application has already been reviewed.'], 422);
+    }
+
+    if ($decision === 'reject') {
+        $db->prepare("
+            UPDATE contractors
+            SET application_status = 'rejected', application_reviewed_by = ?, application_reviewed_at = NOW(), application_remarks = ?
+            WHERE id = ?
+        ")->execute([$actorId, $remarks !== '' ? $remarks : null, $contractorId]);
+
+        $details = $contractor['name'] . '\'s contractor application was rejected' . ($remarks !== '' ? ' — ' . $remarks : '') . '.';
+        auditLog($db, $actorId, 'contractor_application_rejected', 'contractors', $contractorId, $details);
+        logActivity($actorId, 'contractor_application_rejected', $details);
+
+        respond(['success' => true, 'status' => 'rejected']);
+    }
+
+    // Approve: generate credentials and create the login account now that BAC has vetted the business.
+    $tempPassword = bin2hex(random_bytes(6));
+    $username = 'contractor' . $contractorId . '_' . substr(bin2hex(random_bytes(3)), 0, 6);
+
+    $db->beginTransaction();
+    try {
+        $stmt = $db->prepare("
+            INSERT INTO users (username, email, password_hash, full_name, role, status)
+            VALUES (?, ?, ?, ?, 'contractor', 'active')
+        ");
+        $stmt->execute([
+            $username,
+            $contractor['email'],
+            password_hash($tempPassword, PASSWORD_BCRYPT),
+            $contractor['name'],
+        ]);
+        $newUserId = (int) $db->lastInsertId();
+
+        $db->prepare("
+            UPDATE contractors
+            SET user_id = ?, application_status = 'approved', application_reviewed_by = ?, application_reviewed_at = NOW(), application_remarks = ?
+            WHERE id = ?
+        ")->execute([$newUserId, $actorId, $remarks !== '' ? $remarks : null, $contractorId]);
+
+        $db->commit();
+    } catch (Throwable $e) {
+        if ($db->inTransaction()) {
+            $db->rollBack();
+        }
+        respond(['error' => 'Unable to approve application.'], 500);
+    }
+
+    $details = $contractor['name'] . '\'s contractor application was approved; portal account created.';
+    auditLog($db, $actorId, 'contractor_application_approved', 'contractors', $contractorId, $details);
+    logActivity($actorId, 'contractor_application_approved', $details);
+    notifyUser($newUserId, 'info', 'Application approved', 'Your contractor application has been approved. Check your email to set up portal access.');
+
+    $otp = new OTPManager();
+    $loginUrl = appUrl('/auth/forgot-password.php?from=staff');
+    $emailBody = '
+        <p>Hello <strong>' . htmlspecialchars($contractor['name'], ENT_QUOTES, 'UTF-8') . '</strong>,</p>
+        <p>Congratulations — your contractor application has been reviewed and <strong>approved</strong> by the Bids and Awards Committee.</p>
+        <p>To access your contractor portal, set your password here:</p>
+        <p><a href="' . htmlspecialchars($loginUrl, ENT_QUOTES, 'UTF-8') . '">' . htmlspecialchars($loginUrl, ENT_QUOTES, 'UTF-8') . '</a></p>
+        <p>Your username is: <strong>' . htmlspecialchars($username, ENT_QUOTES, 'UTF-8') . '</strong></p>
+    ';
+    $otp->sendPlainEmail($contractor['email'], 'Your Contractor Application Has Been Approved', $emailBody);
+
+    respond(['success' => true, 'status' => 'approved', 'temp_password' => $tempPassword]);
 }
 
 respond(['error' => 'Unknown action.'], 404);

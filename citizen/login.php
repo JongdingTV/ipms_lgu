@@ -1,15 +1,28 @@
 <?php
 require_once __DIR__ . '/../auth/session.php';
+require_once __DIR__ . '/../includes/OTPManager.php';
 
 if (isLoggedIn()) {
     redirectToRoleDashboard();
 }
 
+// Throttles the auto-resend below against repeated login submissions for the
+// same not-yet-verified account (mirrors auth/forgot-password.php's cooldown).
+define('CITIZEN_VERIFY_RESEND_COOLDOWN_SECONDS', 45);
+
 $error = '';
 $status = '';
 
-if (isset($_GET['registered'])) {
+if (isset($_GET['verified'])) {
+    $status = 'Email verified! Your account is now active — please log in.';
+} elseif (isset($_GET['registered'])) {
     $status = 'Registration successful! Please log in with your credentials.';
+} elseif (isset($_GET['reset'])) {
+    $status = 'Password reset! Please log in with your new password.';
+} elseif (isset($_GET['timeout'])) {
+    $status = 'Your session expired after 30 minutes of inactivity. Please sign in again.';
+} elseif (isset($_GET['error'])) {
+    $status = trim((string) $_GET['error']);
 }
 
 if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
@@ -25,8 +38,31 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
         $result = authenticateUser($identifier, $password, 'citizen');
         if ($result['success']) {
             redirectToRoleDashboard($result['user']['role']);
+        } elseif (!empty($result['inactive_user'])) {
+            // Correct credentials, account just never finished email
+            // verification (e.g. the original OTP session was lost). Resend a
+            // fresh code through the same OTPManager path registration uses,
+            // rather than leaving the citizen permanently stuck.
+            $inactiveUser = $result['inactive_user'];
+            $otp = new OTPManager();
+
+            if (!$otp->hasRecentOTP($inactiveUser['user_id'], 'citizen_verification', CITIZEN_VERIFY_RESEND_COOLDOWN_SECONDS)) {
+                $otpResult = $otp->createOTP($inactiveUser['user_id'], 'citizen_verification');
+                if ($otpResult['success']) {
+                    $sendResult = $otp->sendOTPEmail($inactiveUser['email'], $inactiveUser['full_name'], $otpResult['otp_code']);
+                    if (!empty($sendResult['dev_fallback'])) {
+                        $_SESSION['dev_otp_preview'] = $otpResult['otp_code'];
+                    }
+                }
+            }
+
+            $_SESSION['pending_otp_user_id'] = $inactiveUser['user_id'];
+            $_SESSION['pending_otp_email'] = $inactiveUser['email'];
+            header('Location: ' . appUrl('/citizen/verify-otp.php?resent=1'));
+            exit;
+        } else {
+            $error = $result['message'];
         }
-        $error = $result['message'];
     }
 }
 ?>
@@ -273,6 +309,7 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
             </form>
 
             <div class="login-footer">
+                <p><a href="<?= htmlspecialchars(appUrl('/auth/forgot-password.php?from=citizen')) ?>">Forgot your password?</a></p>
                 <p>Don't have an account yet?</p>
                 <a href="<?= htmlspecialchars(appUrl('/citizen/register.php')) ?>" style="display: inline-block; padding: 0.5rem 1rem; background: #f0f0f0; border-radius: 6px; width: 100%; text-align: center;">
                     Create Account

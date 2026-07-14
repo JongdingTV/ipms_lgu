@@ -41,6 +41,13 @@ function normalizeBasePath(?string $path): string
     return '/' . trim($path, '/');
 }
 
+// PHP's ini-configured timezone (Europe/Berlin on this box) doesn't match
+// MySQL's SYSTEM timezone (Asia/Manila) — without this, every PHP-computed
+// timestamp (e.g. OTP expires_at) lands ~6 hours off from MySQL-generated
+// ones (created_at via CURRENT_TIMESTAMP), corrupting any SQL-side NOW()
+// comparison such as cleanExpiredOTPs()'s DELETE ... WHERE expires_at < NOW().
+date_default_timezone_set('Asia/Manila');
+
 define('APP_ENV', envValue('APP_ENV', 'local'));
 define('APP_NAME', envValue('APP_NAME', 'Infrastructure Project Management System'));
 define('APP_BASE_PATH', normalizeBasePath(envValue('APP_BASE_PATH', '/ipms.lgu')));
@@ -88,6 +95,20 @@ function appUrl(string $path = ''): string
 {
     $normalizedPath = '/' . ltrim($path, '/');
     return APP_BASE_PATH . ($path === '' ? '' : $normalizedPath);
+}
+
+/**
+ * Same as appUrl() but appends a `?v=<mtime>` cache-buster for static assets
+ * (JS/CSS) so browsers that cache aggressively (no revalidation request at
+ * all, not even a 304) are forced to fetch a fresh copy the moment the file
+ * on disk actually changes, instead of silently serving a stale build
+ * indefinitely.
+ */
+function assetUrl(string $path): string
+{
+    $absolutePath = dirname(__DIR__) . '/' . ltrim($path, '/');
+    $version = is_file($absolutePath) ? filemtime($absolutePath) : time();
+    return appUrl($path) . '?v=' . $version;
 }
 
 function roleLabel(string $role): string

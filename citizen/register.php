@@ -2,6 +2,7 @@
 require_once __DIR__ . '/../includes/config.php';
 require_once __DIR__ . '/../includes/db.php';
 require_once __DIR__ . '/../auth/session.php';
+require_once __DIR__ . '/../includes/OTPManager.php';
 
 if (isLoggedIn()) {
     redirectToRoleDashboard();
@@ -37,7 +38,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $confirmPassword = $_POST['confirm_password'] ?? '';
 
     // Validate required fields
-    if (empty($firstName)) $errors[] = 'First name is required';
+    if (empty($firstName)) $errors[] = '    ';
     if (empty($lastName)) $errors[] = 'Last name is required';
     if (empty($email)) $errors[] = 'Email is required';
     if (empty($phone)) $errors[] = 'Phone is required';
@@ -112,16 +113,27 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     }
 
     // Check ID photo upload
+    $idPhotoExt = null;
     if (empty($_FILES['id_photo']['name'] ?? '')) {
         $errors[] = 'ID photo is required for verification';
     } else {
         $file = $_FILES['id_photo'];
-        $allowed = ['image/jpeg', 'image/png', 'image/gif'];
-        if (!in_array($file['type'], $allowed)) {
-            $errors[] = 'ID photo must be a JPG, PNG, or GIF image';
-        }
         if ($file['size'] > 5 * 1024 * 1024) { // 5MB limit
             $errors[] = 'ID photo must be less than 5MB';
+        }
+
+        // Validate the actual file content, not the client-supplied
+        // Content-Type header or filename extension (both attacker-controlled).
+        $imageInfo = is_uploaded_file($file['tmp_name'] ?? '') ? @getimagesize($file['tmp_name']) : false;
+        $extensionByImageType = [
+            IMAGETYPE_JPEG => 'jpg',
+            IMAGETYPE_PNG => 'png',
+            IMAGETYPE_GIF => 'gif',
+        ];
+        if ($imageInfo === false || !isset($extensionByImageType[$imageInfo[2]])) {
+            $errors[] = 'ID photo must be a valid JPG, PNG, or GIF image';
+        } else {
+            $idPhotoExt = $extensionByImageType[$imageInfo[2]];
         }
     }
 
@@ -145,19 +157,20 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     mkdir($uploadDir, 0755, true);
                 }
                 
-                $fileExt = pathinfo($_FILES['id_photo']['name'], PATHINFO_EXTENSION);
-                $fileName = 'citizen_id_' . time() . '_' . bin2hex(random_bytes(4)) . '.' . $fileExt;
+                $fileName = 'citizen_id_' . time() . '_' . bin2hex(random_bytes(4)) . '.' . $idPhotoExt;
                 $filePath = $uploadDir . $fileName;
                 
                 if (!move_uploaded_file($_FILES['id_photo']['tmp_name'], $filePath)) {
                     throw new Exception('Failed to upload ID photo');
                 }
 
-                // Create user account
+                // Create user account. Status starts 'inactive' — the account
+                // is only activated once the citizen verifies the OTP sent to
+                // their email (see citizen/verify-otp.php).
                 $passwordHash = password_hash($password, PASSWORD_BCRYPT);
                 $stmt = $pdo->prepare("
                     INSERT INTO users (username, email, password_hash, full_name, role, status)
-                    VALUES (?, ?, ?, ?, 'citizen', 'active')
+                    VALUES (?, ?, ?, ?, 'citizen', 'inactive')
                 ");
                 $stmt->execute([$username, $email, $passwordHash, "$firstName $lastName"]);
                 $userId = $pdo->lastInsertId();
@@ -179,8 +192,25 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
                 $pdo->commit();
 
-                // Redirect to login with success message
-                header('Location: ' . appUrl('/citizen/login.php?registered=1'));
+                // Send an OTP to verify the citizen's email before their
+                // account can log in.
+                $otp = new OTPManager();
+                $otpResult = $otp->createOTP($userId, 'citizen_verification');
+
+                $_SESSION['pending_otp_user_id'] = $userId;
+                $_SESSION['pending_otp_email'] = $email;
+
+                if ($otpResult['success']) {
+                    $sendResult = $otp->sendOTPEmail($email, "$firstName $lastName", $otpResult['otp_code']);
+                    if (!$sendResult['success'] && !empty($sendResult['dev_fallback'])) {
+                        // Mail isn't configured on this environment (e.g. local
+                        // dev without SMTP credentials) — surface the code
+                        // directly so the flow stays testable end-to-end.
+                        $_SESSION['dev_otp_preview'] = $otpResult['otp_code'];
+                    }
+                }
+
+                header('Location: ' . appUrl('/citizen/verify-otp.php'));
                 exit;
             }
         } catch (Exception $e) {

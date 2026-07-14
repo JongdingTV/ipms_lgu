@@ -30,6 +30,27 @@
   --mono: 'DM Mono', monospace;
 }
 
+/* ── Dark mode (see assets/js/theme-toggle.js) ──
+   Only the surface/text variables need overriding — the sidebar is already
+   dark in light mode, and the status colors (green/red/orange/amber/blue)
+   stay vibrant enough against a dark background as-is. Anything built with
+   these variables (which is most of the app) re-themes automatically;
+   a handful of hardcoded `background:white` form inputs are a known,
+   accepted gap rather than chasing every literal color in the codebase. */
+:root[data-theme="dark"] {
+  --bg-body:          #0f172a;
+  --bg-sidebar:       #0b1220;
+  --bg-sidebar-hover: #1c2a3f;
+  --bg-active:        #1e3a5f;
+  --accent:           #3b82f6;
+  --accent-light:     #1e3a5f;
+  --text-primary:     #e2e8f0;
+  --text-muted:       #94a3b8;
+  --card-bg:          #1e293b;
+  --card-shadow:      0 14px 34px rgba(0,0,0,0.4);
+  --border:           #334155;
+}
+
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 html { font-size: 14px; }
 body {
@@ -39,6 +60,7 @@ body {
   display: flex;
   min-height: 100vh;
   overflow-x: hidden;
+  transition: background-color .25s ease, color .25s ease;
 }
 a { text-decoration: none; color: inherit; }
 button { cursor: pointer; font-family: var(--font); }
@@ -49,7 +71,12 @@ button { cursor: pointer; font-family: var(--font); }
   width: var(--sidebar-w); height: 100vh;
   background: var(--bg-sidebar);
   display: flex; flex-direction: column;
-  z-index: 100; transition: transform 0.3s ease; overflow-y: auto;
+  z-index: 100; transition: transform 0.32s cubic-bezier(0.4, 0, 0.2, 1), background-color .25s ease; overflow-y: auto;
+}
+
+/* ── Smooth theme-switch for the shared surface components ── */
+.kpi-card, .chart-card, .info-card, .notif-panel, .user-menu, .topbar {
+  transition: background-color .25s ease, border-color .25s ease, color .25s ease;
 }
 .sidebar-logo {
   display: flex; align-items: center; gap: 10px;
@@ -112,6 +139,13 @@ button { cursor: pointer; font-family: var(--font); }
 .icon-btn { background: none; border: none; color: var(--text-muted); width: 36px; height: 36px; display: flex; align-items: center; justify-content: center; border-radius: 50%; transition: background .15s, color .15s; cursor: pointer; position: relative; }
 .icon-btn:hover { background: var(--bg-body); color: var(--text-primary); }
 .icon-btn svg { width: 20px; height: 20px; }
+
+/* ── Theme toggle button (sun in light mode, moon in dark mode) ── */
+.theme-toggle-btn .icon-moon { display: none; }
+.theme-toggle-btn.is-dark .icon-sun { display: none; }
+.theme-toggle-btn.is-dark .icon-moon { display: flex; }
+.theme-toggle-btn svg { transition: transform .3s cubic-bezier(0.4, 0, 0.2, 1); }
+.theme-toggle-btn:hover svg { transform: rotate(20deg); }
 .notif-badge { position: absolute; top: 4px; right: 2px; background: var(--red); color: white; font-size: .6rem; font-weight: 700; border-radius: 50%; width: 18px; height: 18px; display: flex; align-items: center; justify-content: center; border: 2px solid white; }
 
 .user-section { display: flex; align-items: center; gap: 12px; }
@@ -284,7 +318,7 @@ button { cursor: pointer; font-family: var(--font); }
 /* ── Modal ── */
 .modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,.45); z-index: 200; display: flex; align-items: center; justify-content: center; opacity: 0; pointer-events: none; transition: opacity .2s; backdrop-filter: blur(3px); }
 .modal-overlay.open { opacity: 1; pointer-events: all; }
-.modal { background: white; border-radius: var(--radius); width: 560px; max-width: 94vw; max-height: 90vh; overflow-y: auto; box-shadow: 0 20px 60px rgba(0,0,0,.2); transform: scale(.94); transition: transform .2s; }
+.modal { background: var(--card-bg); color: var(--text-primary); border-radius: var(--radius); width: 560px; max-width: 94vw; max-height: 90vh; overflow-y: auto; box-shadow: 0 20px 60px rgba(0,0,0,.2); transform: scale(.94); transition: transform .2s, background-color .25s ease, color .25s ease; }
 .modal-overlay.open .modal { transform: scale(1); }
 .modal-header { display: flex; align-items: center; justify-content: space-between; padding: 18px 22px; border-bottom: 1px solid var(--border); position: sticky; top: 0; background: white; z-index: 1; }
 .modal-header h3 { font-size: .95rem; font-weight: 700; }
@@ -307,6 +341,31 @@ button { cursor: pointer; font-family: var(--font); }
 .notif-low  .notif-dot { background: var(--accent); }
 .notif-msg  { font-size: .8rem; color: var(--text-primary); margin-bottom: 2px; }
 .notif-time { font-size: .72rem; color: var(--text-muted); }
+
+/* ── Global Search (Ctrl+K) ── */
+.gsearch-trigger { display: flex; align-items: center; gap: 8px; background: var(--bg-body); border: 1px solid var(--border); border-radius: 8px; padding: 8px 12px; color: var(--text-muted); font-size: .78rem; font-weight: 500; cursor: pointer; transition: all .2s; white-space: nowrap; }
+.gsearch-trigger:hover { border-color: var(--accent); color: var(--text-primary); }
+.gsearch-trigger svg { width: 15px; height: 15px; flex-shrink: 0; }
+.gsearch-trigger kbd { background: var(--card-bg); border: 1px solid var(--border); border-radius: 4px; padding: 1px 6px; font-size: .68rem; font-family: var(--font); color: var(--text-muted); }
+.hide-tablet { display: inline; }
+
+.gsearch-overlay { position: fixed; inset: 0; background: rgba(15,23,42,.5); z-index: 300; display: flex; align-items: flex-start; justify-content: center; padding-top: 12vh; opacity: 0; pointer-events: none; transition: opacity .2s; backdrop-filter: blur(3px); }
+.gsearch-overlay.open { opacity: 1; pointer-events: all; }
+.gsearch-box { background: var(--card-bg); color: var(--text-primary); width: 560px; max-width: 92vw; max-height: 70vh; border-radius: var(--radius); box-shadow: 0 24px 70px rgba(0,0,0,.3); overflow: hidden; display: flex; flex-direction: column; transform: translateY(-12px) scale(.98); transition: transform .2s, background-color .25s ease, color .25s ease; }
+.gsearch-overlay.open .gsearch-box { transform: translateY(0) scale(1); }
+.gsearch-input-row { display: flex; align-items: center; gap: 10px; padding: 16px 18px; border-bottom: 1px solid var(--border); }
+.gsearch-icon { width: 18px; height: 18px; color: var(--text-muted); flex-shrink: 0; }
+.gsearch-input-row input { flex: 1; border: none; background: transparent; outline: none; font-size: .95rem; color: var(--text-primary); font-family: var(--font); }
+.gsearch-input-row input::placeholder { color: var(--text-muted); }
+.gsearch-kbd { background: var(--bg-body); border: 1px solid var(--border); border-radius: 4px; padding: 2px 7px; font-size: .7rem; color: var(--text-muted); flex-shrink: 0; }
+.gsearch-results { overflow-y: auto; padding: 8px; }
+.gsearch-group { margin-bottom: 6px; }
+.gsearch-group-label { font-size: .68rem; font-weight: 700; text-transform: uppercase; letter-spacing: .05em; color: var(--text-muted); padding: 8px 10px 4px; }
+.gsearch-result { display: flex; flex-direction: column; gap: 2px; width: 100%; text-align: left; padding: 10px 12px; border-radius: var(--radius-sm); background: none; border: none; cursor: pointer; transition: background .15s; }
+.gsearch-result:hover, .gsearch-result:focus { background: var(--bg-body); }
+.gsearch-result-title { font-size: .85rem; font-weight: 600; color: var(--text-primary); }
+.gsearch-result-meta { font-size: .75rem; color: var(--text-muted); }
+.gsearch-results .empty-state { padding: 30px 16px; text-align: center; }
 
 /* ══════════════════════════════════════════════════════════
    PAGE-LEVEL STYLES (Projects, Budget, Contractors, Feedback)
@@ -382,6 +441,33 @@ button { cursor: pointer; font-family: var(--font); }
 .btn-secondary:disabled { opacity: .45; cursor: not-allowed; transform: none; }
 .inline-actions { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
 .action-btns { flex-wrap: wrap; }
+
+/* ── Inline field-error rendering ──
+   Shared across the superadmin/bac/contractor/engineer portal JS files
+   (each attaches .fieldErrors to thrown Errors and calls a local
+   showFieldErrors(form, fieldErrors) helper using these two classes). */
+.form-input.has-error { border-color: var(--red); box-shadow: 0 0 0 3px rgba(239,68,68,.12); }
+.field-error-msg { margin-top: 4px; color: var(--red); font-size: .72rem; font-weight: 600; }
+
+/* ── Dynamic document rows (repeatable "+ Add another document" fields) ── */
+.doc-section { margin-top: 16px; }
+.doc-section > label { display: block; margin-bottom: 8px; font-size: .75rem; font-weight: 600; color: var(--text-muted); letter-spacing: .03em; }
+.doc-rows { display: flex; flex-direction: column; gap: 8px; }
+.doc-row { display: grid; grid-template-columns: 1fr 1.4fr 1.4fr auto; gap: 8px; align-items: center; padding: 10px; border: 1px dashed var(--border); border-radius: var(--radius-sm); background: var(--bg-body); }
+.doc-row-remove { width: 28px; height: 28px; border: 1px solid var(--border); border-radius: 6px; background: white; color: var(--text-muted); font-size: 1rem; line-height: 1; cursor: pointer; transition: background .15s, color .15s, border-color .15s; }
+.doc-row-remove:hover { background: #fee2e2; border-color: var(--red); color: var(--red); }
+.doc-add-btn { align-self: flex-start; margin-top: 4px; padding: 7px 14px; border: 1px dashed var(--accent); border-radius: var(--radius-sm); background: var(--accent-light); color: var(--accent); font-size: .78rem; font-weight: 700; cursor: pointer; transition: background .15s; }
+.doc-add-btn:hover { background: #cfe0fc; }
+@media (max-width: 640px) { .doc-row { grid-template-columns: 1fr; } }
+
+/* ── Toggle switch (e.g. Settings' maintenance_mode) ── */
+.form-checkbox-label { display: flex; align-items: center; gap: 10px; font-size: .83rem; font-weight: 600; color: var(--text-primary); cursor: pointer; }
+.toggle-switch { position: relative; display: inline-block; width: 40px; height: 22px; flex: 0 0 auto; }
+.toggle-switch input { opacity: 0; width: 0; height: 0; }
+.toggle-slider { position: absolute; inset: 0; background: var(--border); border-radius: 999px; transition: background .2s; }
+.toggle-slider::before { content: ""; position: absolute; left: 3px; top: 3px; width: 16px; height: 16px; background: white; border-radius: 50%; transition: transform .2s; }
+.toggle-switch input:checked + .toggle-slider { background: var(--accent); }
+.toggle-switch input:checked + .toggle-slider::before { transform: translateX(18px); }
 .assignment-select { min-width: 220px; }
 
 .admin-summary-grid {
@@ -707,6 +793,8 @@ button { cursor: pointer; font-family: var(--font); }
   .search-bar { width: 120px; font-size: .8rem; }
   .search-bar input::placeholder { font-size: .75rem; }
   .user-info { display: none; }
+  .hide-tablet { display: none; }
+  .gsearch-trigger kbd { display: none; }
   .budget-summary-grid { grid-template-columns: 1fr; }
   .admin-summary-grid { grid-template-columns: 1fr; }
 }
@@ -714,9 +802,80 @@ button { cursor: pointer; font-family: var(--font); }
   .topbar { gap: 8px; padding: 0 12px; }
   .topbar-left { gap: 8px; max-width: 100%; }
   .search-bar { display: none; }
+  .gsearch-trigger { padding: 8px; }
+  .gsearch-trigger span { display: none; }
   .kpi-grid { grid-template-columns: 1fr; }
   .content { padding: 12px; }
 }
 ::-webkit-scrollbar { width: 6px; }
 ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 3px; }
 ::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
+
+/* ========================================================
+   Motion pass — page transitions, scroll-reveal, skeleton loaders.
+   Mirrors the patterns already proven in citizen.css (.page-section
+   fade) and landing.php (.reveal / IntersectionObserver), brought to
+   the shared dashboard framework so admin/super_admin/bac/engineer/
+   contractor get the same polish citizen already had.
+   ======================================================== */
+
+/* ── Page-switch fade (SPA section toggle) ── */
+.page-section { animation: pageFadeIn .35s ease; }
+@keyframes pageFadeIn {
+  from { opacity: 0; transform: translateY(10px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+/* ── Scroll-reveal targets (see assets/js/scroll-reveal.js) ── */
+.reveal {
+  opacity: 0;
+  transform: translateY(20px);
+  transition: opacity .6s cubic-bezier(.16,.8,.3,1), transform .6s cubic-bezier(.16,.8,.3,1);
+}
+.reveal.is-visible { opacity: 1; transform: translateY(0); }
+
+/* ── Skeleton loaders (replace plain "Loading..." text) ── */
+.skeleton-line, .skeleton-card, .skeleton-row {
+  position: relative;
+  overflow: hidden;
+  background: #e7ecf3;
+  border-radius: var(--radius-sm);
+}
+.skeleton-line::after, .skeleton-card::after, .skeleton-row::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  transform: translateX(-100%);
+  background: linear-gradient(90deg, transparent, rgba(255,255,255,0.7), transparent);
+  animation: skeletonShimmer 1.4s ease-in-out infinite;
+}
+@keyframes skeletonShimmer { 100% { transform: translateX(100%); } }
+
+.skeleton-line { height: 14px; margin: 6px 0; }
+.skeleton-line.w-40 { width: 40%; }
+.skeleton-line.w-60 { width: 60%; }
+.skeleton-line.w-80 { width: 80%; }
+
+.skeleton-row {
+  height: 56px;
+  margin-bottom: 8px;
+  border: 1px solid var(--border);
+}
+
+.skeleton-card {
+  height: 90px;
+  border: 1px solid var(--border);
+  box-shadow: var(--card-shadow);
+}
+
+.skeleton-group { display: flex; flex-direction: column; gap: 0; padding: 4px 0; }
+
+/* ── Accessibility: respect reduced-motion preference everywhere ── */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: .001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: .001ms !important;
+    scroll-behavior: auto !important;
+  }
+}

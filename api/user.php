@@ -8,75 +8,63 @@ requireAnyRole(APP_ROLES);
 requireCsrfProtection();
 
 $method = $_SERVER['REQUEST_METHOD'];
+$db = getDB();
+$userId = (int) (currentUser()['user_id'] ?? 0);
 
 try {
     switch ($method) {
         case 'GET':
-            // Get current user profile
-            $stmt = $pdo->prepare("
+            $stmt = $db->prepare("
                 SELECT id, username, full_name, email, role, last_login, created_at
-                FROM users 
+                FROM users
                 WHERE id = ?
             ");
-            $stmt->execute([$_SESSION['user_id']]);
-            $user = $stmt->fetch();
-            
-            echo json_encode(['data' => $user]);
-            break;
-            
+            $stmt->execute([$userId]);
+            respond(['data' => $stmt->fetch()]);
+
         case 'PUT':
-            // Update profile or password
             parse_str(file_get_contents('php://input'), $data);
-            
+
             if (isset($data['current_password'])) {
-                // Change password
                 $current = $data['current_password'];
-                $new = $data['new_password'];
-                
-                // Verify current password
-                $stmt = $pdo->prepare("SELECT password_hash FROM users WHERE id = ?");
-                $stmt->execute([$_SESSION['user_id']]);
+                $new = $data['new_password'] ?? '';
+
+                $stmt = $db->prepare("SELECT password_hash FROM users WHERE id = ?");
+                $stmt->execute([$userId]);
                 $user = $stmt->fetch();
-                
-                if (!password_verify($current, $user['password_hash'])) {
-                    echo json_encode(['error' => 'Current password is incorrect']);
-                    break;
+
+                if (!$user || !password_verify($current, $user['password_hash'])) {
+                    respond(['error' => 'Current password is incorrect'], 422);
                 }
-                
-                // Update password
-                $newHash = password_hash($new, PASSWORD_DEFAULT);
-                $stmt = $pdo->prepare("UPDATE users SET password_hash = ? WHERE id = ?");
-                $stmt->execute([$newHash, $_SESSION['user_id']]);
-                
-                echo json_encode(['success' => true, 'message' => 'Password updated successfully']);
-                
-            } else {
-                // Update profile
-                $stmt = $pdo->prepare("
-                    UPDATE users 
-                    SET full_name = ?, email = ?
-                    WHERE id = ?
-                ");
-                $stmt->execute([
-                    $data['full_name'],
-                    $data['email'],
-                    $_SESSION['user_id']
-                ]);
-                
-                // Update session
-                $_SESSION['full_name'] = $data['full_name'];
-                $_SESSION['email'] = $data['email'];
-                
-                echo json_encode(['success' => true, 'message' => 'Profile updated successfully']);
+
+                $newHash = password_hash($new, PASSWORD_BCRYPT);
+                $db->prepare("UPDATE users SET password_hash = ? WHERE id = ?")
+                   ->execute([$newHash, $userId]);
+
+                respond(['success' => true, 'message' => 'Password updated successfully']);
             }
-            break;
-            
+
+            $db->prepare("
+                UPDATE users
+                SET full_name = ?, email = ?
+                WHERE id = ?
+            ")->execute([
+                $data['full_name'] ?? '',
+                $data['email'] ?? '',
+                $userId,
+            ]);
+
+            $_SESSION['auth_user']['full_name'] = $data['full_name'] ?? '';
+            $_SESSION['auth_user']['email'] = $data['email'] ?? '';
+            $_SESSION['full_name'] = $data['full_name'] ?? '';
+            $_SESSION['email'] = $data['email'] ?? '';
+
+            respond(['success' => true, 'message' => 'Profile updated successfully']);
+
         default:
-            http_response_code(405);
-            echo json_encode(['error' => 'Method not allowed']);
+            respond(['error' => 'Method not allowed'], 405);
     }
-    
-} catch (Exception $e) {
-    http_response_code(500);
-    echo json_encode(['error' => 'Server error: ' . $e->getMessage()]);
+} catch (Throwable $e) {
+    error_log('api/user.php error: ' . $e->getMessage());
+    respond(['error' => 'Server error. Please try again later.'], 500);
 }

@@ -18,9 +18,9 @@ function authJsonError(string $message, int $status = 401): void
     exit;
 }
 
-function redirectToLogin(array $query = []): void
+function redirectToLogin(array $query = [], ?string $role = null): void
 {
-    $location = APP_LOGIN_PATH;
+    $location = $role === 'citizen' ? appUrl('/citizen/login.php') : APP_LOGIN_PATH;
     if ($query !== []) {
         $location .= '?' . http_build_query($query);
     }
@@ -61,26 +61,31 @@ function logoutCurrentUser(bool $logActivity = true): void
 
 function requireLogin(array $roles = []): array
 {
+    // Citizen pages call requireLogin(['citizen']) exclusively — reuse that as
+    // a hint so every redirect below sends citizens back to their own login
+    // page instead of the shared staff auth/login.php.
+    $loginRole = (count($roles) === 1 && $roles[0] === 'citizen') ? 'citizen' : null;
+
     if (!isLoggedIn()) {
-        redirectToLogin(['error' => 'Please log in to continue.']);
+        redirectToLogin(['error' => 'Please log in to continue.'], $loginRole);
     }
 
     $user = currentUser();
     if (!$user || !isValidRole((string) ($user['role'] ?? ''))) {
         logoutCurrentUser(false);
-        redirectToLogin(['error' => 'Your session role is invalid. Please log in again.']);
+        redirectToLogin(['error' => 'Your session role is invalid. Please log in again.'], $loginRole);
     }
 
     $lastActivity = (int) ($_SESSION['last_activity'] ?? 0);
     if ($lastActivity > 0 && (time() - $lastActivity) > SESSION_TIMEOUT_SECONDS) {
         logoutCurrentUser(false);
-        redirectToLogin(['timeout' => 1]);
+        redirectToLogin(['timeout' => 1], $loginRole);
     }
 
     $userAgent = $_SERVER['HTTP_USER_AGENT'] ?? '';
     if (!empty($_SESSION['user_agent']) && $_SESSION['user_agent'] !== $userAgent) {
         logoutCurrentUser(false);
-        redirectToLogin(['error' => 'Session validation failed.']);
+        redirectToLogin(['error' => 'Session validation failed.'], $loginRole);
     }
 
     $_SESSION['last_activity'] = time();
@@ -212,7 +217,20 @@ function authenticateUser(string $identifier, string $password, ?string $selecte
     if (($user['status'] ?? 'inactive') !== 'active') {
         recordLoginAttempt($identifier, $ipAddress, false, (int) $user['id']);
         logActivity((int) $user['id'], 'login_blocked', 'Inactive account login attempt');
-        return ['success' => false, 'message' => 'Your account is inactive.'];
+        // Credentials were valid (password_verify already passed above), so it's
+        // safe to hand back identity for the inactive case — citizen/login.php
+        // uses this to offer a "resend verification email" step for citizens
+        // whose registration OTP session was lost before they could verify.
+        return [
+            'success' => false,
+            'message' => 'Your account is inactive.',
+            'inactive_user' => [
+                'user_id' => (int) $user['id'],
+                'email' => $user['email'],
+                'full_name' => $user['full_name'],
+                'role' => $user['role'],
+            ],
+        ];
     }
 
     if ($selectedRole !== null && $selectedRole !== '' && $user['role'] !== $selectedRole) {

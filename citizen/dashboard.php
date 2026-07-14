@@ -75,25 +75,42 @@ $citizen = $stmt->fetch();
         </article>
       </section>
 
+      <section class="charts-row reveal">
+        <article class="chart-card">
+          <div class="chart-header">
+            <h2 class="chart-title">Project Status Mix</h2>
+          </div>
+          <div class="chart-body budget-body">
+            <div class="donut-wrapper">
+              <canvas id="citizenStatusChart"></canvas>
+              <div class="donut-center">
+                <span class="donut-pct" id="citizenStatusChartTotal">0</span>
+              </div>
+            </div>
+            <div class="budget-legend" id="citizenStatusChartLegend"></div>
+          </div>
+        </article>
+      </section>
+
       <!-- Recent Projects Section -->
-      <section class="dashboard-section">
+      <section class="dashboard-section reveal" style="transition-delay:.08s;">
         <div class="section-header">
           <h2>Recent Projects in Your Area</h2>
           <a href="#" class="view-all-link" onclick="changePage('projects')">View All →</a>
         </div>
         <div id="recentProjectsContainer" class="projects-grid">
-          <p style="text-align: center; color: #999; padding: 2rem;">Loading projects...</p>
+          <div class="skeleton-group"><div class="skeleton-row"></div><div class="skeleton-row"></div></div>
         </div>
       </section>
 
       <!-- Recent Feedback Section -->
-      <section class="dashboard-section">
+      <section class="dashboard-section reveal" style="transition-delay:.14s;">
         <div class="section-header">
           <h2>Your Feedback & Complaints</h2>
           <a href="#" class="view-all-link" onclick="changePage('track-feedback')">View All →</a>
         </div>
         <div id="recentFeedbackContainer" class="feedback-list">
-          <p style="text-align: center; color: #999; padding: 2rem;">No submissions yet</p>
+          <div class="skeleton-group"><div class="skeleton-row"></div><div class="skeleton-row"></div></div>
         </div>
       </section>
     </section>
@@ -218,4 +235,7 @@ $citizen = $stmt->fetch();
   </main>
 </div>
 
-<script src="<?= htmlspecialchars(appUrl('/citizen/assets/js/citizen.js')) ?>"></script>
+<?php $notifPanelTitle = 'Citizen Updates'; include __DIR__ . '/../includes/notifications-panel.php'; ?>
+
+<script src="<?= htmlspecialchars(assetUrl('/assets/js/notifications.js')) ?>"></script>
+<script src="<?= htmlspecialchars(assetUrl('/citizen/assets/js/citizen.js')) ?>"></script>

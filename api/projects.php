@@ -7,13 +7,20 @@ require_once __DIR__ . '/../includes/auth.php';
 require_once __DIR__ . '/../contractor/includes/scope.php';
 require_once __DIR__ . '/../engineer/includes/scope.php';
 require_once __DIR__ . '/../includes/workflow.php';
+require_once __DIR__ . '/../includes/Notifications.php';
+require_once __DIR__ . '/../includes/Validator.php';
 apiHeaders();
 
 $method = $_SERVER['REQUEST_METHOD'];
+$action = $_GET['action'] ?? '';
 if ($method === 'GET') {
     requireAnyRole(['super_admin', 'admin', 'bac', 'engineer', 'contractor', 'citizen']);
 } else {
-    requireAnyRole(['super_admin', 'admin', 'engineer']);
+    // Mutations here are unscoped (any project id, any field, including
+    // contractor/budget/status). Engineers only have a scoped mutation path
+    // via engineer/api/portal.php's own 'status' action, so they must not be
+    // allowed to hit this unscoped endpoint.
+    requireAnyRole(['super_admin', 'admin']);
 }
 
 requireCsrfProtection();
@@ -25,6 +32,90 @@ $id     = isset($_GET['id']) ? (int) $_GET['id'] : null;
 $user   = currentUser();
 $isContractor = ($user['role'] ?? '') === 'contractor';
 $contractorScopeId = null;
+
+const PROJECT_DOC_MAX_SIZE = 10 * 1024 * 1024;
+const PROJECT_DOC_EXTENSIONS = ['pdf', 'doc', 'docx', 'xls', 'xlsx', 'png', 'jpg', 'jpeg'];
+
+/** Same dynamic documents[N][document_type]/[title] + flat document_files[N] convention used in superadmin/api/accounts.php. */
+function projectCollectDocumentRows(array $textRows, array $filesField): array
+{
+    $indices = array_keys($textRows);
+    foreach (array_keys($filesField['name'] ?? []) as $idx) {
+        if (!in_array($idx, $indices, true)) {
+            $indices[] = $idx;
+        }
+    }
+
+    $rows = [];
+    foreach ($indices as $idx) {
+        $documentType = trim((string) ($textRows[$idx]['document_type'] ?? ''));
+        $title = trim((string) ($textRows[$idx]['title'] ?? ''));
+        $file = FileUpload::fromNestedFiles($filesField, (int) $idx);
+
+        if ($title === '' && $file === null) {
+            continue;
+        }
+
+        if ($title === '') {
+            $error = 'Title is required when a file is attached.';
+        } else {
+            $error = FileUpload::validate($file, [
+                'required' => true,
+                'max_size' => PROJECT_DOC_MAX_SIZE,
+                'extensions' => PROJECT_DOC_EXTENSIONS,
+            ]);
+        }
+
+        $rows[] = [
+            'document_type' => $documentType !== '' ? $documentType : 'General',
+            'title' => $title,
+            'file' => $file,
+            'error' => $error,
+        ];
+    }
+
+    return $rows;
+}
+
+/** Stores each row's file + inserts its supporting_documents row (owner_type='project'). Throws FileUploadException on failure. */
+function projectStoreDocuments(PDO $db, array $rows, int $projectId, int $uploadedBy, array &$storedFiles): void
+{
+    $stmt = $db->prepare('
+        INSERT INTO supporting_documents
+            (owner_type, owner_id, document_type, title, original_name, file_path, file_size, mime_type, uploaded_by, status)
+        VALUES ("project", ?, ?, ?, ?, ?, ?, ?, ?, "pending")
+    ');
+
+    foreach ($rows as $row) {
+        $stored = FileUpload::store($row['file'], 'supporting-documents/project', [
+            'max_size' => PROJECT_DOC_MAX_SIZE,
+            'extensions' => PROJECT_DOC_EXTENSIONS,
+        ]);
+        $storedFiles[] = $stored['stored_path'];
+
+        $stmt->execute([
+            $projectId,
+            $row['document_type'],
+            $row['title'],
+            $stored['original_name'],
+            $stored['stored_path'],
+            $stored['file_size'],
+            $stored['mime_type'],
+            $uploadedBy,
+        ]);
+    }
+}
+
+/** Best-effort cleanup when a DB step fails after files were already moved (not covered by SQL rollback). */
+function projectCleanupFiles(array $relativePaths): void
+{
+    foreach ($relativePaths as $path) {
+        $full = dirname(__DIR__) . '/' . $path;
+        if (is_file($full)) {
+            @unlink($full);
+        }
+    }
+}
 
 if ($method === 'GET' && $isContractor) {
     $contractorScopeId = contractorScopeCurrentId($db);
@@ -141,43 +232,118 @@ if ($method === 'GET') {
     ]);
 }
 
+// ── POST action=decide (super_admin only — approve/return/reject) ──
+if ($method === 'POST' && $action === 'decide') {
+    requireAnyRole(['super_admin']);
+
+    $body = requestBody();
+    $validated = Validator::make($body, [
+        'project_id' => 'required|integer',
+        'decision' => 'required|in:approve,return,reject',
+        'reason' => 'nullable|string|max:1000',
+    ])->stopOnFailure();
+
+    $projectId = (int) $validated['project_id'];
+    $decision = (string) $validated['decision'];
+    $reason = trim((string) ($validated['reason'] ?? ''));
+
+    if ($decision !== 'approve' && $reason === '') {
+        respond(['error' => 'A reason is required to return or reject a project.'], 422);
+    }
+
+    $stmt = $db->prepare("SELECT id, name, status, created_by FROM projects WHERE id = ?");
+    $stmt->execute([$projectId]);
+    $project = $stmt->fetch();
+    if (!$project) {
+        respond(['error' => 'Project not found.'], 404);
+    }
+
+    $statusMap = ['approve' => 'approved', 'return' => 'returned', 'reject' => 'cancelled'];
+    $pastTense = ['approve' => 'approved', 'return' => 'returned', 'reject' => 'rejected'];
+    $newStatus = $statusMap[$decision];
+
+    $db->prepare("
+        UPDATE projects
+        SET status = ?, approved_by = ?, approved_at = NOW(), rejection_reason = ?
+        WHERE id = ?
+    ")->execute([$newStatus, (int) ($user['user_id'] ?? 0), $reason !== '' ? $reason : null, $projectId]);
+
+    $details = $project['name'] . ' was ' . $pastTense[$decision] . ($reason !== '' ? ' — ' . $reason : '') . '.';
+    projectWorkflowLog($db, 'Project ' . $pastTense[$decision], $projectId, $details, (int) ($user['user_id'] ?? 0) ?: null);
+    logActivity((int) ($user['user_id'] ?? 0), 'project_status_' . $newStatus, $details);
+
+    if (!empty($project['created_by'])) {
+        notifyUser((int) $project['created_by'], 'info', 'Project ' . $pastTense[$decision], $details);
+    }
+
+    respond(['success' => true, 'status' => $newStatus]);
+}
+
 // ── POST (create) ──────────────────────────────────────────
 if ($method === 'POST') {
-    $b = requestBody();
-    $required = ['name', 'budget', 'start_date', 'end_date'];
+    $b = $_POST;
+    $required = ['name', 'budget', 'start_date', 'end_date', 'location', 'description'];
     foreach ($required as $f) {
         if (empty($b[$f])) respond(['error' => "Field '$f' is required"], 422);
+    }
+
+    $documentRows = projectCollectDocumentRows($_POST['documents'] ?? [], $_FILES['document_files'] ?? []);
+    if ($documentRows === []) {
+        respond(['error' => 'At least one supporting document (e.g. feasibility study, site assessment, budget justification) is required.'], 422);
+    }
+    foreach ($documentRows as $i => $row) {
+        if ($row['error'] !== null) {
+            respond(['error' => 'Document row ' . ($i + 1) . ': ' . $row['error']], 422);
+        }
     }
 
     // Auto project code
     $last = (int) $db->query("SELECT COUNT(*) FROM projects")->fetchColumn() + 1;
     $code = 'PRJ-' . str_pad($last, 3, '0', STR_PAD_LEFT);
-    $status = $b['status'] ?? 'draft';
-    if (!in_array($status, projectWorkflowStatuses(), true)) {
-        respond(['error' => 'Invalid project status'], 422);
+    // Registration always starts at 'draft' — only the decide action (super_admin
+    // only) can move a project to 'approved', so a caller can no longer skip the
+    // review step by passing an arbitrary initial status.
+    $status = 'draft';
+
+    $storedFiles = [];
+    $newId = null;
+
+    $db->beginTransaction();
+    try {
+        $stmt = $db->prepare("
+            INSERT INTO projects
+                (project_code, name, description, location, contractor_id,
+                 budget, start_date, end_date, progress, status, created_by)
+            VALUES (?,?,?,?,?,?,?,?,?,?,?)
+        ");
+        $stmt->execute([
+            $code,
+            $b['name'],
+            $b['description'],
+            $b['location'],
+            !empty($b['contractor_id']) ? (int) $b['contractor_id'] : null,
+            (float) $b['budget'],
+            $b['start_date'],
+            $b['end_date'],
+            (int) ($b['progress'] ?? 0),
+            $status,
+            (int) ($user['user_id'] ?? 0) ?: null,
+        ]);
+
+        $newId = (int) $db->lastInsertId();
+        projectStoreDocuments($db, $documentRows, $newId, (int) ($user['user_id'] ?? 0), $storedFiles);
+
+        $db->commit();
+    } catch (Throwable $e) {
+        if ($db->inTransaction()) {
+            $db->rollBack();
+        }
+        projectCleanupFiles($storedFiles);
+        respond(['error' => $e->getMessage() !== '' ? $e->getMessage() : 'Unable to register project.'], 422);
     }
 
-    $stmt = $db->prepare("
-        INSERT INTO projects
-            (project_code, name, description, location, contractor_id,
-             budget, start_date, end_date, progress, status)
-        VALUES (?,?,?,?,?,?,?,?,?,?)
-    ");
-    $stmt->execute([
-        $code,
-        $b['name'],
-        $b['description']   ?? null,
-        $b['location']      ?? null,
-        !empty($b['contractor_id']) ? (int) $b['contractor_id'] : null,
-        (float) $b['budget'],
-        $b['start_date'],
-        $b['end_date'],
-        (int) ($b['progress'] ?? 0),
-        $status,
-    ]);
-
-    $newId = (int) $db->lastInsertId();
-    projectWorkflowLog($db, 'Project registered', $newId, $b['name'] . ' was created with status ' . $status . '.', (int) ($user['user_id'] ?? 0) ?: null);
+    $details = $b['name'] . ' was registered with status ' . $status . ' and ' . count($documentRows) . ' supporting document(s).';
+    projectWorkflowLog($db, 'Project registered', $newId, $details, (int) ($user['user_id'] ?? 0) ?: null);
 
     respond(['id' => $newId, 'project_code' => $code], 201);
 }
@@ -201,6 +367,9 @@ if ($method === 'PUT') {
         if (array_key_exists($f, $b)) {
             if ($f === 'status' && !in_array((string) $b[$f], projectWorkflowStatuses(), true)) {
                 respond(['error' => 'Invalid project status'], 422);
+            }
+            if ($f === 'status' && (string) $b[$f] === 'approved') {
+                respond(['error' => 'Use the project approval action to approve a project.'], 422);
             }
 
             $fields[] = "$f = ?";
@@ -263,12 +432,34 @@ if ($method === 'PUT') {
 
     if (isset($b['status']) && $b['status'] !== $before['status']) {
         projectWorkflowLog($db, 'Project status updated', $id, $before['name'] . ' changed from ' . $before['status'] . ' to ' . $b['status'] . '.', (int) ($user['user_id'] ?? 0) ?: null);
+
+        $statusRecipients = [];
+        if (!empty($before['contractor_id'])) {
+            $cu = $db->prepare("SELECT user_id FROM contractors WHERE id = ?");
+            $cu->execute([$before['contractor_id']]);
+            $statusRecipients[] = (int) ($cu->fetchColumn() ?: 0);
+        }
+        $eu = $db->prepare("SELECT engineer_id FROM engineer_project_assignments WHERE project_id = ? AND status = 'active' ORDER BY assigned_at DESC LIMIT 1");
+        $eu->execute([$id]);
+        $statusRecipients[] = (int) ($eu->fetchColumn() ?: 0);
+
+        foreach (array_unique(array_filter($statusRecipients)) as $recipientId) {
+            notifyUser($recipientId, 'info', 'Project status updated', $before['name'] . ' is now "' . $b['status'] . '".');
+        }
     }
     if (array_key_exists('contractor_id', $b) && (string) ($b['contractor_id'] ?? '') !== (string) ($before['contractor_id'] ?? '')) {
         projectWorkflowLog($db, 'Contractor assignment updated', $id, $before['name'] . ' contractor assignment was updated.', (int) ($user['user_id'] ?? 0) ?: null);
+
+        if (!empty($b['contractor_id'])) {
+            $cu = $db->prepare("SELECT user_id FROM contractors WHERE id = ?");
+            $cu->execute([(int) $b['contractor_id']]);
+            $contractorUserId = (int) ($cu->fetchColumn() ?: 0);
+            notifyUser($contractorUserId, 'info', 'New project assignment', 'You have been assigned to ' . $before['name'] . '.');
+        }
     }
     if ($engineerId !== null) {
         projectWorkflowLog($db, 'Engineer assignment updated', $id, $before['name'] . ' was assigned for field monitoring.', (int) ($user['user_id'] ?? 0) ?: null);
+        notifyUser($engineerId, 'info', 'New project assignment', 'You have been assigned to ' . $before['name'] . ' for field monitoring.');
     }
 
     respond(['success' => true]);

@@ -3,6 +3,8 @@ require_once __DIR__ . '/../../includes/db.php';
 require_once __DIR__ . '/../../includes/auth.php';
 require_once __DIR__ . '/../includes/scope.php';
 require_once __DIR__ . '/../../includes/workflow.php';
+require_once __DIR__ . '/../../includes/Validator.php';
+require_once __DIR__ . '/../../includes/Pagination.php';
 
 apiHeaders();
 requireAnyRole(['contractor']);
@@ -173,12 +175,58 @@ function contractorPortalProjectExtras(PDO $db, array $project, int $contractorI
     return $project;
 }
 
-function contractorPortalSafeFileName(string $name): string
-{
-    $name = preg_replace('/[^A-Za-z0-9._-]+/', '-', $name);
-    $name = trim((string) $name, '.-');
+const CONTRACTOR_DOC_MAX_SIZE = 10 * 1024 * 1024;
+const CONTRACTOR_DOC_EXTENSIONS = ['pdf', 'doc', 'docx', 'xls', 'xlsx', 'png', 'jpg', 'jpeg'];
 
-    return $name !== '' ? $name : 'document';
+/** Same dynamic-row convention used by superadmin/bac: documents[N][title]/[document_type] + document_files[N]. */
+function contractorCollectDocumentRows(array $textRows, array $filesField): array
+{
+    $indices = array_keys($textRows);
+    foreach (array_keys($filesField['name'] ?? []) as $idx) {
+        if (!in_array($idx, $indices, true)) {
+            $indices[] = $idx;
+        }
+    }
+
+    $rows = [];
+    foreach ($indices as $idx) {
+        $documentType = trim((string) ($textRows[$idx]['document_type'] ?? ''));
+        $title = trim((string) ($textRows[$idx]['title'] ?? ''));
+        $file = FileUpload::fromNestedFiles($filesField, (int) $idx);
+
+        if ($title === '' && $file === null) {
+            continue;
+        }
+
+        if ($title === '') {
+            $error = 'Title is required when a file is attached.';
+        } else {
+            $error = FileUpload::validate($file, [
+                'required' => true,
+                'max_size' => CONTRACTOR_DOC_MAX_SIZE,
+                'extensions' => CONTRACTOR_DOC_EXTENSIONS,
+            ]);
+        }
+
+        $rows[] = [
+            'document_type' => $documentType !== '' ? $documentType : 'General',
+            'title' => $title,
+            'file' => $file,
+            'error' => $error,
+        ];
+    }
+
+    return $rows;
+}
+
+function contractorCleanupFiles(array $relativePaths): void
+{
+    foreach ($relativePaths as $path) {
+        $full = dirname(__DIR__, 2) . '/' . $path;
+        if (is_file($full)) {
+            @unlink($full);
+        }
+    }
 }
 
 if ($method === 'GET') {
@@ -243,27 +291,31 @@ if ($method === 'GET') {
     }
 
     if ($action === 'reports') {
-        $stmt = $db->prepare("
+        $page = max(1, (int) ($_GET['page'] ?? 1));
+        $perPage = min(100, max(1, (int) ($_GET['per_page'] ?? 10)));
+        $select = "
             SELECT r.*, p.project_code, p.name AS project_name
             FROM contractor_reports r
             INNER JOIN projects p ON p.id = r.project_id
             WHERE r.contractor_id = ?
             ORDER BY r.report_date DESC, r.id DESC
-        ");
-        $stmt->execute([$contractorId]);
-        respond(['data' => $stmt->fetchAll()]);
+        ";
+        $count = "SELECT COUNT(*) FROM contractor_reports r WHERE r.contractor_id = ?";
+        respond(paginate($db, $select, $count, [$contractorId], $page, $perPage));
     }
 
     if ($action === 'documents') {
-        $stmt = $db->prepare("
+        $page = max(1, (int) ($_GET['page'] ?? 1));
+        $perPage = min(100, max(1, (int) ($_GET['per_page'] ?? 10)));
+        $select = "
             SELECT d.*, p.project_code, p.name AS project_name
             FROM contractor_documents d
             INNER JOIN projects p ON p.id = d.project_id
             WHERE d.contractor_id = ?
             ORDER BY d.created_at DESC, d.id DESC
-        ");
-        $stmt->execute([$contractorId]);
-        respond(['data' => $stmt->fetchAll()]);
+        ";
+        $count = "SELECT COUNT(*) FROM contractor_documents d WHERE d.contractor_id = ?";
+        respond(paginate($db, $select, $count, [$contractorId], $page, $perPage));
     }
 
     if ($action === 'payments') {
@@ -275,17 +327,21 @@ if ($method === 'GET') {
 
 if ($method === 'POST') {
     if ($action === 'report') {
-        $body = requestBody();
-        $projectId = (int) ($body['project_id'] ?? 0);
-        $progress = max(0, min(100, (int) ($body['progress_percent'] ?? 0)));
-        $reportDate = trim((string) ($body['report_date'] ?? date('Y-m-d')));
-        $accomplishments = trim((string) ($body['accomplishments'] ?? ''));
-        $issues = trim((string) ($body['issues'] ?? ''));
-        $nextSteps = trim((string) ($body['next_steps'] ?? ''));
+        $validated = Validator::make(requestBody(), [
+            'project_id' => 'required|integer',
+            'progress_percent' => 'required|integer|min:0|max:100',
+            'report_date' => 'nullable|date',
+            'accomplishments' => 'required|string|min:3',
+            'issues' => 'nullable|string|max:2000',
+            'next_steps' => 'nullable|string|max:2000',
+        ])->stopOnFailure();
 
-        if ($projectId <= 0 || $accomplishments === '') {
-            respond(['error' => 'Project and accomplishments are required.'], 422);
-        }
+        $projectId = (int) $validated['project_id'];
+        $progress = max(0, min(100, (int) $validated['progress_percent']));
+        $reportDate = ($validated['report_date'] ?? '') !== '' ? $validated['report_date'] : date('Y-m-d');
+        $accomplishments = trim((string) $validated['accomplishments']);
+        $issues = trim((string) ($validated['issues'] ?? ''));
+        $nextSteps = trim((string) ($validated['next_steps'] ?? ''));
 
         $project = contractorPortalProject($db, $projectId, $contractorId);
         if (!$project) {
@@ -307,6 +363,7 @@ if ($method === 'POST') {
             $issues !== '' ? $issues : null,
             $nextSteps !== '' ? $nextSteps : null,
         ]);
+        $newReportId = (int) $db->lastInsertId();
 
         $newProgress = max((int) $project['progress'], $progress);
         $newStatus = $project['status'];
@@ -319,17 +376,15 @@ if ($method === 'POST') {
         $update = $db->prepare("UPDATE projects SET progress = ?, status = ? WHERE id = ? AND contractor_id = ?");
         $update->execute([$newProgress, $newStatus, $projectId, $contractorId]);
 
-        respond(['success' => true, 'id' => (int) $db->lastInsertId()], 201);
+        respond(['success' => true, 'id' => $newReportId], 201);
     }
 
     if ($action === 'document') {
         $projectId = (int) ($_POST['project_id'] ?? 0);
-        $title = trim((string) ($_POST['title'] ?? ''));
-        $documentType = trim((string) ($_POST['document_type'] ?? 'General'));
         $remarks = trim((string) ($_POST['remarks'] ?? ''));
 
-        if ($projectId <= 0 || $title === '' || empty($_FILES['document'])) {
-            respond(['error' => 'Project, title, and document file are required.'], 422);
+        if ($projectId <= 0) {
+            respond(['error' => 'Project is required.'], 422);
         }
 
         $project = contractorPortalProject($db, $projectId, $contractorId);
@@ -337,68 +392,69 @@ if ($method === 'POST') {
             respond(['error' => 'Project not found.'], 404);
         }
 
-        $file = $_FILES['document'];
-        if (($file['error'] ?? UPLOAD_ERR_NO_FILE) !== UPLOAD_ERR_OK) {
-            respond(['error' => 'Upload failed. Please choose a valid file.'], 422);
+        $documentRows = contractorCollectDocumentRows($_POST['documents'] ?? [], $_FILES['document_files'] ?? []);
+        if ($documentRows === []) {
+            respond(['error' => 'At least one document (title + file) is required.'], 422);
+        }
+        foreach ($documentRows as $i => $row) {
+            if ($row['error'] !== null) {
+                respond(['error' => 'Document row ' . ($i + 1) . ': ' . $row['error']], 422);
+            }
         }
 
-        if ((int) $file['size'] > 10 * 1024 * 1024) {
-            respond(['error' => 'File size must be 10MB or smaller.'], 422);
+        $storedFiles = [];
+        $insertedIds = [];
+
+        $db->beginTransaction();
+        try {
+            $stmt = $db->prepare("
+                INSERT INTO contractor_documents
+                    (project_id, contractor_id, uploaded_by, document_type, title, original_name, file_path, file_size, mime_type, remarks, status)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'uploaded')
+            ");
+
+            foreach ($documentRows as $row) {
+                $stored = FileUpload::store($row['file'], 'contractor-documents', [
+                    'max_size' => CONTRACTOR_DOC_MAX_SIZE,
+                    'extensions' => CONTRACTOR_DOC_EXTENSIONS,
+                ]);
+                $storedFiles[] = $stored['stored_path'];
+
+                $stmt->execute([
+                    $projectId,
+                    $contractorId,
+                    $_SESSION['user_id'] ?? null,
+                    $row['document_type'],
+                    $row['title'],
+                    $stored['original_name'],
+                    $stored['stored_path'],
+                    $stored['file_size'],
+                    $stored['mime_type'],
+                    $remarks !== '' ? $remarks : null,
+                ]);
+                $insertedIds[] = (int) $db->lastInsertId();
+            }
+
+            $db->commit();
+        } catch (Throwable $e) {
+            $db->rollBack();
+            contractorCleanupFiles($storedFiles);
+            respond(['error' => $e->getMessage() !== '' ? $e->getMessage() : 'Unable to upload documents.'], 422);
         }
 
-        $originalName = (string) $file['name'];
-        $extension = strtolower(pathinfo($originalName, PATHINFO_EXTENSION));
-        $allowedExtensions = ['pdf', 'doc', 'docx', 'xls', 'xlsx', 'png', 'jpg', 'jpeg'];
-        if (!in_array($extension, $allowedExtensions, true)) {
-            respond(['error' => 'Allowed files: PDF, Word, Excel, PNG, JPG.'], 422);
-        }
-
-        $uploadRoot = dirname(__DIR__, 2) . '/uploads/contractor-documents/' . date('Y');
-        if (!is_dir($uploadRoot) && !mkdir($uploadRoot, 0775, true) && !is_dir($uploadRoot)) {
-            respond(['error' => 'Unable to prepare upload folder.'], 500);
-        }
-
-        $safeName = contractorPortalSafeFileName(pathinfo($originalName, PATHINFO_FILENAME));
-        $storedName = $projectId . '-' . time() . '-' . bin2hex(random_bytes(4)) . '-' . $safeName . '.' . $extension;
-        $destination = $uploadRoot . '/' . $storedName;
-
-        if (!move_uploaded_file($file['tmp_name'], $destination)) {
-            respond(['error' => 'Unable to save uploaded file.'], 500);
-        }
-
-        $relativePath = 'uploads/contractor-documents/' . date('Y') . '/' . $storedName;
-        $mimeType = function_exists('mime_content_type') ? mime_content_type($destination) : ($file['type'] ?? null);
-
-        $stmt = $db->prepare("
-            INSERT INTO contractor_documents
-                (project_id, contractor_id, uploaded_by, document_type, title, original_name, file_path, file_size, mime_type, remarks, status)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'uploaded')
-        ");
-        $stmt->execute([
-            $projectId,
-            $contractorId,
-            $_SESSION['user_id'] ?? null,
-            $documentType,
-            $title,
-            $originalName,
-            $relativePath,
-            (int) $file['size'],
-            $mimeType,
-            $remarks !== '' ? $remarks : null,
-        ]);
-
-        respond(['success' => true, 'id' => (int) $db->lastInsertId(), 'file_path' => $relativePath], 201);
+        respond(['success' => true, 'ids' => $insertedIds], 201);
     }
 
     if ($action === 'payment_request') {
-        $body = requestBody();
-        $projectId = (int) ($body['project_id'] ?? 0);
-        $amount = (float) ($body['requested_amount'] ?? 0);
-        $remarks = trim((string) ($body['remarks'] ?? ''));
+        $validated = Validator::make(requestBody(), [
+            'project_id' => 'required|integer',
+            'requested_amount' => 'required|numeric|min:1',
+            'remarks' => 'nullable|string|max:2000',
+        ])->stopOnFailure();
 
-        if ($projectId <= 0 || $amount <= 0) {
-            respond(['error' => 'Project and requested amount are required.'], 422);
-        }
+        $projectId = (int) $validated['project_id'];
+        $amount = (float) $validated['requested_amount'];
+        $remarks = trim((string) ($validated['remarks'] ?? ''));
 
         $project = contractorPortalProject($db, $projectId, $contractorId);
         if (!$project) {

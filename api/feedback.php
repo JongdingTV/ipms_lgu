@@ -4,14 +4,16 @@
 // ============================================================
 require_once __DIR__ . '/../includes/db.php';
 require_once __DIR__ . '/../includes/auth.php';
+require_once __DIR__ . '/../includes/Notifications.php';
 apiHeaders();
 
+// Staff-only endpoint: citizens submit via citizen/api/submit-feedback.php and
+// read their own records via citizen/api/my-feedback.php, both of which scope
+// correctly to the caller's own citizen_id. Engineers have no scoped path here
+// either, so mutating/reading arbitrary feedback records is restricted to
+// admin roles only.
 $method = $_SERVER['REQUEST_METHOD'];
-if ($method === 'GET' || $method === 'POST') {
-    requireAnyRole(['super_admin', 'admin', 'engineer', 'citizen']);
-} else {
-    requireAnyRole(['super_admin', 'admin', 'engineer']);
-}
+requireAnyRole(['super_admin', 'admin']);
 
 requireCsrfProtection();
 
@@ -116,10 +118,29 @@ if ($method === 'PUT') {
         }
     }
     if (empty($fields)) respond(['error' => 'Nothing to update'], 422);
+
+    $before = null;
+    if (isset($b['status'])) {
+        $beforeStmt = $db->prepare("SELECT citizen_id, status FROM feedback WHERE id = ?");
+        $beforeStmt->execute([$id]);
+        $before = $beforeStmt->fetch();
+    }
+
     $params[] = $id;
 
     $db->prepare("UPDATE feedback SET " . implode(', ', $fields) . " WHERE id = ?")
        ->execute($params);
+
+    if ($before && $before['status'] !== $b['status'] && !empty($before['citizen_id'])) {
+        $cu = $db->prepare("SELECT user_id FROM citizens WHERE id = ?");
+        $cu->execute([$before['citizen_id']]);
+        notifyUser(
+            (int) ($cu->fetchColumn() ?: 0),
+            'info',
+            'Feedback update',
+            'Your submitted feedback is now "' . $b['status'] . '".'
+        );
+    }
 
     respond(['success' => true]);
 }

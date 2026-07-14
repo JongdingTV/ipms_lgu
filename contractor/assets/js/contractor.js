@@ -6,9 +6,14 @@ const CONTRACTOR_CSRF_HEADERS = window.CSRF_TOKEN ? { 'X-CSRF-Token': window.CSR
 let contractorState = {
   summary: null,
   projects: [],
-  reports: [],
-  documents: [],
   payments: [],
+};
+
+/* reports/documents accumulate over time, so they're fetched paginated,
+   per-page, rather than bulk-loaded like the small/bounded lists above. */
+let contractorListState = {
+  reports: { page: 1, perPage: 10 },
+  documents: { page: 1, perPage: 10 },
 };
 
 function contractorEscape(value) {
@@ -55,13 +60,17 @@ function contractorToast(message, type = 'success') {
   }, 3000);
 }
 
+function contractorErrorFrom(data, response) {
+  const err = new Error(data?.error || `HTTP ${response.status}`);
+  err.fieldErrors = data?.errors || null;
+  return err;
+}
+
 async function contractorGet(action, params = {}) {
   const qs = new URLSearchParams({ action, ...params }).toString();
   const response = await fetch(`${CONTRACTOR_API}?${qs}`);
   const data = await response.json();
-  if (!response.ok || data.error) {
-    throw new Error(data.error || `HTTP ${response.status}`);
-  }
+  if (!response.ok || data.error) throw contractorErrorFrom(data, response);
   return data;
 }
 
@@ -72,9 +81,7 @@ async function contractorPostJson(action, body) {
     body: JSON.stringify(body),
   });
   const data = await response.json();
-  if (!response.ok || data.error) {
-    throw new Error(data.error || `HTTP ${response.status}`);
-  }
+  if (!response.ok || data.error) throw contractorErrorFrom(data, response);
   return data;
 }
 
@@ -85,10 +92,58 @@ async function contractorPostForm(action, formData) {
     body: formData,
   });
   const data = await response.json();
-  if (!response.ok || data.error) {
-    throw new Error(data.error || `HTTP ${response.status}`);
-  }
+  if (!response.ok || data.error) throw contractorErrorFrom(data, response);
   return data;
+}
+
+/* ---- Inline field-error rendering -------------------------------------- */
+
+function contractorClearFieldErrors(form) {
+  form.querySelectorAll('.field-error-msg').forEach(el => el.remove());
+  form.querySelectorAll('.has-error').forEach(el => el.classList.remove('has-error'));
+}
+
+function contractorShowFieldErrors(form, fieldErrors) {
+  if (!fieldErrors) return;
+  Object.entries(fieldErrors).forEach(([field, message]) => {
+    const input = form.querySelector(`[name="${field}"]`);
+    if (!input) return;
+    input.classList.add('has-error');
+    const msg = document.createElement('div');
+    msg.className = 'field-error-msg';
+    msg.textContent = message;
+    input.insertAdjacentElement('afterend', msg);
+  });
+}
+
+/* ---- Dynamic document rows (repeatable fields) ------------------------- */
+
+const CONTRACTOR_DOCUMENT_TYPES = ['Accomplishment Photo', 'Delivery Receipt', 'Inspection Record', 'Billing Attachment', 'Other'];
+
+function contractorDocRowHtml(index) {
+  return `
+    <div class="doc-row" data-doc-index="${index}">
+      <select class="form-input" name="documents[${index}][document_type]">
+        ${CONTRACTOR_DOCUMENT_TYPES.map(type => `<option value="${contractorEscape(type)}">${contractorEscape(type)}</option>`).join('')}
+      </select>
+      <input class="form-input" type="text" name="documents[${index}][title]" placeholder="Document title">
+      <input class="form-input" type="file" name="document_files[${index}]">
+      <button type="button" class="doc-row-remove" aria-label="Remove document row">&times;</button>
+    </div>
+  `;
+}
+
+function contractorWireDocRows(container, addBtn) {
+  let nextIndex = 1;
+  addBtn.addEventListener('click', () => {
+    container.insertAdjacentHTML('beforeend', contractorDocRowHtml(nextIndex));
+    nextIndex += 1;
+  });
+  container.addEventListener('click', event => {
+    if (event.target.classList.contains('doc-row-remove')) {
+      event.target.closest('.doc-row')?.remove();
+    }
+  });
 }
 
 function contractorOpenModal(title, html) {
@@ -149,12 +204,66 @@ function contractorProjectCard(project, compact = false) {
   `;
 }
 
+let contractorStatusChartInst = null;
+
+function contractorRenderStatusChart(stats) {
+  const ctx = document.getElementById('contractorStatusChart')?.getContext('2d');
+  if (!ctx) return;
+  if (contractorStatusChartInst) contractorStatusChartInst.destroy();
+
+  const assigned = Number(stats.assigned_projects || 0);
+  const active = Number(stats.active_projects || 0);
+  const delayed = Number(stats.delayed_projects || 0);
+  const other = Math.max(0, assigned - active - delayed);
+
+  const segments = [
+    { label: 'Active', value: active, color: '#22c55e' },
+    { label: 'Delayed', value: delayed, color: '#ef4444' },
+    { label: 'Other', value: other, color: '#94a3b8' },
+  ];
+
+  contractorStatusChartInst = new Chart(ctx, {
+    type: 'doughnut',
+    data: {
+      labels: segments.map(s => s.label),
+      datasets: [{
+        data: segments.map(s => s.value),
+        backgroundColor: segments.map(s => s.color),
+        borderColor: segments.map(() => '#fff'), borderWidth: 3, hoverOffset: 6,
+      }],
+    },
+    options: {
+      responsive: false, cutout: '70%',
+      animation: { duration: 900 },
+      plugins: {
+        legend: { display: false },
+        tooltip: { backgroundColor: '#1e2a3b', callbacks: { label: c => ` ${c.label}: ${c.raw}` } },
+      },
+    },
+  });
+
+  document.getElementById('contractorStatusChartTotal').textContent = assigned;
+  document.getElementById('contractorStatusChartLegend').innerHTML = segments.map(s => `
+    <div class="budget-legend-item">
+      <span class="legend-dot" style="background:${s.color};"></span>
+      <span>${s.label} <strong>${s.value}</strong></span>
+    </div>
+  `).join('');
+}
+
 function contractorRenderDashboard() {
   const stats = contractorState.summary?.stats || {};
   document.getElementById('contractorAssignedCount').textContent = stats.assigned_projects || 0;
   document.getElementById('contractorAverageProgress').textContent = `${stats.average_progress || 0}%`;
   document.getElementById('contractorReportsCount').textContent = stats.reports_submitted || 0;
   document.getElementById('contractorPendingPayment').textContent = contractorMoney(stats.pending_payment_amount || 0);
+  document.getElementById('contractorPerformanceScore').textContent = contractorState.summary?.contractor?.performance_score ?? 0;
+
+  try {
+    contractorRenderStatusChart(stats);
+  } catch (error) {
+    console.error('Failed to render status chart:', error);
+  }
 
   const projectPreview = document.getElementById('contractorProjectPreview');
   projectPreview.innerHTML = contractorState.projects.length
@@ -234,27 +343,39 @@ function contractorRenderReportPage(selectedProjectId = '') {
       </article>
       <article class="contractor-history-card">
         <h2>Recent Reports</h2>
-        <div id="contractorReportsList" class="contractor-mini-list">
-          ${contractorRenderReportRows()}
-        </div>
+        <div id="contractorReportsList" class="contractor-mini-list"><p class="empty-state">Loading...</p></div>
+        <div class="pagination-wrap" id="contractorReportsPager"></div>
       </article>
     </section>
   `;
 
   document.getElementById('contractorReportForm').addEventListener('submit', contractorSubmitReport);
+  contractorLoadReportsList();
 }
 
-function contractorRenderReportRows() {
-  if (!contractorState.reports.length) {
-    return '<p class="empty-state">No reports submitted yet.</p>';
-  }
+async function contractorLoadReportsList() {
+  const container = document.getElementById('contractorReportsList');
+  const pager = document.getElementById('contractorReportsPager');
+  if (!container) return;
+  const state = contractorListState.reports;
 
-  return contractorState.reports.slice(0, 10).map(report => `
-    <div class="contractor-mini-row">
-      <span>${contractorEscape(report.project_code)} - ${contractorDate(report.report_date)}</span>
-      <strong>${Number(report.progress_percent || 0)}%</strong>
-    </div>
-  `).join('');
+  try {
+    const result = await contractorGet('reports', { page: state.page, per_page: state.perPage });
+
+    container.innerHTML = result.data.length ? result.data.map(report => `
+      <div class="contractor-mini-row">
+        <span>${contractorEscape(report.project_code)} - ${contractorDate(report.report_date)}</span>
+        <strong>${Number(report.progress_percent || 0)}%</strong>
+      </div>
+    `).join('') : '<p class="empty-state">No reports submitted yet.</p>';
+
+    renderPagination(pager, {
+      page: result.page, lastPage: result.last_page, total: result.total, perPage: result.per_page,
+      onPageChange: nextPage => { contractorListState.reports.page = nextPage; contractorLoadReportsList(); },
+    });
+  } catch (error) {
+    container.innerHTML = '<p class="empty-state">Unable to load reports.</p>';
+  }
 }
 
 function contractorRenderDocumentsPage() {
@@ -268,64 +389,62 @@ function contractorRenderDocumentsPage() {
     </div>
     <section class="contractor-layout">
       <article class="contractor-form-card">
-        <h2>New Document</h2>
+        <h2>New Documents</h2>
         <form id="contractorDocumentForm" enctype="multipart/form-data">
           <div class="form-group">
             <label>Assigned Project</label>
             <select class="form-input" name="project_id" required>${contractorProjectOptions()}</select>
           </div>
-          <div class="form-grid" style="margin-top:12px;">
-            <div class="form-group">
-              <label>Document Title</label>
-              <input class="form-input" name="title" required placeholder="e.g. Weekly site photos">
-            </div>
-            <div class="form-group">
-              <label>Document Type</label>
-              <select class="form-input" name="document_type">
-                <option>Accomplishment Photo</option>
-                <option>Delivery Receipt</option>
-                <option>Inspection Record</option>
-                <option>Billing Attachment</option>
-                <option>Other</option>
-              </select>
-            </div>
-          </div>
-          <div class="form-group" style="margin-top:12px;">
-            <label>File</label>
-            <input class="form-input" type="file" name="document" accept=".pdf,.doc,.docx,.xls,.xlsx,.png,.jpg,.jpeg" required>
+          <div class="doc-section">
+            <label>Documents</label>
+            <div class="doc-rows" id="docRows">${contractorDocRowHtml(0)}</div>
+            <button type="button" class="doc-add-btn" id="docAddBtn">+ Add another document</button>
           </div>
           <div class="form-group" style="margin-top:12px;">
             <label>Remarks</label>
-            <textarea class="form-input" name="remarks" rows="3" placeholder="Optional"></textarea>
+            <textarea class="form-input" name="remarks" rows="3" placeholder="Optional, applies to this whole batch"></textarea>
           </div>
           <div class="form-actions">
-            <button class="btn-primary" type="submit">Upload Document</button>
+            <button class="btn-primary" type="submit">Upload Document(s)</button>
           </div>
         </form>
       </article>
       <article class="contractor-history-card">
         <h2>Uploaded Documents</h2>
-        <div id="contractorDocumentsList" class="contractor-mini-list">
-          ${contractorRenderDocumentRows()}
-        </div>
+        <div id="contractorDocumentsList" class="contractor-mini-list"><p class="empty-state">Loading...</p></div>
+        <div class="pagination-wrap" id="contractorDocumentsPager"></div>
       </article>
     </section>
   `;
 
+  contractorWireDocRows(document.getElementById('docRows'), document.getElementById('docAddBtn'));
   document.getElementById('contractorDocumentForm').addEventListener('submit', contractorSubmitDocument);
+  contractorLoadDocumentsList();
 }
 
-function contractorRenderDocumentRows() {
-  if (!contractorState.documents.length) {
-    return '<p class="empty-state">No documents uploaded yet.</p>';
-  }
+async function contractorLoadDocumentsList() {
+  const container = document.getElementById('contractorDocumentsList');
+  const pager = document.getElementById('contractorDocumentsPager');
+  if (!container) return;
+  const state = contractorListState.documents;
 
-  return contractorState.documents.slice(0, 10).map(doc => `
-    <div class="contractor-mini-row">
-      <span>${contractorEscape(doc.project_code)} - ${contractorEscape(doc.title)}</span>
-      <a class="document-link" href="${window.BASE_PATH}${contractorEscape(doc.file_path)}" target="_blank" rel="noopener">Open</a>
-    </div>
-  `).join('');
+  try {
+    const result = await contractorGet('documents', { page: state.page, per_page: state.perPage });
+
+    container.innerHTML = result.data.length ? result.data.map(doc => `
+      <div class="contractor-mini-row">
+        <span>${contractorEscape(doc.project_code)} - ${contractorEscape(doc.title)}</span>
+        <a class="document-link" href="${window.BASE_PATH}${contractorEscape(doc.file_path)}" target="_blank" rel="noopener">Open</a>
+      </div>
+    `).join('') : '<p class="empty-state">No documents uploaded yet.</p>';
+
+    renderPagination(pager, {
+      page: result.page, lastPage: result.last_page, total: result.total, perPage: result.per_page,
+      onPageChange: nextPage => { contractorListState.documents.page = nextPage; contractorLoadDocumentsList(); },
+    });
+  } catch (error) {
+    container.innerHTML = '<p class="empty-state">Unable to load documents.</p>';
+  }
 }
 
 function contractorRenderContractDetails() {
@@ -427,7 +546,9 @@ function contractorOpenPaymentRequestForm() {
 
 async function contractorSubmitReport(event) {
   event.preventDefault();
-  const form = new FormData(event.target);
+  const formEl = event.target;
+  contractorClearFieldErrors(formEl);
+  const form = new FormData(formEl);
   try {
     await contractorPostJson('report', {
       project_id: form.get('project_id'),
@@ -438,31 +559,38 @@ async function contractorSubmitReport(event) {
       next_steps: form.get('next_steps'),
     });
     contractorToast('Accomplishment report submitted.');
-    event.target.reset();
+    formEl.reset();
     await contractorRefreshData();
-    contractorRenderReportPage();
+    contractorListState.reports.page = 1;
+    await contractorLoadReportsList();
   } catch (error) {
+    contractorShowFieldErrors(formEl, error.fieldErrors);
     contractorToast(error.message, 'error');
   }
 }
 
 async function contractorSubmitDocument(event) {
   event.preventDefault();
-  const form = new FormData(event.target);
+  const formEl = event.target;
+  contractorClearFieldErrors(formEl);
+  const form = new FormData(formEl);
   try {
     await contractorPostForm('document', form);
-    contractorToast('Supporting document uploaded.');
-    event.target.reset();
-    await contractorRefreshData();
-    contractorRenderDocumentsPage();
+    contractorToast('Supporting document(s) uploaded.');
+    formEl.reset();
+    contractorListState.documents.page = 1;
+    await contractorLoadDocumentsList();
   } catch (error) {
+    contractorShowFieldErrors(formEl, error.fieldErrors);
     contractorToast(error.message, 'error');
   }
 }
 
 async function contractorSubmitPaymentRequest(event) {
   event.preventDefault();
-  const form = new FormData(event.target);
+  const formEl = event.target;
+  contractorClearFieldErrors(formEl);
+  const form = new FormData(formEl);
 
   try {
     await contractorPostJson('payment_request', {
@@ -475,6 +603,7 @@ async function contractorSubmitPaymentRequest(event) {
     await contractorRefreshData();
     contractorRenderPaymentStatus();
   } catch (error) {
+    contractorShowFieldErrors(formEl, error.fieldErrors);
     contractorToast(error.message, 'error');
   }
 }
@@ -517,18 +646,14 @@ async function contractorOpenProject(projectId) {
 }
 
 async function contractorRefreshData() {
-  const [summary, projects, reports, documents, payments] = await Promise.all([
+  const [summary, projects, payments] = await Promise.all([
     contractorGet('summary'),
     contractorGet('projects'),
-    contractorGet('reports'),
-    contractorGet('documents'),
     contractorGet('payments'),
   ]);
 
   contractorState.summary = summary;
   contractorState.projects = projects.data || [];
-  contractorState.reports = reports.data || [];
-  contractorState.documents = documents.data || [];
   contractorState.payments = payments.data || [];
   contractorRenderDashboard();
 }
@@ -575,27 +700,13 @@ function contractorWireShell() {
     userMenu?.classList.toggle('open');
   });
 
-  const notifBtn = document.getElementById('notifBtn');
-  const notifPanel = document.getElementById('notifPanel');
-  notifBtn?.addEventListener('click', event => {
-    event.stopPropagation();
-    notifPanel?.classList.toggle('open');
-  });
-
   document.addEventListener('click', event => {
     if (userMenu && !userMenu.contains(event.target) && event.target !== userMenuBtn) {
       userMenu.classList.remove('open');
     }
-    if (notifPanel && !notifPanel.contains(event.target) && event.target !== notifBtn) {
-      notifPanel.classList.remove('open');
-    }
   });
 
-  document.getElementById('notifClear')?.addEventListener('click', () => {
-    document.querySelectorAll('.notif-item').forEach(item => item.remove());
-    const badge = document.querySelector('.notif-badge');
-    if (badge) badge.style.display = 'none';
-  });
+  // Notification bell/panel toggle + polling is handled by assets/js/notifications.js.
 
   document.getElementById('modalClose')?.addEventListener('click', contractorCloseModal);
   document.getElementById('modalOverlay')?.addEventListener('click', event => {

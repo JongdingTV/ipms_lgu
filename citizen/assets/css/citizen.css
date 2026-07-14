@@ -997,3 +997,40 @@ body {
         grid-template-columns: 1fr;
     }
 }
+
+/* ── Dark mode (see assets/js/theme-toggle.js) ──
+   citizen.css defines its own independent :root palette (unlike the other
+   5 portals, which all inherit assets/css/style.css's variables), and many
+   of its cards hardcode `background: white` rather than a variable — so
+   this needs its own override block, not just a variable redefinition. */
+:root[data-theme="dark"] {
+    --light: #0f172a;
+    --text: #e2e8f0;
+    --text-light: #94a3b8;
+    --border: #334155;
+}
+:root[data-theme="dark"] .sidebar,
+:root[data-theme="dark"] .kpi-card,
+:root[data-theme="dark"] .dashboard-section,
+:root[data-theme="dark"] .project-card,
+:root[data-theme="dark"] .feedback-item,
+:root[data-theme="dark"] .form-container,
+:root[data-theme="dark"] .status-item,
+:root[data-theme="dark"] .transparency-card,
+:root[data-theme="dark"] .expense-item {
+    background: #1e293b;
+    color: var(--text);
+    border-color: var(--border);
+}
+:root[data-theme="dark"] body,
+:root[data-theme="dark"] .sidebar,
+:root[data-theme="dark"] .kpi-card,
+:root[data-theme="dark"] .dashboard-section,
+:root[data-theme="dark"] .project-card,
+:root[data-theme="dark"] .feedback-item,
+:root[data-theme="dark"] .form-container,
+:root[data-theme="dark"] .status-item,
+:root[data-theme="dark"] .transparency-card,
+:root[data-theme="dark"] .expense-item {
+    transition: background-color .25s ease, color .25s ease, border-color .25s ease;
+}

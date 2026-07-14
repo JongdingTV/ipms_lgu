@@ -3,7 +3,7 @@ require_once __DIR__ . '/../auth/session.php';
 
 $user = requireLogin(['contractor']);
 $topbarSearchPlaceholder = 'Search assigned projects...';
-$extraStylesheets = ['contractor/assets/css/contractor.css'];
+$extraStylesheets = ['assets/css/pagination.css', 'contractor/assets/css/contractor.css'];
 
 require_once __DIR__ . '/../includes/header.php';
 require_once __DIR__ . '/sidebar.php';
@@ -62,16 +62,43 @@ require_once __DIR__ . '/sidebar.php';
             <strong class="kpi-value contractor-money" id="contractorPendingPayment">0</strong>
           </div>
         </article>
+
+        <article class="kpi-card">
+          <div class="kpi-icon kpi-green">
+            <svg viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 10-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd"/></svg>
+          </div>
+          <div class="kpi-info">
+            <span class="kpi-label">Performance Score</span>
+            <strong class="kpi-value" id="contractorPerformanceScore">0</strong>
+          </div>
+        </article>
       </section>
 
-      <section class="contractor-dashboard-grid">
+      <section class="charts-row reveal">
+        <article class="chart-card">
+          <div class="chart-header">
+            <h2 class="chart-title">Project Status Mix</h2>
+          </div>
+          <div class="chart-body budget-body">
+            <div class="donut-wrapper">
+              <canvas id="contractorStatusChart"></canvas>
+              <div class="donut-center">
+                <span class="donut-pct" id="contractorStatusChartTotal">0</span>
+              </div>
+            </div>
+            <div class="budget-legend" id="contractorStatusChartLegend"></div>
+          </div>
+        </article>
+      </section>
+
+      <section class="contractor-dashboard-grid reveal">
         <article class="contractor-panel contractor-panel-wide">
           <div class="contractor-panel-head">
             <h2>Assigned Projects</h2>
             <button class="btn-secondary btn-compact" type="button" onclick="contractorShowPage('assigned-projects')">View All</button>
           </div>
           <div id="contractorProjectPreview" class="contractor-project-list">
-            <p class="empty-state">Loading assigned projects...</p>
+            <div class="skeleton-group"><div class="skeleton-row"></div><div class="skeleton-row"></div></div>
           </div>
         </article>
 
@@ -81,7 +108,7 @@ require_once __DIR__ . '/sidebar.php';
             <button class="btn-secondary btn-compact" type="button" onclick="contractorShowPage('payment-status')">Review</button>
           </div>
           <div id="contractorPaymentPreview" class="contractor-mini-list">
-            <p class="empty-state">Loading payment status...</p>
+            <div class="skeleton-group"><div class="skeleton-row"></div><div class="skeleton-row"></div></div>
           </div>
         </article>
       </section>
@@ -105,17 +132,10 @@ require_once __DIR__ . '/sidebar.php';
   </div>
 </div>
 
-<div class="notif-panel" id="notifPanel">
-  <div class="notif-panel-header">
-    <span>Contractor Updates</span>
-    <button class="notif-clear" id="notifClear" type="button">Clear all</button>
-  </div>
-  <div class="notif-item notif-low">
-    <div class="notif-dot"></div>
-    <div><p class="notif-msg">Assigned project workspace is ready.</p><span class="notif-time">Contractor portal</span></div>
-  </div>
-</div>
+<?php $notifPanelTitle = 'Contractor Updates'; include __DIR__ . '/../includes/notifications-panel.php'; ?>
 
-<script src="<?= htmlspecialchars($BASE_PATH) ?>contractor/assets/js/contractor.js"></script>
+<script src="<?= htmlspecialchars(assetUrl('/assets/js/notifications.js')) ?>"></script>
+<script src="<?= htmlspecialchars(assetUrl('/assets/js/pagination.js')) ?>"></script>
+<script src="<?= htmlspecialchars(assetUrl('/contractor/assets/js/contractor.js')) ?>"></script>
 </body>
 </html>

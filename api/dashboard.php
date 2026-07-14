@@ -5,12 +5,14 @@
 require_once __DIR__ . '/../includes/db.php';
 require_once __DIR__ . '/../includes/auth.php';
 require_once __DIR__ . '/../includes/workflow.php';
+require_once __DIR__ . '/../includes/ContractorScoring.php';
 apiHeaders();
 
 requireAnyRole(['super_admin', 'admin', 'engineer']);
 
 $db  = getDB();
 projectWorkflowEnsureRoleConnectionTables($db);
+contractorRefreshPerformanceScores($db);
 $out = [];
 
 // ── KPI: Active projects ──

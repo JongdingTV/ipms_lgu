@@ -10,26 +10,9 @@
     </div>
   </div>
 
-  <!-- NOTIFICATION PANEL -->
-  <div class="notif-panel" id="notifPanel">
-    <div class="notif-panel-header">
-      <span>Notifications</span>
-      <button class="notif-clear" id="notifClear">Clear all</button>
-    </div>
-    <div class="notif-item notif-high">
-      <div class="notif-dot"></div>
-      <div><p class="notif-msg">Brgy. Health Center is over budget</p><span class="notif-time">Loading live data…</span></div>
-    </div>
-    <div class="notif-item notif-mid">
-      <div class="notif-dot"></div>
-      <div><p class="notif-msg">River Dike expense spike detected</p><span class="notif-time">Loading live data…</span></div>
-    </div>
-    <div class="notif-item notif-low">
-      <div class="notif-dot"></div>
-      <div><p class="notif-msg">Delayed projects need attention</p><span class="notif-time">Loading live data…</span></div>
-    </div>
-  </div>
+  <?php include __DIR__ . '/notifications-panel.php'; ?>
 
-  <script src="<?php echo (strpos($_SERVER['PHP_SELF'], '/admin/') !== false) ? '../' : ''; ?>assets/js/script.js"></script>
+  <script src="<?= htmlspecialchars(assetUrl('/assets/js/notifications.js')) ?>"></script>
+  <script src="<?= htmlspecialchars(assetUrl('/assets/js/script.js')) ?>"></script>
 </body>
 </html>

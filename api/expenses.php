@@ -35,7 +35,7 @@ if ($method === 'GET') {
             LEFT JOIN expenses e ON e.project_id = p.id
             WHERE p.status NOT IN ('draft','returned','cancelled')
             GROUP BY p.id
-            ORDER BY (total_spent / NULLIF(p.budget,0)) DESC
+            ORDER BY (COALESCE(SUM(e.amount),0) / NULLIF(p.budget,0)) DESC
         ")->fetchAll();
         respond(['data' => $rows]);
     }

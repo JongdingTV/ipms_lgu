@@ -5,6 +5,7 @@
 require_once __DIR__ . '/../includes/db.php';
 require_once __DIR__ . '/../includes/auth.php';
 require_once __DIR__ . '/../includes/workflow.php';
+require_once __DIR__ . '/../includes/Notifications.php';
 
 apiHeaders();
 requireAnyRole(['super_admin', 'admin', 'engineer']);
@@ -160,7 +161,60 @@ if ($action === 'payment_review') {
         respond(['error' => 'Unable to save payment review.'], 500);
     }
 
+    $cu = $db->prepare("SELECT user_id FROM contractors WHERE id = ?");
+    $cu->execute([$payment['contractor_id']]);
+    notifyUser(
+        (int) ($cu->fetchColumn() ?: 0),
+        'info',
+        'Payment request ' . $newStatus,
+        'Your payment request for ' . $payment['project_name'] . ' is now "' . $newStatus . '".'
+    );
+
     respond(['success' => true, 'status' => $newStatus], 201);
+}
+
+if ($action === 'mark_paid') {
+    if ($isEngineer) {
+        respond(['error' => 'Only admin or super admin can finalize payments.'], 403);
+    }
+
+    $paymentId = (int) ($body['payment_request_id'] ?? 0);
+    if ($paymentId <= 0) {
+        respond(['error' => 'Payment request is required.'], 422);
+    }
+
+    $stmt = $db->prepare("
+        SELECT pr.*, p.name AS project_name
+        FROM payment_requests pr
+        INNER JOIN projects p ON p.id = pr.project_id
+        WHERE pr.id = ?
+        LIMIT 1
+    ");
+    $stmt->execute([$paymentId]);
+    $payment = $stmt->fetch();
+    if (!$payment) {
+        respond(['error' => 'Payment request not found.'], 404);
+    }
+    if ($payment['status'] !== 'approved') {
+        respond(['error' => 'Only approved payment requests can be marked as paid.'], 422);
+    }
+
+    $db->prepare("UPDATE payment_requests SET status = 'paid' WHERE id = ?")->execute([$paymentId]);
+
+    $details = 'Payment request #' . $paymentId . ' for ' . $payment['project_name'] . ' marked as paid.';
+    projectWorkflowLog($db, 'Payment marked as paid', (int) $payment['project_id'], $details, $userId);
+    logActivity($userId, 'payment_marked_paid', $details);
+
+    $cu = $db->prepare("SELECT user_id FROM contractors WHERE id = ?");
+    $cu->execute([$payment['contractor_id']]);
+    notifyUser(
+        (int) ($cu->fetchColumn() ?: 0),
+        'info',
+        'Payment marked as paid',
+        'Your payment request for ' . $payment['project_name'] . ' has been marked as paid.'
+    );
+
+    respond(['success' => true, 'status' => 'paid']);
 }
 
 respond(['error' => 'Unknown action.'], 404);

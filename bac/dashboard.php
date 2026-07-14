@@ -3,7 +3,7 @@ require_once __DIR__ . '/../auth/session.php';
 
 $user = requireLogin(['bac']);
 $topbarSearchPlaceholder = 'Search bids, contractors, procurement logs...';
-$extraStylesheets = ['bac/assets/css/bac.css'];
+$extraStylesheets = ['assets/css/pagination.css', 'bac/assets/css/bac.css'];
 
 require_once __DIR__ . '/../includes/header.php';
 require_once __DIR__ . '/sidebar.php';
@@ -65,14 +65,31 @@ require_once __DIR__ . '/sidebar.php';
         </article>
       </section>
 
-      <section class="bac-dashboard-grid">
+      <section class="charts-row reveal">
+        <article class="chart-card">
+          <div class="chart-header">
+            <h2 class="chart-title">Procurement Pipeline</h2>
+          </div>
+          <div class="chart-body budget-body">
+            <div class="donut-wrapper">
+              <canvas id="bacPipelineChart"></canvas>
+              <div class="donut-center">
+                <span class="donut-pct" id="bacPipelineChartTotal">0</span>
+              </div>
+            </div>
+            <div class="budget-legend" id="bacPipelineChartLegend"></div>
+          </div>
+        </article>
+      </section>
+
+      <section class="bac-dashboard-grid reveal">
         <article class="bac-panel bac-panel-wide">
           <div class="bac-panel-head">
             <h2>Bidding Announcements</h2>
             <button class="btn-secondary btn-compact" type="button" onclick="bacShowPage('bidding-announcements')">View All</button>
           </div>
           <div id="bacAnnouncementPreview" class="bac-list">
-            <p class="empty-state">Loading bidding announcements...</p>
+            <div class="skeleton-group"><div class="skeleton-row"></div><div class="skeleton-row"></div></div>
           </div>
         </article>
 
@@ -82,30 +99,30 @@ require_once __DIR__ . '/sidebar.php';
             <button class="btn-secondary btn-compact" type="button" onclick="bacShowPage('award-recommendation')">Review</button>
           </div>
           <div id="bacRecommendationPreview" class="bac-list">
-            <p class="empty-state">Loading award recommendation...</p>
+            <div class="skeleton-group"><div class="skeleton-row"></div><div class="skeleton-row"></div></div>
           </div>
         </article>
       </section>
 
-      <section class="lower-row">
+      <section class="lower-row reveal" style="transition-delay:.08s;">
         <article class="info-card">
           <h2 class="info-card-title">Contractor Evaluation</h2>
           <div id="bacEvaluationPreview" class="bac-list">
-            <p class="empty-state">Loading contractor scores...</p>
+            <div class="skeleton-group"><div class="skeleton-row"></div><div class="skeleton-row"></div></div>
           </div>
         </article>
 
         <article class="info-card">
           <h2 class="info-card-title">Bid Comparison</h2>
           <div id="bacBidPreview" class="bac-list">
-            <p class="empty-state">Loading comparison table...</p>
+            <div class="skeleton-group"><div class="skeleton-row"></div><div class="skeleton-row"></div></div>
           </div>
         </article>
 
         <article class="info-card">
           <h2 class="info-card-title">Procurement Logs</h2>
           <div id="bacLogPreview" class="bac-list">
-            <p class="empty-state">Loading logs...</p>
+            <div class="skeleton-group"><div class="skeleton-row"></div><div class="skeleton-row"></div></div>
           </div>
         </article>
       </section>
@@ -116,6 +133,8 @@ require_once __DIR__ . '/sidebar.php';
     <section id="page-bid-comparison" class="page-section" style="display:none;"></section>
     <section id="page-award-recommendation" class="page-section" style="display:none;"></section>
     <section id="page-procurement-logs" class="page-section" style="display:none;"></section>
+    <section id="page-procurement-documents" class="page-section" style="display:none;"></section>
+    <section id="page-contractor-applications" class="page-section" style="display:none;"></section>
   </main>
 </div>
 
@@ -129,17 +148,10 @@ require_once __DIR__ . '/sidebar.php';
   </div>
 </div>
 
-<div class="notif-panel" id="notifPanel">
-  <div class="notif-panel-header">
-    <span>BAC Updates</span>
-    <button class="notif-clear" id="notifClear" type="button">Clear all</button>
-  </div>
-  <div class="notif-item notif-low">
-    <div class="notif-dot"></div>
-    <div><p class="notif-msg">Procurement workspace is ready.</p><span class="notif-time">BAC portal</span></div>
-  </div>
-</div>
+<?php $notifPanelTitle = 'BAC Updates'; include __DIR__ . '/../includes/notifications-panel.php'; ?>
 
-<script src="<?= htmlspecialchars($BASE_PATH) ?>bac/assets/js/bac.js"></script>
+<script src="<?= htmlspecialchars(assetUrl('/assets/js/notifications.js')) ?>"></script>
+<script src="<?= htmlspecialchars(assetUrl('/assets/js/pagination.js')) ?>"></script>
+<script src="<?= htmlspecialchars(assetUrl('/bac/assets/js/bac.js')) ?>"></script>
 </body>
 </html>

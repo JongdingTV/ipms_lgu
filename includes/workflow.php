@@ -60,6 +60,50 @@ function projectWorkflowEnsureProjectStatusSchema(PDO $db): void
     } catch (Throwable $e) {
         // Keep older installations usable even when schema inspection is unavailable.
     }
+
+    // Registration/approval tracking columns — self-healing since this repo has
+    // no migration runner (see OTPManager::ensureTable() for the same pattern).
+    try {
+        $db->exec("ALTER TABLE projects ADD COLUMN IF NOT EXISTS created_by INT NULL AFTER status");
+        $db->exec("ALTER TABLE projects ADD COLUMN IF NOT EXISTS approved_by INT NULL AFTER created_by");
+        $db->exec("ALTER TABLE projects ADD COLUMN IF NOT EXISTS approved_at DATETIME NULL AFTER approved_by");
+        $db->exec("ALTER TABLE projects ADD COLUMN IF NOT EXISTS rejection_reason TEXT NULL AFTER approved_at");
+    } catch (Throwable $e) {
+    }
+}
+
+/** Self-healing 'application_status' column so an unreviewed contractor application is distinct from an approved business record. */
+function contractorsEnsureApplicationSchema(PDO $db): void
+{
+    try {
+        $stmt = $db->query("
+            SELECT COUNT(*) FROM INFORMATION_SCHEMA.COLUMNS
+            WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'contractors' AND COLUMN_NAME = 'application_status'
+        ");
+        $alreadyExists = (int) $stmt->fetchColumn() > 0;
+
+        if (!$alreadyExists) {
+            $db->exec("ALTER TABLE contractors ADD COLUMN application_status ENUM('pending','approved','rejected') NOT NULL DEFAULT 'pending' AFTER status");
+            $db->exec("ALTER TABLE contractors ADD COLUMN application_reviewed_by INT NULL AFTER application_status");
+            $db->exec("ALTER TABLE contractors ADD COLUMN application_reviewed_at DATETIME NULL AFTER application_reviewed_by");
+            $db->exec("ALTER TABLE contractors ADD COLUMN application_remarks TEXT NULL AFTER application_reviewed_at");
+
+            // One-time backfill only: pre-existing contractor rows (created before
+            // this feature existed) are already legitimate, vetted business
+            // records — mark them approved so they don't vanish from assignment
+            // lists. This branch only ever runs the moment the column is first
+            // added, never again, so applications submitted afterward keep their
+            // real 'pending' status.
+            $db->exec("UPDATE contractors SET application_status = 'approved'");
+        }
+
+        // PCAB (Philippine Contractors Accreditation Board) license is the actual
+        // eligibility check BAC needs against a project's budget/scope — without it
+        // this was buried inside an unstructured uploaded file, unqueryable.
+        $db->exec("ALTER TABLE contractors ADD COLUMN IF NOT EXISTS pcab_license_no VARCHAR(50) NULL AFTER address");
+        $db->exec("ALTER TABLE contractors ADD COLUMN IF NOT EXISTS pcab_classification ENUM('Small B','Small A','Medium B','Medium A','Large B','Large A') NULL AFTER pcab_license_no");
+    } catch (Throwable $e) {
+    }
 }
 
 function projectWorkflowEnsureBacTables(PDO $db): void

@@ -13,10 +13,28 @@
       </svg>
       <input type="text" id="searchInput" placeholder="<?= htmlspecialchars($topbarSearchPlaceholder ?? 'Search projects, contractors...') ?>">
     </div>
+
+    <button class="gsearch-trigger" id="globalSearchBtn" type="button" title="Search everything (Ctrl+K)">
+      <svg viewBox="0 0 20 20" fill="currentColor">
+        <path fill-rule="evenodd" d="M8 4a4 4 0 100 8 4 4 0 000-8zM2 8a6 6 0 1110.89 3.476l4.817 4.817a1 1 0 01-1.414 1.414l-4.816-4.816A6 6 0 012 8z" clip-rule="evenodd"/>
+      </svg>
+      <span class="hide-tablet">Search everything</span>
+      <kbd>Ctrl K</kbd>
+    </button>
   </div>
 
   <!-- Right: Notifications, User -->
   <div class="topbar-right">
+    <!-- Theme toggle -->
+    <button class="icon-btn theme-toggle-btn" id="themeToggleBtn" type="button" title="Switch to dark mode" aria-label="Switch to dark mode">
+      <svg viewBox="0 0 20 20" fill="currentColor" class="icon-sun">
+        <path d="M10 3a1 1 0 011 1v1a1 1 0 11-2 0V4a1 1 0 011-1zm0 12a1 1 0 011 1v1a1 1 0 11-2 0v-1a1 1 0 011-1zm7-5a1 1 0 01-1 1h-1a1 1 0 110-2h1a1 1 0 011 1zM5 10a1 1 0 01-1 1H3a1 1 0 110-2h1a1 1 0 011 1zm9.66-5.66a1 1 0 010 1.42l-.7.7a1 1 0 11-1.42-1.42l.7-.7a1 1 0 011.42 0zM6.46 13.54a1 1 0 010 1.42l-.7.7a1 1 0 11-1.42-1.42l.7-.7a1 1 0 011.42 0zm8.5 1.42a1 1 0 01-1.42 0l-.7-.7a1 1 0 111.42-1.42l.7.7a1 1 0 010 1.42zM5.76 5.76a1 1 0 01-1.42 0l-.7-.7A1 1 0 015.06 3.64l.7.7a1 1 0 010 1.42zM10 6a4 4 0 100 8 4 4 0 000-8z"/>
+      </svg>
+      <svg viewBox="0 0 20 20" fill="currentColor" class="icon-moon">
+        <path d="M17.293 13.293A8 8 0 016.707 2.707a8.001 8.001 0 1010.586 10.586z"/>
+      </svg>
+    </button>
+
     <!-- Notifications -->
     <button class="icon-btn" id="notifBtn" title="Notifications">
       <svg viewBox="0 0 20 20" fill="currentColor">

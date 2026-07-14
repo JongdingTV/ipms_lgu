@@ -46,3 +46,20 @@ function requireRole(string $requiredRole): void
         exit;
     }
 }
+
+/**
+ * Records a governance/administrative action to audit_logs, distinct from
+ * logActivity()'s activity_logs (auth/session events). Never throws — a
+ * logging failure must not block the action it's recording.
+ */
+function auditLog(PDO $db, ?int $actorId, string $action, ?string $targetType = null, ?int $targetId = null, string $details = ''): void
+{
+    try {
+        $stmt = $db->prepare("
+            INSERT INTO audit_logs (user_id, action, table_name, record_id, details, created_at)
+            VALUES (?, ?, ?, ?, ?, NOW())
+        ");
+        $stmt->execute([$actorId, $action, $targetType, $targetId, $details !== '' ? $details : null]);
+    } catch (Throwable $e) {
+    }
+}

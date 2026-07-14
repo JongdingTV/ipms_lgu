@@ -72,6 +72,68 @@ function changePage(pageName) {
     document.querySelector('.content').scrollTop = 0;
 }
 
+window.GLOBAL_SEARCH_NAVIGATE = changePage;
+window.GLOBAL_SEARCH_SOURCES = [
+    {
+        label: 'Projects',
+        url: citizenUrl('citizen/api/projects.php'),
+        dataKey: 'projects',
+        mapItem: (row) => ({
+            title: row.name,
+            meta: `${row.project_code || ''} · ${row.location || ''}`.replace(/^ · /, ''),
+            page: 'projects',
+        }),
+    },
+];
+
+let citizenStatusChartInst = null;
+
+function renderCitizenStatusChart(stats) {
+    const ctx = document.getElementById('citizenStatusChart')?.getContext('2d');
+    if (!ctx || typeof Chart === 'undefined') return;
+    if (citizenStatusChartInst) citizenStatusChartInst.destroy();
+
+    const segments = [
+        { label: 'Active', value: Number(stats.active_projects || 0), color: '#22c55e' },
+        { label: 'Completed', value: Number(stats.completed_projects || 0), color: '#3b82f6' },
+        { label: 'Delayed', value: Number(stats.delayed_projects || 0), color: '#ef4444' },
+    ];
+    const total = segments.reduce((sum, s) => sum + s.value, 0);
+
+    citizenStatusChartInst = new Chart(ctx, {
+        type: 'doughnut',
+        data: {
+            labels: segments.map(s => s.label),
+            datasets: [{
+                data: segments.map(s => s.value),
+                backgroundColor: segments.map(s => s.color),
+                borderColor: segments.map(() => '#fff'), borderWidth: 3, hoverOffset: 6,
+            }],
+        },
+        options: {
+            responsive: false, cutout: '70%',
+            animation: { duration: 900 },
+            plugins: {
+                legend: { display: false },
+                tooltip: { backgroundColor: '#1e2a3b', callbacks: { label: c => ` ${c.label}: ${c.raw}` } },
+            },
+        },
+    });
+
+    const totalEl = document.getElementById('citizenStatusChartTotal');
+    if (totalEl) totalEl.textContent = total;
+
+    const legendEl = document.getElementById('citizenStatusChartLegend');
+    if (legendEl) {
+        legendEl.innerHTML = segments.map(s => `
+            <div class="budget-legend-item">
+                <span class="legend-dot" style="background:${s.color};"></span>
+                <span>${s.label} <strong>${s.value}</strong></span>
+            </div>
+        `).join('');
+    }
+}
+
 function loadDashboardData() {
     fetch(citizenUrl('citizen/api/dashboard.php'))
         .then(res => res.json())
@@ -81,6 +143,12 @@ function loadDashboardData() {
             document.getElementById('completedProjectsCount').textContent = data.stats.completed_projects;
             document.getElementById('delayedProjectsCount').textContent = data.stats.delayed_projects;
             document.getElementById('mySubmissionsCount').textContent = data.stats.my_submissions;
+
+            try {
+                renderCitizenStatusChart(data.stats);
+            } catch (error) {
+                console.error('Failed to render status chart:', error);
+            }
 
             // Load recent projects
             displayRecentProjects(data.recent_projects);

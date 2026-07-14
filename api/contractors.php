@@ -6,6 +6,7 @@ require_once __DIR__ . '/../includes/db.php';
 require_once __DIR__ . '/../includes/auth.php';
 require_once __DIR__ . '/../contractor/includes/scope.php';
 require_once __DIR__ . '/../includes/workflow.php';
+require_once __DIR__ . '/../includes/ContractorScoring.php';
 apiHeaders();
 
 $method = $_SERVER['REQUEST_METHOD'];
@@ -19,6 +20,10 @@ requireCsrfProtection();
 
 $db     = getDB();
 projectWorkflowEnsureProjectStatusSchema($db);
+contractorsEnsureApplicationSchema($db);
+if ($method === 'GET') {
+    contractorRefreshPerformanceScores($db);
+}
 $id     = isset($_GET['id']) ? (int) $_GET['id'] : null;
 $user   = currentUser();
 $isContractor = ($user['role'] ?? '') === 'contractor';
@@ -69,8 +74,9 @@ if ($method === 'GET') {
         respond($row);
     }
 
-    // List
-    $where  = ['1=1'];
+    // List — only approved applications are eligible for assignment/bidding;
+    // pending/rejected applications are reviewed separately by BAC.
+    $where  = ["c.application_status = 'approved'"];
     $params = [];
 
     if ($contractorScopeId !== null) {
@@ -120,26 +126,11 @@ if ($method === 'GET') {
 }
 
 // ── POST ───────────────────────────────────────────────────
+// Direct creation is retired — new contractors must go through the public
+// application at contractor/apply.php, reviewed by BAC before an account
+// exists. Editing an already-approved contractor's profile (PUT) still works.
 if ($method === 'POST') {
-    $b = requestBody();
-    if (empty($b['name'])) respond(['error' => "'name' is required"], 422);
-
-    $stmt = $db->prepare("
-        INSERT INTO contractors
-            (name, contact_person, email, phone, address, performance_score, status)
-        VALUES (?,?,?,?,?,?,?)
-    ");
-    $stmt->execute([
-             $b['name'],
-             $b['contact_person']    ?? null,
-             $b['email']             ?? null,
-             $b['phone']             ?? null,
-             $b['address']           ?? null,
-        (int)($b['performance_score'] ?? 0),
-             $b['status']            ?? 'active',
-    ]);
-
-    respond(['id' => (int) $db->lastInsertId()], 201);
+    respond(['error' => 'Contractors can no longer be added directly. New contractors must apply at /contractor/apply.php for BAC review.'], 410);
 }
 
 // ── PUT ────────────────────────────────────────────────────
@@ -149,7 +140,10 @@ if ($method === 'PUT') {
 
     $fields = [];
     $params = [];
-    foreach (['name','contact_person','email','phone','address','performance_score','status'] as $f) {
+    // performance_score is intentionally excluded: it's computed by
+    // contractorRefreshPerformanceScores() from real project outcomes,
+    // not manually editable.
+    foreach (['name','contact_person','email','phone','address','status'] as $f) {
         if (array_key_exists($f, $b)) {
             $fields[] = "$f = ?";
             $params[] = $b[$f];

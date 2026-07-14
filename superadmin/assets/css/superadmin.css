@@ -1,0 +1,227 @@
+/* Super Admin portal */
+.superadmin-content .page-header {
+  align-items: flex-start;
+  gap: 14px;
+}
+
+.sa-scope-note {
+  margin-top: 6px;
+  color: var(--text-muted);
+  font-size: .82rem;
+  line-height: 1.55;
+}
+
+.sa-section-head {
+  margin-bottom: 18px;
+}
+
+.sa-hero {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 24px;
+  margin-bottom: 18px;
+  padding: 22px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background:
+    linear-gradient(135deg, rgba(17, 100, 102, .1), rgba(216, 156, 39, .12)),
+    var(--card-bg);
+  box-shadow: var(--card-shadow);
+}
+
+.sa-hero-copy {
+  min-width: 0;
+}
+
+.sa-eyebrow {
+  display: inline-flex;
+  margin-bottom: 8px;
+  padding: 5px 8px;
+  border-radius: 8px;
+  background: #ecfdf5;
+  color: #0f766e;
+  font-size: .72rem;
+  font-weight: 800;
+}
+
+.sa-hero-mark {
+  width: 112px;
+  height: 112px;
+  object-fit: contain;
+  flex: 0 0 auto;
+  border-radius: 8px;
+  background: #fff;
+  border: 1px solid var(--border);
+  padding: 10px;
+}
+
+.sa-panel {
+  background: var(--card-bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--card-shadow);
+  padding: 20px;
+  margin-bottom: 18px;
+}
+
+.sa-panel-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 14px;
+  flex-wrap: wrap;
+}
+
+.sa-panel-head h2 {
+  font-size: .92rem;
+  font-weight: 800;
+}
+
+.sa-filters {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.sa-filters input,
+.sa-filters select,
+.sa-panel-head input {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 7px 10px;
+  font-size: .8rem;
+  font-family: var(--font);
+  outline: none;
+  background: white;
+  transition: border-color .2s, box-shadow .2s;
+}
+.sa-panel-head input:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px rgba(37,99,235,.12);
+}
+
+/* ── Motion polish (previously fully static) ── */
+.sa-panel {
+  transition: transform .2s ease, box-shadow .2s ease;
+}
+.sa-panel:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 10px 26px rgba(15,23,42,.1);
+}
+.sa-row {
+  transition: background-color .15s ease;
+}
+.sa-row:hover {
+  background-color: rgba(37,99,235,.04);
+  border-radius: var(--radius-sm);
+}
+.sa-hero {
+  transition: box-shadow .25s ease;
+}
+
+.sa-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.sa-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--border);
+  font-size: .82rem;
+}
+
+.sa-row:last-child {
+  border-bottom: 0;
+}
+
+.sa-row-main {
+  min-width: 0;
+}
+
+.sa-row-main strong,
+.sa-row-main span {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sa-row-main span {
+  margin-top: 3px;
+  color: var(--text-muted);
+  font-size: .74rem;
+}
+
+.sa-log-date {
+  color: var(--accent);
+  font-family: var(--mono);
+  font-size: .76rem;
+  font-weight: 800;
+  white-space: nowrap;
+}
+
+.sa-table-wrap {
+  overflow-x: auto;
+}
+
+/* Statuses not already covered by the shared project-workflow badges */
+.status-inactive,
+.status-failed,
+.status-rejected,
+.status-locked_out {
+  background: #fee2e2;
+  color: #b91c1c;
+}
+
+.status-verified,
+.status-success {
+  background: #dcfce7;
+  color: #15803d;
+}
+
+.status-unverified,
+.status-watch,
+.status-pending {
+  background: #fef3c7;
+  color: #92400e;
+}
+
+/* Account provisioning ("+ Add User/Contractor/Engineer") --------------- */
+
+.sa-provision-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-bottom: 14px;
+}
+
+/* Field-error rendering, dynamic document rows, and the toggle-switch used by
+   Settings now live in the shared assets/css/style.css (moved there during the
+   BAC phase since BAC needs the identical patterns — see that file instead of
+   duplicating per-portal). */
+
+@media (max-width: 640px) {
+  .sa-hero {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .sa-hero-mark {
+    width: 92px;
+    height: 92px;
+  }
+}
+
+@media (max-width: 480px) {
+  .sa-row {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+}
