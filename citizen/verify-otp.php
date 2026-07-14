@@ -58,8 +58,11 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
             $result = $otp->verifyOTP($userId, $code, 'citizen_verification');
             if ($result['success']) {
                 getDB()->prepare("UPDATE users SET status = 'active' WHERE id = ?")->execute([$userId]);
-                unset($_SESSION['pending_otp_user_id'], $_SESSION['pending_otp_email'], $_SESSION['dev_otp_preview']);
-                header('Location: ' . appUrl('/citizen/login.php?verified=1'));
+                // Registration sets pending_needs_id when no ID photo was submitted,
+                // so the login page can keep reminding them after verification.
+                $needsId = !empty($_SESSION['pending_needs_id']);
+                unset($_SESSION['pending_otp_user_id'], $_SESSION['pending_otp_email'], $_SESSION['dev_otp_preview'], $_SESSION['pending_needs_id']);
+                header('Location: ' . appUrl('/citizen/login.php?verified=1' . ($needsId ? '&needs_id=1' : '')));
                 exit;
             }
             $error = $result['message'];
