@@ -38,6 +38,36 @@ function currentUser(): ?array
     return $_SESSION['auth_user'] ?? null;
 }
 
+/**
+ * Populate the session for an authenticated user and bump last_login.
+ * Shared by password login and post-OTP email verification so both
+ * paths end up with an identical session shape.
+ */
+function establishUserSession(array $user): array
+{
+    session_regenerate_id(true);
+    $_SESSION['auth_user'] = [
+        'user_id' => (int) $user['id'],
+        'username' => $user['username'],
+        'email' => $user['email'],
+        'full_name' => $user['full_name'],
+        'role' => $user['role'],
+    ];
+    $_SESSION['user_id'] = (int) $user['id'];
+    $_SESSION['username'] = $user['username'];
+    $_SESSION['email'] = $user['email'];
+    $_SESSION['full_name'] = $user['full_name'];
+    $_SESSION['role'] = $user['role'];
+    $_SESSION['last_activity'] = time();
+    $_SESSION['user_agent'] = $_SERVER['HTTP_USER_AGENT'] ?? '';
+    $_SESSION['csrf_token'] = bin2hex(random_bytes(32));
+
+    $stmt = getDB()->prepare('UPDATE users SET last_login = NOW() WHERE id = ?');
+    $stmt->execute([(int) $user['id']]);
+
+    return $_SESSION['auth_user'];
+}
+
 function isLoggedIn(): bool
 {
     $role = $_SESSION['auth_user']['role'] ?? '';
@@ -173,9 +203,78 @@ function pruneOldLoginAttempts(): void
     }
 }
 
+const UNVERIFIED_ACCOUNT_GRACE_HOURS = 24;
+
+/**
+ * Delete citizen accounts that never confirmed their email within the grace
+ * period. Keeps the admin-facing user list free of abandoned/dummy signups.
+ * Verified accounts, and every non-citizen role, are never touched.
+ */
+function purgeUnverifiedCitizenAccounts(int $graceHours = UNVERIFIED_ACCOUNT_GRACE_HOURS): int
+{
+    try {
+        $pdo = getDB();
+        $stmt = $pdo->prepare("
+            SELECT u.id, u.username, u.email, u.created_at, c.id_photo_path
+            FROM users u
+            LEFT JOIN citizens c ON c.user_id = u.id
+            WHERE u.role = 'citizen'
+              AND u.email_verified_at IS NULL
+              AND u.created_at < (NOW() - INTERVAL ? HOUR)
+        ");
+        $stmt->execute([$graceHours]);
+        $staleAccounts = $stmt->fetchAll();
+
+        if (!$staleAccounts) {
+            return 0;
+        }
+
+        $deleteStmt = $pdo->prepare("DELETE FROM users WHERE id = ?");
+        $logStmt = $pdo->prepare("
+            INSERT INTO audit_logs (user_id, action, table_name, record_id, details)
+            VALUES (NULL, 'auto_delete_unverified_account', 'users', ?, ?)
+        ");
+
+        $deletedCount = 0;
+        foreach ($staleAccounts as $account) {
+            try {
+                $photoPath = $account['id_photo_path'] ?? null;
+                if ($photoPath) {
+                    $fullPath = __DIR__ . '/../' . ltrim($photoPath, '/');
+                    if (is_file($fullPath)) {
+                        unlink($fullPath);
+                    }
+                }
+
+                $details = sprintf(
+                    'Unverified citizen account "%s" (%s) auto-deleted after %dh grace period. Registered %s.',
+                    $account['username'],
+                    $account['email'],
+                    $graceHours,
+                    $account['created_at']
+                );
+                $logStmt->execute([(int) $account['id'], $details]);
+
+                // citizens and otp_tokens rows cascade via FK ON DELETE CASCADE.
+                $deleteStmt->execute([(int) $account['id']]);
+                $deletedCount++;
+            } catch (Throwable $e) {
+                error_log('Failed to purge unverified account #' . $account['id'] . ': ' . $e->getMessage());
+            }
+        }
+
+        return $deletedCount;
+    } catch (Throwable $e) {
+        error_log('Failed to purge unverified citizen accounts: ' . $e->getMessage());
+        return 0;
+    }
+}
+
 function authenticateUser(string $identifier, string $password, ?string $selectedRole = null): array
 {
     pruneOldLoginAttempts();
+    // purgeUnverifiedCitizenAccounts() is paused along with email OTP verification below —
+    // see the note above the citizen gate. Re-enable both together.
 
     $selectedRole = $selectedRole !== null ? trim($selectedRole) : null;
     if ($selectedRole !== null && $selectedRole !== '' && !isValidRole($selectedRole)) {
@@ -189,7 +288,7 @@ function authenticateUser(string $identifier, string $password, ?string $selecte
 
     $pdo = getDB();
     $stmt = $pdo->prepare("
-        SELECT id, username, email, password_hash, full_name, role, status, last_login
+        SELECT id, username, email, password_hash, full_name, role, status, email_verified_at, last_login
         FROM users
         WHERE username = ? OR email = ?
         LIMIT 1
@@ -220,30 +319,29 @@ function authenticateUser(string $identifier, string $password, ?string $selecte
         return ['success' => false, 'message' => 'The selected portal does not match this account. Please choose the role assigned to your account.'];
     }
 
-    session_regenerate_id(true);
-    $_SESSION['auth_user'] = [
-        'user_id' => (int) $user['id'],
-        'username' => $user['username'],
-        'email' => $user['email'],
-        'full_name' => $user['full_name'],
-        'role' => $user['role'],
-    ];
-    $_SESSION['user_id'] = (int) $user['id'];
-    $_SESSION['username'] = $user['username'];
-    $_SESSION['email'] = $user['email'];
-    $_SESSION['full_name'] = $user['full_name'];
-    $_SESSION['role'] = $user['role'];
-    $_SESSION['last_activity'] = time();
-    $_SESSION['user_agent'] = $_SERVER['HTTP_USER_AGENT'] ?? '';
-    $_SESSION['csrf_token'] = bin2hex(random_bytes(32));
+    // Email OTP verification is temporarily disabled (Gmail sending isn't configured yet).
+    // New registrations now get email_verified_at set immediately at signup (see
+    // citizen/register.php), so this gate would be a no-op anyway. Left here, commented,
+    // so re-enabling is a one-line change once SMTP is sorted out:
+    //
+    // if ($user['role'] === 'citizen' && empty($user['email_verified_at'])) {
+    //     recordLoginAttempt($identifier, $ipAddress, false, (int) $user['id']);
+    //     logActivity((int) $user['id'], 'login_blocked', 'Email not verified');
+    //     return [
+    //         'success' => false,
+    //         'needs_verification' => true,
+    //         'user_id' => (int) $user['id'],
+    //         'email' => $user['email'],
+    //         'message' => 'Please verify your email before logging in.',
+    //     ];
+    // }
 
-    $updateStmt = $pdo->prepare("UPDATE users SET last_login = NOW() WHERE id = ?");
-    $updateStmt->execute([(int) $user['id']]);
+    $authUser = establishUserSession($user);
 
     recordLoginAttempt($identifier, $ipAddress, true, (int) $user['id']);
     logActivity((int) $user['id'], 'login_success', 'User logged in successfully');
 
-    return ['success' => true, 'user' => $_SESSION['auth_user']];
+    return ['success' => true, 'user' => $authUser];
 }
 
 function redirectToRoleDashboard(?string $role = null): void

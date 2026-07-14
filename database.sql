@@ -6,6 +6,7 @@ CREATE TABLE users (
     full_name VARCHAR(120) NOT NULL,
     role ENUM('super_admin', 'admin', 'bac', 'engineer', 'contractor', 'citizen') NOT NULL DEFAULT 'citizen',
     status ENUM('active', 'inactive') NOT NULL DEFAULT 'active',
+    email_verified_at DATETIME NULL COMMENT 'NULL until the account confirms its email via OTP',
     last_login DATETIME NULL,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
@@ -331,6 +332,30 @@ CREATE TABLE citizens (
   CONSTRAINT fk_citizens_verified_by FOREIGN KEY (verified_by) REFERENCES users(id) ON DELETE SET NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+CREATE TABLE registration_attempts (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    ip_address VARCHAR(45) NOT NULL,
+    attempted_at DATETIME NOT NULL,
+    INDEX idx_registration_attempts_ip (ip_address),
+    INDEX idx_registration_attempts_time (attempted_at)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE otp_tokens (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    user_id INT NOT NULL,
+    otp_code VARCHAR(10) NOT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    expires_at DATETIME NOT NULL,
+    verified TINYINT(1) DEFAULT 0,
+    verified_at DATETIME NULL,
+    attempts INT DEFAULT 0,
+    max_attempts INT DEFAULT 5,
+    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+    INDEX idx_otp_user (user_id),
+    INDEX idx_otp_expires (expires_at),
+    INDEX idx_otp_code (otp_code)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
 CREATE TABLE feedback (
   id INT AUTO_INCREMENT PRIMARY KEY,
   project_id INT,
@@ -339,10 +364,23 @@ CREATE TABLE feedback (
   message TEXT NOT NULL,
   category ENUM('complaint','suggestion','inquiry') DEFAULT 'complaint',
   priority ENUM('low','medium','high','urgent') DEFAULT 'medium',
+  district VARCHAR(20) NULL COMMENT 'QC congressional district, e.g. District 1',
+  barangay VARCHAR(100) NULL COMMENT 'QC barangay within the district',
+  latitude DECIMAL(10,7) NULL COMMENT 'Exact pinned spot (optional)',
+  longitude DECIMAL(10,7) NULL COMMENT 'Exact pinned spot (optional)',
   status ENUM('open','in_progress','resolved','closed') DEFAULT 'open',
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
   FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE SET NULL,
   FOREIGN KEY (citizen_id) REFERENCES citizens(id) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE feedback_photos (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  feedback_id INT NOT NULL,
+  photo_path VARCHAR(255) NOT NULL,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  INDEX idx_feedback_photos_feedback (feedback_id),
+  CONSTRAINT fk_feedback_photos_feedback FOREIGN KEY (feedback_id) REFERENCES feedback(id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE audit_logs (

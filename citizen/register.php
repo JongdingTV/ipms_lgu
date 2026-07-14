@@ -2,20 +2,70 @@
 require_once __DIR__ . '/../includes/config.php';
 require_once __DIR__ . '/../includes/db.php';
 require_once __DIR__ . '/../auth/session.php';
+// Email OTP verification is temporarily disabled (Gmail sending isn't configured yet).
+// See auth/session.php and citizen/verify-email.php — the code is still there, just unwired.
 
 if (isLoggedIn()) {
     redirectToRoleDashboard();
 }
 
+const MAX_ID_PHOTO_BYTES = 3 * 1024 * 1024; // 3MB
+const ALLOWED_ID_PHOTO_MIME = [
+    'image/jpeg' => 'jpg',
+    'image/png' => 'png',
+    'image/gif' => 'gif',
+    'image/webp' => 'webp',
+];
+const MAX_REGISTRATIONS_PER_WINDOW = 8;
+const REGISTRATION_WINDOW_MINUTES = 30;
+
+function isRegistrationRateLimited(string $ipAddress): bool
+{
+    if (APP_ENV !== 'production') {
+        // Local/dev testing repeatedly hits this from the same machine IP (typos,
+        // retries, automated smoke tests) with no abuse involved. Only enforce in prod.
+        return false;
+    }
+
+    try {
+        $pdo = getDB();
+        $stmt = $pdo->prepare("
+            SELECT COUNT(*) FROM registration_attempts
+            WHERE ip_address = ? AND attempted_at >= (NOW() - INTERVAL ? MINUTE)
+        ");
+        $stmt->execute([$ipAddress, REGISTRATION_WINDOW_MINUTES]);
+        return (int) $stmt->fetchColumn() >= MAX_REGISTRATIONS_PER_WINDOW;
+    } catch (Throwable $e) {
+        return false;
+    }
+}
+
+function recordRegistrationAttempt(string $ipAddress): void
+{
+    try {
+        $pdo = getDB();
+        $stmt = $pdo->prepare("INSERT INTO registration_attempts (ip_address, attempted_at) VALUES (?, NOW())");
+        $stmt->execute([$ipAddress]);
+        $pdo->exec("DELETE FROM registration_attempts WHERE attempted_at < (NOW() - INTERVAL 1 DAY)");
+    } catch (Throwable $e) {
+    }
+}
+
 $errors = [];
 $formData = [];
+$ipAddress = $_SERVER['REMOTE_ADDR'] ?? '0.0.0.0';
 
 // Get form data on POST
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     // Require valid CSRF token for registration
     requireCsrfProtection();
+    recordRegistrationAttempt($ipAddress);
     $formData = $_POST;
-    
+
+    if (isRegistrationRateLimited($ipAddress)) {
+        $errors[] = 'Too many registration attempts from this network. Please try again later.';
+    }
+
     // Validation
     $firstName = trim($_POST['first_name'] ?? '');
     $lastName = trim($_POST['last_name'] ?? '');
@@ -111,17 +161,30 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $errors[] = 'Passwords do not match';
     }
 
-    // Check ID photo upload
-    if (empty($_FILES['id_photo']['name'] ?? '')) {
-        $errors[] = 'ID photo is required for verification';
-    } else {
+    // ID photo is optional: an account can be created without one, but stays
+    // 'unverified' (see verification_status below) until the citizen submits it.
+    $idPhotoExt = null;
+    $idPhotoProvided = !empty($_FILES['id_photo']['name'] ?? '');
+    if ($idPhotoProvided) {
         $file = $_FILES['id_photo'];
-        $allowed = ['image/jpeg', 'image/png', 'image/gif'];
-        if (!in_array($file['type'], $allowed)) {
-            $errors[] = 'ID photo must be a JPG, PNG, or GIF image';
-        }
-        if ($file['size'] > 5 * 1024 * 1024) { // 5MB limit
-            $errors[] = 'ID photo must be less than 5MB';
+
+        if ($file['error'] !== UPLOAD_ERR_OK) {
+            $errors[] = match ($file['error']) {
+                UPLOAD_ERR_INI_SIZE, UPLOAD_ERR_FORM_SIZE => 'ID photo is too large. Please upload a file 3MB or smaller.',
+                UPLOAD_ERR_PARTIAL => 'ID photo upload was interrupted. Please try again.',
+                UPLOAD_ERR_NO_TMP_DIR, UPLOAD_ERR_CANT_WRITE, UPLOAD_ERR_EXTENSION => 'Could not save the uploaded file. Please try again.',
+                default => 'Failed to upload ID photo. Please try again.',
+            };
+        } elseif ($file['size'] > MAX_ID_PHOTO_BYTES) {
+            $errors[] = 'ID photo must be 3MB or smaller. Please compress the image or retake a smaller photo.';
+        } else {
+            // Verify actual file content, not just the client-supplied name/type (which can be spoofed).
+            $imageInfo = @getimagesize($file['tmp_name']);
+            if ($imageInfo === false || !isset(ALLOWED_ID_PHOTO_MIME[$imageInfo['mime']])) {
+                $errors[] = 'ID photo must be a valid JPG, PNG, GIF, or WEBP image.';
+            } else {
+                $idPhotoExt = ALLOWED_ID_PHOTO_MIME[$imageInfo['mime']];
+            }
         }
     }
 
@@ -129,62 +192,85 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if (empty($errors)) {
         try {
             $pdo = getDB();
-            
+
             // Check if username already exists
             $stmt = $pdo->prepare("SELECT id FROM users WHERE username = ? OR email = ?");
             $stmt->execute([$username, $email]);
             if ($stmt->fetch()) {
                 $errors[] = 'Username or email already exists. Please choose different credentials.';
             } else {
-                // Create transaction
+                $idPhotoPath = null;
+                $filePath = null;
+
+                if ($idPhotoProvided) {
+                    $uploadDir = __DIR__ . '/../assets/img/citizen-ids/';
+                    if (!is_dir($uploadDir)) {
+                        mkdir($uploadDir, 0755, true);
+                    }
+
+                    $fileName = 'citizen_id_' . time() . '_' . bin2hex(random_bytes(8)) . '.' . $idPhotoExt;
+                    $filePath = $uploadDir . $fileName;
+                }
+
                 $pdo->beginTransaction();
+                try {
+                    if ($idPhotoProvided) {
+                        if (!move_uploaded_file($_FILES['id_photo']['tmp_name'], $filePath)) {
+                            throw new RuntimeException('Failed to upload ID photo');
+                        }
+                        $idPhotoPath = '/assets/img/citizen-ids/' . $fileName;
+                    }
 
-                // Upload ID photo
-                $uploadDir = __DIR__ . '/../assets/img/citizen-ids/';
-                if (!is_dir($uploadDir)) {
-                    mkdir($uploadDir, 0755, true);
+                    // Create user account. email_verified_at is set immediately for now since
+                    // OTP email delivery is temporarily disabled (see note at top of file).
+                    $passwordHash = password_hash($password, PASSWORD_BCRYPT);
+                    $stmt = $pdo->prepare("
+                        INSERT INTO users (username, email, password_hash, full_name, role, status, email_verified_at)
+                        VALUES (?, ?, ?, ?, 'citizen', 'active', NOW())
+                    ");
+                    $stmt->execute([$username, $email, $passwordHash, "$firstName $lastName"]);
+                    $userId = $pdo->lastInsertId();
+
+                    // Create citizen profile. verification_status stays 'unverified' either way —
+                    // without a photo there's simply nothing yet for staff to cross-check.
+                    $stmt = $pdo->prepare("
+                        INSERT INTO citizens (
+                            user_id, first_name, last_name, middle_name, email, phone,
+                            date_of_birth, gender, civil_status, address, barangay, city, province, postal_code,
+                            id_type, id_number, id_photo_path, verification_status
+                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'unverified')
+                    ");
+                    $stmt->execute([
+                        $userId, $firstName, $lastName, $middleName, $email, $phone,
+                        $dateOfBirth, $gender, $civilStatus, $address, $barangay, $city, $province, $postalCode,
+                        $idType, $idNumber, $idPhotoPath
+                    ]);
+
+                    $pdo->commit();
+
+                    // Redirect to login with success message; flag missing ID so the login
+                    // page can remind them their account still needs verification.
+                    $redirectParams = $idPhotoProvided ? 'registered=1' : 'registered=1&needs_id=1';
+                    header('Location: ' . appUrl('/citizen/login.php?' . $redirectParams));
+                    exit;
+                } catch (Throwable $inner) {
+                    $pdo->rollBack();
+                    if ($filePath !== null && is_file($filePath)) {
+                        unlink($filePath);
+                    }
+                    throw $inner;
                 }
-                
-                $fileExt = pathinfo($_FILES['id_photo']['name'], PATHINFO_EXTENSION);
-                $fileName = 'citizen_id_' . time() . '_' . bin2hex(random_bytes(4)) . '.' . $fileExt;
-                $filePath = $uploadDir . $fileName;
-                
-                if (!move_uploaded_file($_FILES['id_photo']['tmp_name'], $filePath)) {
-                    throw new Exception('Failed to upload ID photo');
-                }
-
-                // Create user account
-                $passwordHash = password_hash($password, PASSWORD_BCRYPT);
-                $stmt = $pdo->prepare("
-                    INSERT INTO users (username, email, password_hash, full_name, role, status)
-                    VALUES (?, ?, ?, ?, 'citizen', 'active')
-                ");
-                $stmt->execute([$username, $email, $passwordHash, "$firstName $lastName"]);
-                $userId = $pdo->lastInsertId();
-
-                // Create citizen profile
-                $idPhotoPath = '/assets/img/citizen-ids/' . $fileName;
-                $stmt = $pdo->prepare("
-                    INSERT INTO citizens (
-                        user_id, first_name, last_name, middle_name, email, phone,
-                        date_of_birth, gender, civil_status, address, barangay, city, province, postal_code,
-                        id_type, id_number, id_photo_path, verification_status
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'unverified')
-                ");
-                $stmt->execute([
-                    $userId, $firstName, $lastName, $middleName, $email, $phone,
-                    $dateOfBirth, $gender, $civilStatus, $address, $barangay, $city, $province, $postalCode,
-                    $idType, $idNumber, $idPhotoPath
-                ]);
-
-                $pdo->commit();
-
-                // Redirect to login with success message
-                header('Location: ' . appUrl('/citizen/login.php?registered=1'));
-                exit;
             }
-        } catch (Exception $e) {
-            $errors[] = 'Registration failed: ' . $e->getMessage();
+        } catch (PDOException $e) {
+            error_log('Citizen registration failed: ' . $e->getMessage());
+            if ($e->getCode() === '23000') {
+                $errors[] = 'That username, email, or ID number is already registered.';
+            } else {
+                $errors[] = 'Registration failed due to a system error. Please try again later.';
+            }
+        } catch (Throwable $e) {
+            error_log('Citizen registration failed: ' . $e->getMessage());
+            $errors[] = 'Registration failed. Please try again, and contact support if the problem continues.';
         }
     }
 }
@@ -208,50 +294,80 @@ $civilStatuses = ['Single', 'Married', 'Divorced', 'Widowed', 'Separated'];
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Citizen Registration - IPMS</title>
     <link rel="icon" href="<?= htmlspecialchars(appUrl('/assets/img/ipms-icon.png')) ?>" type="image/png">
+    <link rel="apple-touch-icon" href="<?= htmlspecialchars(appUrl('/assets/img/ipms-icon.png')) ?>">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;600;700&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" crossorigin="anonymous">
+    <meta name="theme-color" content="#063b33">
     <meta http-equiv="Content-Security-Policy" content="default-src 'self' https: blob:; script-src 'self' https://cdnjs.cloudflare.com https://cdn.jsdelivr.net blob:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://cdnjs.cloudflare.com; font-src https://fonts.gstatic.com; img-src 'self' data: blob:; connect-src 'self' blob:;">
     <style>
-        * {
+        :root {
+            --ink: #10201d;
+            --muted: #52615d;
+            --deep: #063b33;
+            --green: #0f7a5f;
+            --mint: #d9f3e7;
+            --gold: #f6b83f;
+            --red: #d64a3a;
+            --paper: #fbfaf5;
+            --white: #ffffff;
+            --line: #dce4dd;
+            --shadow: 0 24px 60px rgba(16, 32, 29, .14);
+        }
+
+        *, *::before, *::after {
+            box-sizing: border-box;
             margin: 0;
             padding: 0;
-            box-sizing: border-box;
         }
 
         body {
-            font-family: 'Plus Jakarta Sans', system-ui, -apple-system, 'Segoe UI', Roboto, Helvetica, Arial;
-            background: linear-gradient(135deg, #e6f0ff 0%, #eef7ff 100%);
+            font-family: 'Plus Jakarta Sans', system-ui, -apple-system, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+            background: var(--paper);
+            color: var(--ink);
             min-height: 100vh;
             padding: 2rem 1rem;
+            -webkit-font-smoothing: antialiased;
         }
 
         .registration-container {
-            background: white;
-            border-radius: 12px;
-            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+            background: var(--white);
+            border-radius: 16px;
+            box-shadow: var(--shadow);
+            border: 1px solid var(--line);
             overflow: hidden;
             width: 100%;
-            max-width: 700px;
+            max-width: 720px;
             margin: 0 auto;
         }
 
         .reg-header {
-            background: linear-gradient(90deg, #2563eb, #1e40af);
-            color: white;
-            padding: 2rem;
+            background: linear-gradient(150deg, var(--deep), var(--green) 65%, #128a6c);
+            color: var(--white);
+            padding: 2.25rem 2rem;
             text-align: center;
         }
 
+        .reg-logo {
+            width: 56px;
+            height: 56px;
+            object-fit: contain;
+            margin: 0 auto 0.85rem;
+            display: block;
+            background: rgba(255, 255, 255, 0.96);
+            border-radius: 12px;
+            padding: 8px;
+        }
+
         .reg-header h1 {
-            font-size: 1.8rem;
-            margin-bottom: 0.5rem;
+            font-size: 1.7rem;
+            margin-bottom: 0.4rem;
         }
 
         .reg-header p {
-            color: rgba(255, 255, 255, 0.9);
-            font-size: 0.95rem;
+            color: rgba(255, 255, 255, 0.85);
+            font-size: 0.92rem;
         }
 
         .reg-body {
@@ -266,19 +382,20 @@ $civilStatuses = ['Single', 'Married', 'Divorced', 'Widowed', 'Separated'];
             padding: 1rem;
             border-radius: 8px;
             margin-bottom: 0.75rem;
-            font-size: 0.95rem;
+            font-size: 0.9rem;
+            line-height: 1.5;
         }
 
         .alert-error {
-            background: #fee;
-            color: #c33;
-            border: 1px solid #fcc;
+            background: #fdecea;
+            color: #b3261e;
+            border: 1px solid #f6cac6;
         }
 
         .alert-info {
-            background: #eef;
-            color: #33c;
-            border: 1px solid #ccf;
+            background: var(--mint);
+            color: #0b5c46;
+            border: 1px solid #b7e6d3;
         }
 
         .form-section {
@@ -286,12 +403,12 @@ $civilStatuses = ['Single', 'Married', 'Divorced', 'Widowed', 'Separated'];
         }
 
         .section-title {
-            font-size: 1.1rem;
-            font-weight: 600;
-            color: #333;
+            font-size: 1.05rem;
+            font-weight: 700;
+            color: var(--ink);
             margin-bottom: 1rem;
             padding-bottom: 0.5rem;
-            border-bottom: 2px solid #2563eb;
+            border-bottom: 2px solid var(--green);
         }
 
         .form-row {
@@ -308,13 +425,13 @@ $civilStatuses = ['Single', 'Married', 'Divorced', 'Widowed', 'Separated'];
 
         label {
             font-weight: 600;
-            color: #333;
+            color: var(--ink);
             margin-bottom: 0.4rem;
-            font-size: 0.9rem;
+            font-size: 0.88rem;
         }
 
         .required {
-            color: #e74c3c;
+            color: var(--red);
         }
 
         input[type="text"],
@@ -323,12 +440,14 @@ $civilStatuses = ['Single', 'Married', 'Divorced', 'Widowed', 'Separated'];
         input[type="date"],
         input[type="file"],
         select {
-            padding: 0.75rem;
-            border: 1px solid #ddd;
-            border-radius: 6px;
-            font-size: 0.95rem;
+            padding: 0.7rem 0.85rem;
+            border: 1px solid var(--line);
+            border-radius: 8px;
+            font-size: 0.93rem;
             font-family: inherit;
-            transition: border-color 0.3s;
+            background: #fbfaf5;
+            color: var(--ink);
+            transition: border-color 0.2s, box-shadow 0.2s, background 0.2s;
         }
 
         input[type="text"]:focus,
@@ -338,42 +457,55 @@ $civilStatuses = ['Single', 'Married', 'Divorced', 'Widowed', 'Separated'];
         input[type="file"]:focus,
         select:focus {
             outline: none;
-            border-color: #2563eb;
-            box-shadow: 0 0 0 3px rgba(37,99,235,0.12);
+            border-color: var(--green);
+            box-shadow: 0 0 0 3px rgba(15, 122, 95, 0.14);
+            background: var(--white);
         }
 
         .file-upload {
-            border: 2px dashed #2563eb;
-            border-radius: 8px;
-            padding: 1rem;
+            border: 2px dashed var(--green);
+            border-radius: 10px;
+            padding: 1.1rem;
             text-align: center;
-            background: #f8f9fa;
+            background: var(--mint);
             cursor: pointer;
-            transition: all 0.3s;
+            transition: all 0.2s;
             display: block;
         }
 
         .file-upload:hover {
-            background: #f0f7ff;
-            border-color: #1e40af;
+            background: #c7ecdc;
+            border-color: var(--deep);
         }
 
         .file-upload input {
-            display: none;
+            /* Not display:none — a hidden *required* file input fails the browser's
+               native form validation with no visible error (Chrome silently refuses
+               to submit and only logs a console warning), which reads as "the submit
+               button does nothing." Visually hidden but still focusable/validatable. */
+            position: absolute;
+            width: 1px;
+            height: 1px;
+            padding: 0;
+            margin: -1px;
+            overflow: hidden;
+            clip: rect(0, 0, 0, 0);
+            white-space: nowrap;
+            border: 0;
         }
 
         .file-upload p {
-            color: #666;
+            color: #0b5c46;
             font-size: 0.9rem;
             margin: 0;
         }
 
         .password-requirements {
-            background: #f8f9fa;
+            background: #f5f8f6;
             padding: 1rem;
-            border-radius: 6px;
+            border-radius: 8px;
             font-size: 0.85rem;
-            color: #666;
+            color: var(--muted);
             margin-top: 0.5rem;
         }
 
@@ -393,12 +525,12 @@ $civilStatuses = ['Single', 'Married', 'Divorced', 'Widowed', 'Separated'];
             content: "✓";
             position: absolute;
             left: 0;
-            color: #27ae60;
+            color: var(--green);
         }
 
         .password-requirements li.unmet:before {
             content: "✗";
-            color: #e74c3c;
+            color: var(--red);
         }
 
         .form-actions {
@@ -411,31 +543,39 @@ $civilStatuses = ['Single', 'Married', 'Divorced', 'Widowed', 'Separated'];
         button {
             padding: 0.85rem;
             border: none;
-            border-radius: 6px;
+            border-radius: 8px;
             font-size: 1rem;
-            font-weight: 600;
+            font-weight: 700;
+            font-family: inherit;
             cursor: pointer;
-            transition: all 0.3s;
+            transition: all 0.2s;
         }
 
         .btn-submit {
-            background: linear-gradient(90deg, #2563eb, #1e40af);
-            color: white;
+            background: linear-gradient(135deg, var(--green), var(--deep));
+            color: var(--white);
+            box-shadow: 0 12px 24px rgba(15, 122, 95, 0.22);
         }
 
         .btn-submit:hover {
-            transform: translateY(-2px);
-            box-shadow: 0 10px 20px rgba(37,99,235,0.25);
+            transform: translateY(-1px);
+            box-shadow: 0 16px 28px rgba(15, 122, 95, 0.26);
+        }
+
+        .btn-submit:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+            transform: none;
         }
 
         .btn-cancel {
             background: #f0f0f0;
             color: #333;
-            border: 1px solid #ddd;
+            border: 1px solid var(--line);
         }
 
         .btn-cancel:hover {
-            background: #e0e0e0;
+            background: #e4e9e6;
         }
 
         .back-link {
@@ -443,17 +583,18 @@ $civilStatuses = ['Single', 'Married', 'Divorced', 'Widowed', 'Separated'];
         }
 
         .back-link a {
-            color: #2563eb;
+            color: var(--green);
             text-decoration: none;
-            font-size: 0.9rem;
+            font-size: 0.88rem;
+            font-weight: 600;
             display: inline-flex;
             align-items: center;
-            gap: 0.3rem;
-            transition: color 0.3s;
+            gap: 0.35rem;
+            transition: color 0.2s;
         }
 
         .back-link a:hover {
-            color: #1e40af;
+            color: var(--deep);
         }
 
         @media (max-width: 600px) {
@@ -466,9 +607,9 @@ $civilStatuses = ['Single', 'Married', 'Divorced', 'Widowed', 'Separated'];
             }
         }
 
-        /* AI Detection Styles */
+        /* AI-assist styles */
         .ai-detection-container {
-            background: #f8f9fa;
+            background: #f5f8f6;
             border-radius: 8px;
             padding: 1rem;
             margin-top: 1rem;
@@ -487,15 +628,15 @@ $civilStatuses = ['Single', 'Married', 'Divorced', 'Widowed', 'Separated'];
         #id_preview {
             max-width: 100%;
             max-height: 300px;
-            border-radius: 6px;
-            border: 2px solid #2563eb;
+            border-radius: 8px;
+            border: 2px solid var(--green);
         }
 
         .detection-status {
             display: none;
             margin-top: 1rem;
             padding: 1rem;
-            border-radius: 6px;
+            border-radius: 8px;
             font-size: 0.9rem;
         }
 
@@ -510,9 +651,9 @@ $civilStatuses = ['Single', 'Married', 'Divorced', 'Widowed', 'Separated'];
         }
 
         .detection-status.success {
-            background: #e8f5e9;
-            color: #2e7d32;
-            border: 1px solid #2e7d32;
+            background: var(--mint);
+            color: #0b5c46;
+            border: 1px solid #b7e6d3;
         }
 
         .detection-status.warning {
@@ -522,9 +663,9 @@ $civilStatuses = ['Single', 'Married', 'Divorced', 'Widowed', 'Separated'];
         }
 
         .detection-status.error {
-            background: #ffebee;
-            color: #c62828;
-            border: 1px solid #c62828;
+            background: #fdecea;
+            color: #b3261e;
+            border: 1px solid #f6cac6;
         }
 
         .detection-spinner {
@@ -558,20 +699,20 @@ $civilStatuses = ['Single', 'Married', 'Divorced', 'Widowed', 'Separated'];
             align-items: center;
             padding: 0.75rem;
             background: white;
-            border-radius: 6px;
+            border-radius: 8px;
             margin-bottom: 0.5rem;
             font-size: 0.9rem;
         }
 
         .result-label {
             font-weight: 600;
-            color: #333;
+            color: var(--ink);
             flex: 0 0 150px;
         }
 
         .result-value {
             flex: 1;
-            color: #666;
+            color: var(--muted);
             margin: 0 1rem;
             word-break: break-word;
         }
@@ -613,38 +754,38 @@ $civilStatuses = ['Single', 'Married', 'Divorced', 'Widowed', 'Separated'];
         .btn-small {
             padding: 0.6rem 1rem;
             border: none;
-            border-radius: 6px;
+            border-radius: 8px;
             font-size: 0.85rem;
             font-weight: 600;
             cursor: pointer;
-            transition: all 0.3s;
+            transition: all 0.2s;
         }
 
         .btn-accept {
-            background: #4caf50;
+            background: var(--green);
             color: white;
         }
 
         .btn-accept:hover {
-            background: #45a049;
+            background: var(--deep);
         }
 
         .btn-retry {
-            background: #ff9800;
-            color: white;
+            background: var(--gold);
+            color: #4a3200;
         }
 
         .btn-retry:hover {
-            background: #e68900;
+            background: #e0a72c;
         }
 
         .verification-notice {
             background: #fff9c4;
-            border-left: 4px solid #fbc02d;
+            border-left: 4px solid var(--gold);
             padding: 1rem;
-            border-radius: 4px;
+            border-radius: 8px;
             margin-bottom: 1rem;
-            font-size: 0.9rem;
+            font-size: 0.88rem;
             color: #594000;
         }
     </style>
@@ -652,13 +793,14 @@ $civilStatuses = ['Single', 'Married', 'Divorced', 'Widowed', 'Separated'];
 <body>
     <div class="registration-container">
         <div class="reg-header">
+            <img class="reg-logo" src="<?= htmlspecialchars(appUrl('/assets/img/ipms-icon.png')) ?>" alt="IPMS logo">
             <h1>Create Citizen Account</h1>
-            <p>Strict identity verification required</p>
+            <p>Identity verification helps us serve genuine residents of Quezon City</p>
         </div>
 
         <div class="reg-body">
             <div class="back-link">
-                <a href="<?= htmlspecialchars(appUrl('/citizen/login.php')) ?>"><i class="fa fa-arrow-left"></i> Back to Login</a>
+                <a href="<?= htmlspecialchars(appUrl('/citizen/login.php')) ?>"><i class="fa-solid fa-arrow-left"></i> Back to Login</a>
             </div>
 
             <?php if (!empty($errors)): ?>
@@ -676,16 +818,16 @@ $civilStatuses = ['Single', 'Married', 'Divorced', 'Widowed', 'Separated'];
 
             <div class="alerts">
                 <div class="alert alert-info">
-                    <strong>Note:</strong> Identity verification is required to prevent fraudulent accounts and ensure we serve only genuine citizens.
+                    <strong>Note:</strong> Your account is created right away, but your ID stays <strong>unverified</strong> until our staff manually cross-checks it. You can browse projects immediately; verified status unlocks features that require a confirmed identity (e.g. filing formal feedback tied to your name).
                 </div>
             </div>
 
-            <form method="POST" enctype="multipart/form-data" autocomplete="on">
+            <form method="POST" enctype="multipart/form-data" autocomplete="on" id="registerForm">
                 <input type="hidden" name="_csrf" value="<?= htmlspecialchars(getCsrfToken()) ?>">
                 <!-- Personal Information -->
                 <div class="form-section">
                     <h3 class="section-title">Personal Information</h3>
-                    
+
                     <div class="form-row">
                         <div class="form-group">
                             <label for="first_name">First Name <span class="required">*</span></label>
@@ -737,7 +879,7 @@ $civilStatuses = ['Single', 'Married', 'Divorced', 'Widowed', 'Separated'];
                 <!-- Contact Information -->
                 <div class="form-section">
                     <h3 class="section-title">Contact Information</h3>
-                    
+
                     <div class="form-row">
                         <div class="form-group">
                             <label for="email">Email <span class="required">*</span></label>
@@ -753,7 +895,7 @@ $civilStatuses = ['Single', 'Married', 'Divorced', 'Widowed', 'Separated'];
                 <!-- Address Information -->
                 <div class="form-section">
                     <h3 class="section-title">Address</h3>
-                    
+
                     <div class="form-group">
                         <label for="address">Street Address <span class="required">*</span></label>
                         <input type="text" id="address" name="address" value="<?= htmlspecialchars($formData['address'] ?? '') ?>" required>
@@ -784,10 +926,10 @@ $civilStatuses = ['Single', 'Married', 'Divorced', 'Widowed', 'Separated'];
 
                 <!-- Identification -->
                 <div class="form-section">
-                    <h3 class="section-title">Identification <span style="color: #e74c3c; font-size: 0.9rem;">(AI-Powered Verification)</span></h3>
-                    
+                    <h3 class="section-title">Identification</h3>
+
                     <div class="verification-notice">
-                        <strong>🤖 AI-Powered Verification:</strong> Upload your ID photo. Our AI will detect your face and extract information automatically.
+                        <strong>📷 Optional AI-assisted autofill:</strong> After you upload your ID, we'll try to read the face and text on it to pre-fill some fields below. This is only a convenience — it does not verify your identity. Please double-check every field before submitting.
                     </div>
 
                     <div class="form-row">
@@ -809,14 +951,14 @@ $civilStatuses = ['Single', 'Married', 'Divorced', 'Widowed', 'Separated'];
                     </div>
 
                     <div class="form-group">
-                        <label for="id_photo">ID Photo/Document <span class="required">*</span></label>
+                        <label for="id_photo">ID Photo/Document <span style="color: var(--muted); font-weight: 500;">(optional — you can add this later, but your account stays unverified until you do)</span></label>
                         <label for="id_photo" class="file-upload" id="uploadLabel">
-                            <input type="file" id="id_photo" name="id_photo" accept="image/jpeg,image/png,image/gif,image/webp" required>
+                            <input type="file" id="id_photo" name="id_photo" accept="image/jpeg,image/png,image/gif,image/webp">
                             <p>📷 Click to upload your ID photo</p>
-                            <p style="font-size: 0.8rem; color: #999; margin-top: 0.5rem;">JPG, PNG, or GIF (Max 5MB)</p>
+                            <p style="font-size: 0.8rem; color: #4d6b60; margin-top: 0.5rem;">JPG, PNG, GIF, or WEBP — max 3MB. Large photos are automatically resized to fit.</p>
                         </label>
-                        
-                        <!-- AI Detection Container -->
+
+                        <!-- Upload / AI assist status -->
                         <div class="ai-detection-container">
                             <div class="preview-section" id="previewSection">
                                 <img id="id_preview" alt="ID Preview">
@@ -864,11 +1006,11 @@ $civilStatuses = ['Single', 'Married', 'Divorced', 'Widowed', 'Separated'];
                 <!-- Account Credentials -->
                 <div class="form-section">
                     <h3 class="section-title">Account Credentials</h3>
-                    
+
                     <div class="form-group">
                         <label for="username">Username <span class="required">*</span></label>
                         <input type="text" id="username" name="username" value="<?= htmlspecialchars($formData['username'] ?? '') ?>" required>
-                        <small style="color: #666; margin-top: 0.3rem; display: block;">5+ characters, letters, numbers, hyphens</small>
+                        <small style="color: var(--muted); margin-top: 0.3rem; display: block;">We suggest one based on your Gmail so it's easy to remember — feel free to change it. 5+ characters, letters, numbers, hyphens.</small>
                     </div>
 
                     <div class="form-group">
@@ -895,18 +1037,35 @@ $civilStatuses = ['Single', 'Married', 'Divorced', 'Widowed', 'Separated'];
                 <!-- Actions -->
                 <div class="form-actions">
                     <a href="<?= htmlspecialchars(appUrl('/citizen/login.php')) ?>" class="btn-cancel" style="text-align: center; display: flex; align-items: center; justify-content: center;">Cancel</a>
-                    <button type="submit" class="btn-submit">Create Account</button>
+                    <button type="submit" class="btn-submit" id="submitBtn">Create Account</button>
                 </div>
             </form>
         </div>
     </div>
 
     <script>
+        // Suggest a username from the email's local part, since most people register
+        // with the Gmail they already remember. Only ever fills a username the user
+        // hasn't typed into themselves, and never overwrites a manual edit.
+        const emailInput = document.getElementById('email');
+        const usernameInput = document.getElementById('username');
+        let usernameTouched = usernameInput.value.trim() !== '';
+
+        usernameInput.addEventListener('input', () => {
+            usernameTouched = usernameInput.value.trim() !== '';
+        });
+
+        emailInput.addEventListener('input', () => {
+            if (usernameTouched) return;
+            const localPart = emailInput.value.split('@')[0] || '';
+            usernameInput.value = localPart.toLowerCase().replace(/[^a-z0-9_-]/g, '').slice(0, 50);
+        });
+
         const passwordInput = document.getElementById('password');
-        
+
         function validatePassword() {
             const password = passwordInput.value;
-            
+
             document.getElementById('req-length').classList.toggle('unmet', password.length < 8);
             document.getElementById('req-upper').classList.toggle('unmet', !/[A-Z]/.test(password));
             document.getElementById('req-lower').classList.toggle('unmet', !/[a-z]/.test(password));
@@ -917,7 +1076,10 @@ $civilStatuses = ['Single', 'Married', 'Divorced', 'Widowed', 'Separated'];
         passwordInput.addEventListener('input', validatePassword);
         validatePassword(); // Initial check
 
-        // ========== AI DETECTION =========
+        // ========== UPLOAD + COMPRESSION + AI ASSIST =========
+        const MAX_UPLOAD_BYTES = 3 * 1024 * 1024; // 3MB, must match server-side limit
+        const MAX_DIMENSION = 1920;
+
         let detectedData = null;
         const idPhotoInput = document.getElementById('id_photo');
         const previewSection = document.getElementById('previewSection');
@@ -925,55 +1087,142 @@ $civilStatuses = ['Single', 'Married', 'Divorced', 'Widowed', 'Separated'];
         const detectionStatus = document.getElementById('detectionStatus');
         const statusText = document.getElementById('statusText');
         const detectionResults = document.getElementById('detectionResults');
+        const submitBtn = document.getElementById('submitBtn');
+
+        function setStatus(message, cls) {
+            detectionStatus.className = 'detection-status active ' + cls;
+            statusText.textContent = message;
+        }
+
+        function clearStatus() {
+            detectionStatus.className = 'detection-status';
+            detectionResults.classList.remove('active');
+        }
+
+        function loadImage(src) {
+            return new Promise((resolve, reject) => {
+                const img = new Image();
+                img.onload = () => resolve(img);
+                img.onerror = reject;
+                img.src = src;
+            });
+        }
+
+        function readAsDataURL(file) {
+            return new Promise((resolve, reject) => {
+                const reader = new FileReader();
+                reader.onload = () => resolve(reader.result);
+                reader.onerror = reject;
+                reader.readAsDataURL(file);
+            });
+        }
+
+        // Downscale + re-encode oversized photos client-side so a clear phone photo
+        // still fits the 3MB cap instead of being rejected outright.
+        async function compressImageFile(file) {
+            const dataUrl = await readAsDataURL(file);
+            const img = await loadImage(dataUrl);
+
+            let { width, height } = img;
+            if (width > MAX_DIMENSION || height > MAX_DIMENSION) {
+                const scale = MAX_DIMENSION / Math.max(width, height);
+                width = Math.round(width * scale);
+                height = Math.round(height * scale);
+            }
+
+            const canvas = document.createElement('canvas');
+            canvas.width = width;
+            canvas.height = height;
+            canvas.getContext('2d').drawImage(img, 0, 0, width, height);
+
+            let quality = 0.9;
+            let blob = await new Promise(res => canvas.toBlob(res, 'image/jpeg', quality));
+            while (blob && blob.size > MAX_UPLOAD_BYTES && quality > 0.3) {
+                quality -= 0.1;
+                blob = await new Promise(res => canvas.toBlob(res, 'image/jpeg', quality));
+            }
+
+            if (!blob || blob.size > MAX_UPLOAD_BYTES) {
+                return null;
+            }
+
+            const newName = file.name.replace(/\.[^.]+$/, '') + '.jpg';
+            return new File([blob], newName, { type: 'image/jpeg' });
+        }
+
+        // Handle file selection
+        idPhotoInput.addEventListener('change', async (e) => {
+            let file = e.target.files[0];
+            if (!file) return;
+
+            if (!file.type.startsWith('image/')) {
+                setStatus('Please select an image file (JPG, PNG, GIF, or WEBP).', 'error');
+                idPhotoInput.value = '';
+                return;
+            }
+
+            if (file.size > MAX_UPLOAD_BYTES) {
+                setStatus('🗜️ This photo is over 3MB — optimizing it, please wait...', 'processing');
+                try {
+                    const compressed = await compressImageFile(file);
+                    if (!compressed) {
+                        setStatus('This image is too large even after compression. Please retake the photo at a lower resolution.', 'error');
+                        idPhotoInput.value = '';
+                        return;
+                    }
+                    const dt = new DataTransfer();
+                    dt.items.add(compressed);
+                    idPhotoInput.files = dt.files;
+                    file = compressed;
+                } catch (err) {
+                    console.error('Compression failed:', err);
+                    setStatus('Could not process this image. Please try a different photo.', 'error');
+                    idPhotoInput.value = '';
+                    return;
+                }
+            }
+
+            clearStatus();
+
+            // Show preview
+            const dataUrl = await readAsDataURL(file);
+            preview.src = dataUrl;
+            previewSection.classList.add('active');
+
+            // Start optional AI assist
+            await detectID(dataUrl);
+        });
 
         // Load AI libraries
         const loadAILibraries = async () => {
-            // Load face-api
             if (!window.faceapi) {
                 const script1 = document.createElement('script');
                 script1.src = 'https://cdn.jsdelivr.net/npm/face-api.js@0.22.2/dist/face-api.min.js';
                 document.head.appendChild(script1);
-                await new Promise(r => script1.onload = r);
+                await new Promise((resolve, reject) => {
+                    script1.onload = resolve;
+                    script1.onerror = reject;
+                });
             }
 
-            // Load Tesseract OCR
             if (!window.Tesseract) {
                 const script2 = document.createElement('script');
                 script2.src = 'https://cdn.jsdelivr.net/npm/tesseract.js@4.1.1/dist/tesseract.min.js';
                 document.head.appendChild(script2);
-                await new Promise(r => script2.onload = r);
+                await new Promise((resolve, reject) => {
+                    script2.onload = resolve;
+                    script2.onerror = reject;
+                });
             }
         };
-
-        // Handle file selection
-        idPhotoInput.addEventListener('change', async (e) => {
-            const file = e.target.files[0];
-            if (!file) return;
-
-            // Show preview
-            const reader = new FileReader();
-            reader.onload = async (event) => {
-                preview.src = event.target.result;
-                previewSection.classList.add('active');
-                
-                // Start detection
-                await detectID(event.target.result);
-            };
-            reader.readAsDataURL(file);
-        });
 
         // Main detection function
         async function detectID(imageSrc) {
             try {
-                // Load libraries if not already loaded
                 await loadAILibraries();
 
-                // Show processing status
-                detectionStatus.classList.add('active', 'processing');
-                statusText.textContent = '🔍 Analyzing ID document...';
+                setStatus('🔍 Analyzing ID document...', 'processing');
                 detectionResults.classList.remove('active');
-                detectedData = null;
-
                 detectedData = {
                     faceDetected: false,
                     faceConfidence: 0,
@@ -985,38 +1234,23 @@ $civilStatuses = ['Single', 'Married', 'Divorced', 'Widowed', 'Separated'];
                     addressConfidence: 0
                 };
 
-                // Step 1: Face Detection
                 await detectFace(imageSrc);
-
-                // Step 2: OCR Text Extraction
                 await extractText(imageSrc);
-
-                // Show results
                 displayResults();
-
             } catch (error) {
                 console.error('Detection error:', error);
-                detectionStatus.classList.add('active', 'error');
-                statusText.textContent = '❌ Error processing ID: ' + error.message;
+                setStatus('The optional AI-assist could not run, but you can still fill in the form and submit normally.', 'warning');
             }
         }
 
-        // Detect face in image
         async function detectFace(imageSrc) {
             try {
-                const img = new Image();
-                img.src = imageSrc;
-                
-                await new Promise(r => {
-                    img.onload = r;
-                });
+                const img = await loadImage(imageSrc);
 
-                // Load models
                 const modelsUrl = 'https://cdn.jsdelivr.net/npm/face-api.js@0.22.2/weights/';
                 await faceapi.nets.tinyFaceDetector.load(modelsUrl);
                 await faceapi.nets.faceLandmark68Net.load(modelsUrl);
 
-                // Detect faces
                 const detections = await faceapi.detectAllFaces(img, new faceapi.TinyFaceDetectorOptions());
 
                 if (detections.length > 0) {
@@ -1026,14 +1260,11 @@ $civilStatuses = ['Single', 'Married', 'Divorced', 'Widowed', 'Separated'];
                     detectedData.faceDetected = false;
                     detectedData.faceConfidence = 0;
                 }
-
             } catch (error) {
                 console.warn('Face detection not available:', error.message);
-                // Continue with OCR even if face detection fails
             }
         }
 
-        // Extract text from image using OCR
         async function extractText(imageSrc) {
             try {
                 statusText.textContent = '📝 Extracting text from ID...';
@@ -1042,12 +1273,7 @@ $civilStatuses = ['Single', 'Married', 'Divorced', 'Widowed', 'Separated'];
                     logger: m => console.log('OCR progress:', m.progress)
                 });
 
-                const text = result.data.text;
-                console.log('OCR Text:', text);
-
-                // Pattern matching for Philippines ID formats
-                extractIDInfo(text);
-
+                extractIDInfo(result.data.text);
             } catch (error) {
                 console.error('OCR error:', error);
                 detectedData.name = 'N/A';
@@ -1056,18 +1282,13 @@ $civilStatuses = ['Single', 'Married', 'Divorced', 'Widowed', 'Separated'];
             }
         }
 
-        // Extract specific info from OCR text
         function extractIDInfo(text) {
-            const lines = text.split('\n');
-            
-            // Name extraction (usually 2-3 words uppercase)
             const nameMatch = text.match(/^([A-Z\s]+?)(?:\n|$)/m);
             if (nameMatch) {
                 detectedData.name = nameMatch[1].trim();
                 detectedData.nameConfidence = 75;
             }
 
-            // ID Number - look for digits separated by space/dash
             const idPatterns = [
                 /ID\s*[:=]?\s*(\d{2,}[-\s]?\d{2,}[-\s]?\d{2,})/i,
                 /(\d{4}[-\s]?\d{4}[-\s]?\d{4}[-\s]?\d{4})/,
@@ -1083,7 +1304,6 @@ $civilStatuses = ['Single', 'Married', 'Divorced', 'Widowed', 'Separated'];
                 }
             }
 
-            // Address - look for keywords like "Address:", "Purok", "Barangay", etc.
             const addressPatterns = [
                 /(?:Address|Address:)\s*[:=]?\s*([^\n]{10,})/i,
                 /(.*?(?:Purok|Brgy|Barangay|St\.|Ave|Rd)[^\n]*)/i,
@@ -1100,13 +1320,11 @@ $civilStatuses = ['Single', 'Married', 'Divorced', 'Widowed', 'Separated'];
             }
         }
 
-        // Display detection results
         function displayResults() {
-            detectionStatus.classList.remove('processing', 'error');
-            statusText.textContent = '✓ Detection complete! Please review the extracted information below.';
+            detectionStatus.className = 'detection-status active success';
+            statusText.textContent = '✓ Scan complete. Review the extracted info below, then Accept & Fill if it looks right.';
             detectionResults.classList.add('active');
 
-            // Update result displays
             document.getElementById('resultFace').textContent = detectedData.faceDetected ? '✓ Yes' : '✗ No';
             document.getElementById('faceBadge').textContent = detectedData.faceDetected ? 'Yes' : 'No';
             document.getElementById('faceBadge').className = detectedData.faceDetected ? 'confidence-badge confidence-high' : 'confidence-badge confidence-low';
@@ -1124,7 +1342,6 @@ $civilStatuses = ['Single', 'Married', 'Divorced', 'Widowed', 'Separated'];
             updateConfidenceBadge('addressBadge', detectedData.addressConfidence);
         }
 
-        // Update confidence badge color
         function updateConfidenceBadge(elementId, confidence) {
             const el = document.getElementById(elementId);
             el.className = 'confidence-badge';
@@ -1137,7 +1354,6 @@ $civilStatuses = ['Single', 'Married', 'Divorced', 'Widowed', 'Separated'];
             }
         }
 
-        // Accept and fill detected data
         function acceptDetectedData() {
             if (detectedData.name) {
                 const nameParts = detectedData.name.split(' ');
@@ -1156,16 +1372,17 @@ $civilStatuses = ['Single', 'Married', 'Divorced', 'Widowed', 'Separated'];
             alert('✓ Detected information filled into form. Please verify and complete any remaining fields.');
         }
 
-        // Retry detection
         function retryDetection() {
             if (idPhotoInput.files[0]) {
-                const reader = new FileReader();
-                reader.onload = (event) => {
-                    detectID(event.target.result);
-                };
-                reader.readAsDataURL(idPhotoInput.files[0]);
+                readAsDataURL(idPhotoInput.files[0]).then(dataUrl => detectID(dataUrl));
             }
         }
+
+        // Prevent double-submit while the request is in flight
+        document.getElementById('registerForm').addEventListener('submit', () => {
+            submitBtn.disabled = true;
+            submitBtn.textContent = 'Creating account...';
+        });
     </script>
 </body>
 </html>

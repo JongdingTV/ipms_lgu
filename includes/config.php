@@ -57,7 +57,7 @@ define('DB_CHARSET', envValue('DB_CHARSET', 'utf8mb4'));
 
 // Email Configuration
 define('MAIL_FROM_EMAIL', envValue('MAIL_FROM_EMAIL', 'ipms.systemlgu@gmail.com'));
-define('MAIL_FROM_NAME', envValue('MAIL_FROM_NAME', 'IPMS System'));
+define('MAIL_FROM_NAME', envValue('MAIL_FROM_NAME', 'LGU IPMS System'));
 define('MAIL_HOST', envValue('MAIL_HOST', 'smtp.gmail.com'));
 define('MAIL_PORT', (int) envValue('MAIL_PORT', '587'));
 define('MAIL_USERNAME', envValue('MAIL_USERNAME', 'ipms.systemlgu@gmail.com'));
