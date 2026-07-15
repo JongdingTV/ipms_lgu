@@ -71,6 +71,21 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
         }
     }
 }
+
+// Live counters for the brand panel — the same public numbers the landing
+// page shows (no money figures here). Failure here should never block signing in.
+$brandStats = null;
+try {
+    $brandStats = getDB()->query("
+        SELECT COUNT(*) AS total,
+               COALESCE(SUM(status = 'completed'), 0) AS completed,
+               COALESCE(SUM(status IN ('active','delayed','on_hold')), 0) AS ongoing
+        FROM projects
+        WHERE status IN ('approved','bidding','awarded','assigned','active','delayed','on_hold','completed')
+    ")->fetch() ?: null;
+} catch (Throwable $e) {
+    $brandStats = null;
+}
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -84,21 +99,24 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" crossorigin="anonymous">
-    <meta name="theme-color" content="#063b33">
-    <meta http-equiv="Content-Security-Policy" content="default-src 'self' https:; script-src 'self' https://cdnjs.cloudflare.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://cdnjs.cloudflare.com; font-src https://fonts.gstatic.com; img-src 'self' data:; connect-src 'self';">
+    <meta name="theme-color" content="#1e3a8a">
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self' https:; script-src 'self' https://cdnjs.cloudflare.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://cdnjs.cloudflare.com; font-src https://fonts.gstatic.com https://cdnjs.cloudflare.com; img-src 'self' data:; connect-src 'self';">
     <style>
+        /* Blue palette to match the QC City Hall photo backdrop. Variable names
+           are kept from the original green theme so the layout CSS is untouched:
+           --deep = navy, --green = primary blue, --mint = light blue. */
         :root {
-            --ink: #10201d;
-            --muted: #52615d;
-            --deep: #063b33;
-            --green: #0f7a5f;
-            --mint: #d9f3e7;
+            --ink: #0f1c2e;
+            --muted: #51617a;
+            --deep: #1e3a8a;
+            --green: #2563eb;
+            --mint: #dbeafe;
             --gold: #f6b83f;
             --red: #d64a3a;
-            --paper: #fbfaf5;
+            --paper: #f2f7fd;
             --white: #ffffff;
-            --line: #dce4dd;
-            --shadow: 0 24px 60px rgba(16, 32, 29, .14);
+            --line: #d8e3f2;
+            --shadow: 0 24px 60px rgba(15, 23, 42, .22);
         }
 
         *, *::before, *::after {
@@ -118,15 +136,37 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
             -webkit-font-smoothing: antialiased;
         }
 
+        /* Blurred City Hall photo backdrop (fixed, behind everything). */
+        body::before {
+            content: "";
+            position: fixed;
+            inset: -24px;
+            z-index: -2;
+            background: url('<?= htmlspecialchars(appUrl('/assets/img/cityhall.jpeg')) ?>') center / cover no-repeat;
+            filter: blur(7px) saturate(1.05);
+            transform: scale(1.04);
+        }
+
+        /* Soft light-blue wash so the glass card stays readable over the photo. */
+        body::after {
+            content: "";
+            position: fixed;
+            inset: 0;
+            z-index: -1;
+            background: linear-gradient(180deg, rgba(37, 99, 235, 0.16), rgba(242, 247, 253, 0.42));
+        }
+
         .login-shell {
             width: min(940px, 100%);
             display: grid;
             grid-template-columns: minmax(0, 1fr) minmax(320px, 400px);
             border-radius: 16px;
             overflow: hidden;
-            background: var(--white);
+            background: rgba(255, 255, 255, 0.72);
+            backdrop-filter: blur(14px) saturate(1.4);
+            -webkit-backdrop-filter: blur(14px) saturate(1.4);
             box-shadow: var(--shadow);
-            border: 1px solid var(--line);
+            border: 1px solid rgba(255, 255, 255, 0.55);
         }
 
         /* ── Brand panel ── */
@@ -134,7 +174,7 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
             position: relative;
             isolation: isolate;
             padding: 3rem 2.5rem;
-            background: linear-gradient(150deg, var(--deep), var(--green) 65%, #128a6c);
+            background: linear-gradient(150deg, rgba(30, 58, 138, 0.94), rgba(37, 99, 235, 0.88) 65%, rgba(59, 130, 246, 0.84));
             color: var(--white);
             display: flex;
             flex-direction: column;
@@ -162,7 +202,7 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
             place-items: center;
             border-radius: 14px;
             background: rgba(255, 255, 255, 0.96);
-            box-shadow: 0 10px 24px rgba(6, 59, 51, 0.3);
+            box-shadow: 0 10px 24px rgba(30, 58, 138, 0.35);
             padding: 12px;
         }
 
@@ -203,6 +243,74 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
             font-size: 0.95rem;
             line-height: 1.6;
             max-width: 340px;
+        }
+
+        /* Feature bullets under the headline */
+        .brand-features {
+            position: relative;
+            z-index: 1;
+            list-style: none;
+            margin: 1.4rem 0 0;
+            padding: 0;
+            display: flex;
+            flex-direction: column;
+            gap: 0.7rem;
+        }
+
+        .brand-features li {
+            display: flex;
+            align-items: flex-start;
+            gap: 10px;
+            font-size: 0.88rem;
+            color: rgba(255, 255, 255, 0.88);
+            line-height: 1.45;
+        }
+
+        .brand-features i {
+            flex-shrink: 0;
+            width: 26px;
+            height: 26px;
+            display: grid;
+            place-items: center;
+            border-radius: 7px;
+            background: rgba(255, 255, 255, 0.15);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            font-size: 0.72rem;
+            margin-top: 1px;
+        }
+
+        /* Live counters pulled from the projects table */
+        .brand-stats {
+            position: relative;
+            z-index: 1;
+            display: flex;
+            gap: 10px;
+            flex-wrap: wrap;
+        }
+
+        .brand-stat {
+            flex: 1;
+            min-width: 88px;
+            background: rgba(255, 255, 255, 0.12);
+            border: 1px solid rgba(255, 255, 255, 0.18);
+            border-radius: 10px;
+            padding: 0.7rem 0.85rem;
+        }
+
+        .brand-stat strong {
+            display: block;
+            font-size: 1.15rem;
+            font-weight: 800;
+        }
+
+        .brand-stat span {
+            display: block;
+            margin-top: 2px;
+            font-size: 0.7rem;
+            font-weight: 600;
+            letter-spacing: 0.03em;
+            text-transform: uppercase;
+            color: rgba(255, 255, 255, 0.72);
         }
 
         .brand-footer {
@@ -292,8 +400,8 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
 
         .alert-success {
             background: var(--mint);
-            color: #0b5c46;
-            border: 1px solid #b7e6d3;
+            color: #1e40af;
+            border: 1px solid #bfdbfe;
         }
 
         .form-group {
@@ -318,7 +426,7 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
             border-radius: 8px;
             font-size: 0.95rem;
             font-family: inherit;
-            background: #fbfaf5;
+            background: rgba(255, 255, 255, 0.65);
             color: var(--ink);
             transition: border-color 0.2s, box-shadow 0.2s, background 0.2s;
         }
@@ -328,7 +436,7 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
         input[type="password"]:focus {
             outline: none;
             border-color: var(--green);
-            box-shadow: 0 0 0 3px rgba(15, 122, 95, 0.14);
+            box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.16);
             background: var(--white);
         }
 
@@ -345,13 +453,13 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
             font-weight: 700;
             font-family: inherit;
             cursor: pointer;
-            box-shadow: 0 12px 24px rgba(15, 122, 95, 0.22);
+            box-shadow: 0 12px 24px rgba(37, 99, 235, 0.24);
             transition: transform 0.18s ease, box-shadow 0.18s ease;
         }
 
         button[type="submit"]:hover {
             transform: translateY(-1px);
-            box-shadow: 0 16px 28px rgba(15, 122, 95, 0.26);
+            box-shadow: 0 16px 28px rgba(37, 99, 235, 0.28);
         }
 
         button[type="submit"]:active {
@@ -376,7 +484,7 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
             width: 100%;
             padding: 0.65rem 1rem;
             background: var(--mint);
-            color: #0b5c46;
+            color: #1e40af;
             border-radius: 8px;
             text-align: center;
             text-decoration: none;
@@ -386,7 +494,7 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
         }
 
         .create-account-link:hover {
-            background: #c7ecdc;
+            background: #bfdbfe;
         }
 
         /* ── Responsive ── */
@@ -432,7 +540,20 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
                 <div class="eyebrow">Citizen Portal</div>
                 <h1 id="login-title">Track infrastructure projects near you.</h1>
                 <p>Sign in to follow project status, submit feedback, and stay updated on public works in your community.</p>
+                <ul class="brand-features">
+                    <li><i class="fa-solid fa-map-location-dot"></i>Browse projects on an interactive Quezon City map, barangay by barangay</li>
+                    <li><i class="fa-solid fa-camera"></i>Report issues with photos and an exact pinned location</li>
+                    <li><i class="fa-solid fa-chart-line"></i>See budgets, expenses, and progress in the transparency dashboard</li>
+                </ul>
             </div>
+
+            <?php if ($brandStats && (int) $brandStats['total'] > 0): ?>
+            <div class="brand-stats">
+                <div class="brand-stat"><strong><?= (int) $brandStats['total'] ?></strong><span>Projects tracked</span></div>
+                <div class="brand-stat"><strong><?= (int) $brandStats['ongoing'] ?></strong><span>Ongoing</span></div>
+                <div class="brand-stat"><strong><?= (int) $brandStats['completed'] ?></strong><span>Completed</span></div>
+            </div>
+            <?php endif; ?>
 
             <div class="brand-footer">
                 <img class="city-seal" src="<?= htmlspecialchars(appUrl('/assets/img/logocityhall.png')) ?>" alt="" aria-hidden="true">

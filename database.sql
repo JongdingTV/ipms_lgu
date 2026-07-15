@@ -365,7 +365,7 @@ CREATE TABLE feedback (
   citizen_id INT,
   citizen_name VARCHAR(120),
   message TEXT NOT NULL,
-  category ENUM('complaint','suggestion','inquiry') DEFAULT 'complaint',
+  category ENUM('complaint','road_damage','drainage_flooding','streetlight','sidewalk_accessibility','safety_hazard','project_delay','suggestion','inquiry','commendation') DEFAULT 'complaint' COMMENT 'Keep in sync with citizen/includes/feedback-categories.php',
   priority ENUM('low','medium','high','urgent') DEFAULT 'medium',
   district VARCHAR(20) NULL COMMENT 'QC congressional district, e.g. District 1',
   barangay VARCHAR(100) NULL COMMENT 'QC barangay within the district',

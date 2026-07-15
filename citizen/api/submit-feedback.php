@@ -1,6 +1,7 @@
 <?php
 require_once __DIR__ . '/../../auth/session.php';
 require_once __DIR__ . '/../includes/qc-locations.php';
+require_once __DIR__ . '/../includes/feedback-categories.php';
 
 header('Content-Type: application/json');
 
@@ -22,8 +23,8 @@ const FEEDBACK_ALLOWED_PHOTO_MIME = [
     'image/webp' => 'webp',
 ];
 
-// Get citizen ID
-$stmt = $pdo->prepare("SELECT id FROM citizens WHERE user_id = ?");
+// Get citizen ID + verification status
+$stmt = $pdo->prepare("SELECT id, verification_status FROM citizens WHERE user_id = ?");
 $stmt->execute([$user['user_id']]);
 $citizen = $stmt->fetch();
 $citizenId = $citizen['id'] ?? null;
@@ -31,6 +32,17 @@ $citizenId = $citizen['id'] ?? null;
 if (!$citizenId) {
     http_response_code(400);
     echo json_encode(['success' => false, 'message' => 'Citizen profile not found']);
+    exit;
+}
+
+// Feedback is verified-citizens-only. The dashboard hides the form for
+// unverified accounts, but this server-side gate is the actual enforcement.
+if (($citizen['verification_status'] ?? 'unverified') !== 'verified') {
+    http_response_code(403);
+    echo json_encode([
+        'success' => false,
+        'message' => 'Your account must be verified before you can submit feedback. Upload a valid government ID in your Profile to get verified.',
+    ]);
     exit;
 }
 
@@ -44,7 +56,7 @@ $latitudeRaw = trim($_POST['latitude'] ?? '');
 $longitudeRaw = trim($_POST['longitude'] ?? '');
 
 $errors = [];
-if (empty($category) || !in_array($category, ['complaint', 'suggestion', 'inquiry'])) {
+if (empty($category) || !array_key_exists($category, feedbackCategories())) {
     $errors[] = 'Invalid category';
 }
 if (empty($priority) || !in_array($priority, ['low', 'medium', 'high', 'urgent'])) {

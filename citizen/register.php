@@ -317,21 +317,24 @@ $civilStatuses = ['Single', 'Married', 'Divorced', 'Widowed', 'Separated'];
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" crossorigin="anonymous">
-    <meta name="theme-color" content="#063b33">
-    <meta http-equiv="Content-Security-Policy" content="default-src 'self' https: blob:; script-src 'self' https://cdnjs.cloudflare.com https://cdn.jsdelivr.net blob:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://cdnjs.cloudflare.com; font-src https://fonts.gstatic.com; img-src 'self' data: blob:; connect-src 'self' blob:;">
+    <meta name="theme-color" content="#1e3a8a">
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self' https: blob:; script-src 'self' 'unsafe-inline' https://cdnjs.cloudflare.com https://cdn.jsdelivr.net blob:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://cdnjs.cloudflare.com; font-src https://fonts.gstatic.com https://cdnjs.cloudflare.com; img-src 'self' data: blob:; connect-src 'self' blob:;">
     <style>
         :root {
-            --ink: #10201d;
-            --muted: #52615d;
-            --deep: #063b33;
-            --green: #0f7a5f;
-            --mint: #d9f3e7;
+            /* Blue palette to match the QC City Hall photo backdrop. Variable
+               names kept from the original green theme so layout CSS is
+               untouched: --deep = navy, --green = primary blue, --mint = light blue. */
+            --ink: #0f1c2e;
+            --muted: #51617a;
+            --deep: #1e3a8a;
+            --green: #2563eb;
+            --mint: #dbeafe;
             --gold: #f6b83f;
             --red: #d64a3a;
-            --paper: #fbfaf5;
+            --paper: #f2f7fd;
             --white: #ffffff;
-            --line: #dce4dd;
-            --shadow: 0 24px 60px rgba(16, 32, 29, .14);
+            --line: #d8e3f2;
+            --shadow: 0 24px 60px rgba(15, 23, 42, .22);
         }
 
         *, *::before, *::after {
@@ -349,11 +352,33 @@ $civilStatuses = ['Single', 'Married', 'Divorced', 'Widowed', 'Separated'];
             -webkit-font-smoothing: antialiased;
         }
 
+        /* Blurred City Hall photo backdrop (fixed, behind everything). */
+        body::before {
+            content: "";
+            position: fixed;
+            inset: -24px;
+            z-index: -2;
+            background: url('<?= htmlspecialchars(appUrl('/assets/img/cityhall.jpeg')) ?>') center / cover no-repeat;
+            filter: blur(7px) saturate(1.05);
+            transform: scale(1.04);
+        }
+
+        /* Soft light-blue wash so the glass card stays readable over the photo. */
+        body::after {
+            content: "";
+            position: fixed;
+            inset: 0;
+            z-index: -1;
+            background: linear-gradient(180deg, rgba(37, 99, 235, 0.16), rgba(242, 247, 253, 0.42));
+        }
+
         .registration-container {
-            background: var(--white);
+            background: rgba(255, 255, 255, 0.74);
+            backdrop-filter: blur(14px) saturate(1.4);
+            -webkit-backdrop-filter: blur(14px) saturate(1.4);
             border-radius: 16px;
             box-shadow: var(--shadow);
-            border: 1px solid var(--line);
+            border: 1px solid rgba(255, 255, 255, 0.55);
             overflow: hidden;
             width: 100%;
             max-width: 720px;
@@ -361,7 +386,7 @@ $civilStatuses = ['Single', 'Married', 'Divorced', 'Widowed', 'Separated'];
         }
 
         .reg-header {
-            background: linear-gradient(150deg, var(--deep), var(--green) 65%, #128a6c);
+            background: linear-gradient(150deg, rgba(30, 58, 138, 0.94), rgba(37, 99, 235, 0.88) 65%, rgba(59, 130, 246, 0.84));
             color: var(--white);
             padding: 2.25rem 2rem;
             text-align: center;
@@ -388,6 +413,32 @@ $civilStatuses = ['Single', 'Married', 'Divorced', 'Widowed', 'Separated'];
             font-size: 0.92rem;
         }
 
+        /* What an account unlocks — compact chips under the header copy */
+        .reg-perks {
+            display: flex;
+            justify-content: center;
+            flex-wrap: wrap;
+            gap: 8px;
+            margin-top: 1.1rem;
+        }
+
+        .reg-perk {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            padding: 0.4rem 0.75rem;
+            border-radius: 50px;
+            background: rgba(255, 255, 255, 0.14);
+            border: 1px solid rgba(255, 255, 255, 0.22);
+            font-size: 0.76rem;
+            font-weight: 600;
+            color: rgba(255, 255, 255, 0.92);
+        }
+
+        .reg-perk i {
+            font-size: 0.72rem;
+        }
+
         .reg-body {
             padding: 2rem;
         }
@@ -412,8 +463,8 @@ $civilStatuses = ['Single', 'Married', 'Divorced', 'Widowed', 'Separated'];
 
         .alert-info {
             background: var(--mint);
-            color: #0b5c46;
-            border: 1px solid #b7e6d3;
+            color: #1e40af;
+            border: 1px solid #bfdbfe;
         }
 
         .form-section {
@@ -463,7 +514,7 @@ $civilStatuses = ['Single', 'Married', 'Divorced', 'Widowed', 'Separated'];
             border-radius: 8px;
             font-size: 0.93rem;
             font-family: inherit;
-            background: #fbfaf5;
+            background: rgba(255, 255, 255, 0.65);
             color: var(--ink);
             transition: border-color 0.2s, box-shadow 0.2s, background 0.2s;
         }
@@ -476,7 +527,7 @@ $civilStatuses = ['Single', 'Married', 'Divorced', 'Widowed', 'Separated'];
         select:focus {
             outline: none;
             border-color: var(--green);
-            box-shadow: 0 0 0 3px rgba(15, 122, 95, 0.14);
+            box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.16);
             background: var(--white);
         }
 
@@ -492,7 +543,7 @@ $civilStatuses = ['Single', 'Married', 'Divorced', 'Widowed', 'Separated'];
         }
 
         .file-upload:hover {
-            background: #c7ecdc;
+            background: #bfdbfe;
             border-color: var(--deep);
         }
 
@@ -513,7 +564,7 @@ $civilStatuses = ['Single', 'Married', 'Divorced', 'Widowed', 'Separated'];
         }
 
         .file-upload p {
-            color: #0b5c46;
+            color: #1e40af;
             font-size: 0.9rem;
             margin: 0;
         }
@@ -558,6 +609,113 @@ $civilStatuses = ['Single', 'Married', 'Divorced', 'Widowed', 'Separated'];
             margin-top: 2rem;
         }
 
+        /* ── Step-by-step wizard ── */
+        .reg-steps {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 1.75rem;
+            position: relative;
+        }
+
+        /* connecting line behind the circles */
+        .reg-steps::before {
+            content: "";
+            position: absolute;
+            top: 16px;
+            left: 12%;
+            right: 12%;
+            height: 2px;
+            background: var(--line);
+            z-index: 0;
+        }
+
+        .reg-step {
+            position: relative;
+            z-index: 1;
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 6px;
+            cursor: default;
+        }
+
+        .reg-step-num {
+            width: 32px;
+            height: 32px;
+            border-radius: 50%;
+            display: grid;
+            place-items: center;
+            background: var(--white);
+            border: 2px solid var(--line);
+            color: var(--muted);
+            font-size: 0.85rem;
+            font-weight: 700;
+            transition: all 0.25s;
+        }
+
+        .reg-step-label {
+            font-size: 0.72rem;
+            font-weight: 700;
+            color: var(--muted);
+            text-transform: uppercase;
+            letter-spacing: 0.03em;
+            text-align: center;
+        }
+
+        .reg-step.active .reg-step-num {
+            background: var(--green);
+            border-color: var(--green);
+            color: var(--white);
+            box-shadow: 0 0 0 4px rgba(37, 99, 235, 0.16);
+        }
+
+        .reg-step.active .reg-step-label {
+            color: var(--deep);
+        }
+
+        .reg-step.done .reg-step-num {
+            background: var(--deep);
+            border-color: var(--deep);
+            color: var(--white);
+        }
+
+        .reg-step.done {
+            cursor: pointer;
+        }
+
+        .wizard-step {
+            display: none;
+            animation: stepIn 0.25s ease;
+        }
+
+        .wizard-step.active {
+            display: block;
+        }
+
+        @keyframes stepIn {
+            from { opacity: 0; transform: translateX(14px); }
+            to { opacity: 1; transform: translateX(0); }
+        }
+
+        .wizard-nav {
+            align-items: stretch;
+        }
+
+        .wizard-nav .btn-submit i,
+        .wizard-nav .btn-cancel i {
+            font-size: 0.82rem;
+        }
+
+        .wizard-nav .btn-cancel,
+        .wizard-nav .btn-submit {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+            text-decoration: none;
+        }
+
         button {
             padding: 0.85rem;
             border: none;
@@ -572,12 +730,12 @@ $civilStatuses = ['Single', 'Married', 'Divorced', 'Widowed', 'Separated'];
         .btn-submit {
             background: linear-gradient(135deg, var(--green), var(--deep));
             color: var(--white);
-            box-shadow: 0 12px 24px rgba(15, 122, 95, 0.22);
+            box-shadow: 0 12px 24px rgba(37, 99, 235, 0.24);
         }
 
         .btn-submit:hover {
             transform: translateY(-1px);
-            box-shadow: 0 16px 28px rgba(15, 122, 95, 0.26);
+            box-shadow: 0 16px 28px rgba(37, 99, 235, 0.28);
         }
 
         .btn-submit:disabled {
@@ -670,8 +828,8 @@ $civilStatuses = ['Single', 'Married', 'Divorced', 'Widowed', 'Separated'];
 
         .detection-status.success {
             background: var(--mint);
-            color: #0b5c46;
-            border: 1px solid #b7e6d3;
+            color: #1e40af;
+            border: 1px solid #bfdbfe;
         }
 
         .detection-status.warning {
@@ -814,6 +972,11 @@ $civilStatuses = ['Single', 'Married', 'Divorced', 'Widowed', 'Separated'];
             <img class="reg-logo" src="<?= htmlspecialchars(appUrl('/assets/img/ipms-icon.png')) ?>" alt="IPMS logo">
             <h1>Create Citizen Account</h1>
             <p>Identity verification helps us serve genuine residents of Quezon City</p>
+            <div class="reg-perks">
+                <span class="reg-perk"><i class="fa-solid fa-map-location-dot"></i>Project map & tracking</span>
+                <span class="reg-perk"><i class="fa-solid fa-comment-dots"></i>Feedback with photos</span>
+                <span class="reg-perk"><i class="fa-solid fa-chart-pie"></i>Budget transparency</span>
+            </div>
         </div>
 
         <div class="reg-body">
@@ -840,9 +1003,18 @@ $civilStatuses = ['Single', 'Married', 'Divorced', 'Widowed', 'Separated'];
                 </div>
             </div>
 
+            <!-- Wizard progress -->
+            <div class="reg-steps" id="regSteps">
+                <div class="reg-step active" data-step="1"><span class="reg-step-num">1</span><span class="reg-step-label">Personal</span></div>
+                <div class="reg-step" data-step="2"><span class="reg-step-num">2</span><span class="reg-step-label">Contact &amp; Address</span></div>
+                <div class="reg-step" data-step="3"><span class="reg-step-num">3</span><span class="reg-step-label">Identification</span></div>
+                <div class="reg-step" data-step="4"><span class="reg-step-num">4</span><span class="reg-step-label">Account</span></div>
+            </div>
+
             <form method="POST" enctype="multipart/form-data" autocomplete="on" id="registerForm">
                 <input type="hidden" name="_csrf" value="<?= htmlspecialchars(getCsrfToken()) ?>">
-                <!-- Personal Information -->
+                <!-- Step 1: Personal Information -->
+                <div class="wizard-step active" data-step="1">
                 <div class="form-section">
                     <h3 class="section-title">Personal Information</h3>
 
@@ -893,8 +1065,10 @@ $civilStatuses = ['Single', 'Married', 'Divorced', 'Widowed', 'Separated'];
                         </div>
                     </div>
                 </div>
+                </div>
 
-                <!-- Contact Information -->
+                <!-- Step 2: Contact & Address -->
+                <div class="wizard-step" data-step="2">
                 <div class="form-section">
                     <h3 class="section-title">Contact Information</h3>
 
@@ -941,8 +1115,10 @@ $civilStatuses = ['Single', 'Married', 'Divorced', 'Widowed', 'Separated'];
                         </div>
                     </div>
                 </div>
+                </div>
 
-                <!-- Identification -->
+                <!-- Step 3: Identification -->
+                <div class="wizard-step" data-step="3">
                 <div class="form-section">
                     <h3 class="section-title">Identification</h3>
 
@@ -1021,7 +1197,10 @@ $civilStatuses = ['Single', 'Married', 'Divorced', 'Widowed', 'Separated'];
                     </div>
                 </div>
 
-                <!-- Account Credentials -->
+                </div>
+
+                <!-- Step 4: Account Credentials -->
+                <div class="wizard-step" data-step="4">
                 <div class="form-section">
                     <h3 class="section-title">Account Credentials</h3>
 
@@ -1052,16 +1231,110 @@ $civilStatuses = ['Single', 'Married', 'Divorced', 'Widowed', 'Separated'];
                     </div>
                 </div>
 
-                <!-- Actions -->
-                <div class="form-actions">
-                    <a href="<?= htmlspecialchars(appUrl('/citizen/login.php')) ?>" class="btn-cancel" style="text-align: center; display: flex; align-items: center; justify-content: center;">Cancel</a>
-                    <button type="submit" class="btn-submit" id="submitBtn">Create Account</button>
+                </div>
+
+                <!-- Wizard navigation -->
+                <div class="form-actions wizard-nav">
+                    <a href="<?= htmlspecialchars(appUrl('/citizen/login.php')) ?>" class="btn-cancel" id="wizardCancel">Cancel</a>
+                    <button type="button" class="btn-cancel" id="wizardBack" style="display: none;"><i class="fa-solid fa-arrow-left"></i> Back</button>
+                    <button type="button" class="btn-submit" id="wizardNext">Next <i class="fa-solid fa-arrow-right"></i></button>
+                    <button type="submit" class="btn-submit" id="submitBtn" style="display: none;">Create Account</button>
                 </div>
             </form>
         </div>
     </div>
 
     <script>
+        // ========== STEP-BY-STEP WIZARD ==========
+        const WIZARD_TOTAL_STEPS = 4;
+        let wizardStep = 1;
+
+        const wizardSteps = document.querySelectorAll('.wizard-step');
+        const stepperItems = document.querySelectorAll('.reg-step');
+        const wizardBackBtn = document.getElementById('wizardBack');
+        const wizardNextBtn = document.getElementById('wizardNext');
+        const wizardCancelLink = document.getElementById('wizardCancel');
+        const wizardSubmitBtn = document.getElementById('submitBtn');
+        const registerForm = document.getElementById('registerForm');
+
+        function showWizardStep(step) {
+            wizardStep = step;
+
+            wizardSteps.forEach(panel => {
+                panel.classList.toggle('active', Number(panel.dataset.step) === step);
+            });
+            stepperItems.forEach(item => {
+                const n = Number(item.dataset.step);
+                item.classList.toggle('active', n === step);
+                item.classList.toggle('done', n < step);
+            });
+
+            wizardCancelLink.style.display = step === 1 ? 'flex' : 'none';
+            wizardBackBtn.style.display = step === 1 ? 'none' : 'flex';
+            wizardNextBtn.style.display = step === WIZARD_TOTAL_STEPS ? 'none' : 'flex';
+            wizardSubmitBtn.style.display = step === WIZARD_TOTAL_STEPS ? 'flex' : 'none';
+
+            // Bring the form back into view when moving between steps
+            document.querySelector('.reg-steps').scrollIntoView({ behavior: 'smooth', block: 'start' });
+        }
+
+        // Native validation, but only for the fields on the visible step
+        function validateWizardStep(step) {
+            const panel = document.querySelector('.wizard-step[data-step="' + step + '"]');
+            const fields = panel.querySelectorAll('input, select, textarea');
+            for (const field of fields) {
+                if (!field.checkValidity()) {
+                    field.reportValidity();
+                    return false;
+                }
+            }
+            return true;
+        }
+
+        wizardNextBtn.addEventListener('click', () => {
+            if (!validateWizardStep(wizardStep)) return;
+            if (wizardStep < WIZARD_TOTAL_STEPS) showWizardStep(wizardStep + 1);
+        });
+
+        wizardBackBtn.addEventListener('click', () => {
+            if (wizardStep > 1) showWizardStep(wizardStep - 1);
+        });
+
+        // Completed steps in the progress bar are clickable shortcuts back
+        stepperItems.forEach(item => {
+            item.addEventListener('click', () => {
+                const n = Number(item.dataset.step);
+                if (n < wizardStep) showWizardStep(n);
+            });
+        });
+
+        // Safety net: a submit with an invalid field on a hidden step would fail
+        // silently ("not focusable"), so jump to the offending step first, then
+        // let the browser point at the field.
+        registerForm.addEventListener('submit', (e) => {
+            for (let s = 1; s <= WIZARD_TOTAL_STEPS; s++) {
+                const panel = document.querySelector('.wizard-step[data-step="' + s + '"]');
+                const invalid = Array.from(panel.querySelectorAll('input, select, textarea')).find(f => !f.checkValidity());
+                if (invalid) {
+                    e.preventDefault();
+                    if (s !== wizardStep) showWizardStep(s);
+                    invalid.reportValidity();
+                    return;
+                }
+            }
+        });
+
+        // After a server-side validation error the page re-renders on step 1 with
+        // values kept — jump straight to the first step that still has a problem.
+        (function () {
+            const firstInvalid = registerForm.querySelector(':invalid');
+            const hasServerErrors = document.querySelector('.alert-error') !== null;
+            if (hasServerErrors && firstInvalid) {
+                const panel = firstInvalid.closest('.wizard-step');
+                if (panel) showWizardStep(Number(panel.dataset.step));
+            }
+        })();
+
         // Suggest a username from the email's local part, since most people register
         // with the Gmail they already remember. Only ever fills a username the user
         // hasn't typed into themselves, and never overwrites a manual edit.

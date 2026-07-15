@@ -7,6 +7,7 @@ $topbarSearchPlaceholder = 'Search projects...';
 $extraStylesheets = ['citizen/assets/css/citizen.css?v=' . filemtime(__DIR__ . '/assets/css/citizen.css')];
 
 require_once __DIR__ . '/includes/qc-locations.php';
+require_once __DIR__ . '/includes/feedback-categories.php';
 
 require_once __DIR__ . '/../includes/header.php';
 require_once __DIR__ . '/sidebar.php';
@@ -15,10 +16,21 @@ require_once __DIR__ . '/sidebar.php';
 $pdo = getDB();
 $stmt = $pdo->prepare("SELECT * FROM citizens WHERE user_id = ?");
 $stmt->execute([$user['user_id']]);
-$citizen = $stmt->fetch();
+// Accounts without a citizens row (e.g. the seeded demo login) still get a
+// working dashboard — every field below falls back through null coalescing.
+$citizen = $stmt->fetch() ?: [];
 
 $verificationStatus = $citizen['verification_status'] ?? 'unverified';
 $hasIdPhoto = !empty($citizen['id_photo_path']);
+
+// Unverified accounts are subject to removal after this grace period. The
+// countdown shown here is a reminder; actual cleanup is a staff-side task.
+$unverifiedGraceDays = 30;
+$verifyDaysLeft = null;
+if ($verificationStatus !== 'verified' && !empty($citizen['created_at'])) {
+    $elapsedDays = (int) floor((time() - strtotime($citizen['created_at'])) / 86400);
+    $verifyDaysLeft = max(0, $unverifiedGraceDays - $elapsedDays);
+}
 
 $hour = (int) date('G');
 $greeting = $hour < 12 ? 'Good morning' : ($hour < 18 ? 'Good afternoon' : 'Good evening');
@@ -72,8 +84,9 @@ $statusChip = [
             <svg width="20" height="20" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M10 1.944A11.954 11.954 0 012.166 5C2.056 5.649 2 6.319 2 7c0 5.225 3.34 9.67 8 11.317C14.66 16.67 18 12.225 18 7c0-.682-.057-1.35-.166-2.001A11.954 11.954 0 0110 1.944zM11 14a1 1 0 11-2 0 1 1 0 012 0zm0-7a1 1 0 10-2 0v3a1 1 0 102 0V7z" clip-rule="evenodd"/></svg>
           </div>
           <div class="verify-banner-text">
-            <strong>Verify your account</strong>
+            <strong>Verify your account<?= $verifyDaysLeft !== null ? ' — ' . ($verifyDaysLeft > 0 ? $verifyDaysLeft . ' day' . ($verifyDaysLeft === 1 ? '' : 's') . ' left' : 'grace period over') : '' ?></strong>
             <span>You haven't submitted an ID photo yet. Verified status unlocks features that need a confirmed identity, like filing formal feedback tied to your name.</span>
+            <span class="verify-deadline-note">Important: accounts that stay unverified past the <?= $unverifiedGraceDays ?>-day grace period may be terminated and removed. Upload a valid government ID to keep your account.</span>
           </div>
           <button class="verify-banner-btn" onclick="changePage('profile')">Upload ID Now</button>
         </div>
@@ -136,6 +149,17 @@ $statusChip = [
       <section class="charts-row reveal">
         <article class="chart-card">
           <div class="chart-header">
+            <h2 class="chart-title">Latest Updates from the Field</h2>
+            <a href="#" class="view-all-link" onclick="changePage('project-status'); return false;">All Projects
+              <svg width="15" height="15" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M10.293 5.293a1 1 0 011.414 0l4 4a1 1 0 010 1.414l-4 4a1 1 0 01-1.414-1.414L12.586 11H5a1 1 0 110-2h7.586l-2.293-2.293a1 1 0 010-1.414z" clip-rule="evenodd"/></svg>
+            </a>
+          </div>
+          <div id="latestUpdatesContainer" class="updates-feed">
+            <div class="skeleton-group"><div class="skeleton-row"></div><div class="skeleton-row"></div></div>
+          </div>
+        </article>
+        <article class="chart-card">
+          <div class="chart-header">
             <h2 class="chart-title">Project Status Mix</h2>
           </div>
           <div class="chart-body budget-body">
@@ -154,7 +178,7 @@ $statusChip = [
       <section class="dashboard-section reveal" style="transition-delay:.08s;">
         <div class="section-header">
           <h2>Recent Projects in Your Area</h2>
-          <a href="#" class="view-all-link" onclick="changePage('projects')">View All
+          <a href="#" class="view-all-link" onclick="changePage('projects'); return false;">View All
             <svg width="15" height="15" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M10.293 5.293a1 1 0 011.414 0l4 4a1 1 0 010 1.414l-4 4a1 1 0 01-1.414-1.414L12.586 11H5a1 1 0 110-2h7.586l-2.293-2.293a1 1 0 010-1.414z" clip-rule="evenodd"/></svg>
           </a>
         </div>
@@ -167,7 +191,7 @@ $statusChip = [
       <section class="dashboard-section reveal" style="transition-delay:.14s;">
         <div class="section-header">
           <h2>Your Feedback & Complaints</h2>
-          <a href="#" class="view-all-link" onclick="changePage('track-feedback')">View All
+          <a href="#" class="view-all-link" onclick="changePage('track-feedback'); return false;">View All
             <svg width="15" height="15" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M10.293 5.293a1 1 0 011.414 0l4 4a1 1 0 010 1.414l-4 4a1 1 0 01-1.414-1.414L12.586 11H5a1 1 0 110-2h7.586l-2.293-2.293a1 1 0 010-1.414z" clip-rule="evenodd"/></svg>
           </a>
         </div>
@@ -197,7 +221,7 @@ $statusChip = [
         </select>
       </div>
       <div id="projectsGridContainer" class="projects-grid">
-        <p style="text-align: center; color: #999; padding: 2rem;">Loading projects...</p>
+        <p class="empty-state">Loading projects...</p>
       </div>
     </section>
 
@@ -207,7 +231,7 @@ $statusChip = [
         <h1 class="page-title">Project Status Tracking</h1>
       </div>
       <div id="projectStatusContainer" class="status-list">
-        <p style="text-align: center; color: #999; padding: 2rem;">Loading project details...</p>
+        <p class="empty-state">Loading project details...</p>
       </div>
     </section>
 
@@ -222,6 +246,22 @@ $statusChip = [
 
       <div class="feedback-layout">
         <div class="form-container feedback-form-card">
+          <?php if ($verificationStatus !== 'verified'): ?>
+            <!-- Feedback is verified-citizens-only; api/submit-feedback.php enforces the same rule server-side. -->
+            <div class="verify-banner" style="margin-bottom: 0;">
+              <div class="verify-banner-icon">
+                <svg width="20" height="20" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M5 9V7a5 5 0 0110 0v2a2 2 0 012 2v5a2 2 0 01-2 2H5a2 2 0 01-2-2v-5a2 2 0 012-2zm8-2v2H7V7a3 3 0 016 0z" clip-rule="evenodd"/></svg>
+              </div>
+              <div class="verify-banner-text">
+                <strong>Verified citizens only</strong>
+                <?php if ($hasIdPhoto): ?>
+                  <p>Your submitted ID is still awaiting review by LGU staff. You'll be able to submit feedback as soon as your account is verified. You can view your submitted ID in your <a href="#" onclick="changePage('profile'); return false;">Profile</a>.</p>
+                <?php else: ?>
+                  <p>Submitting feedback requires a verified account. Upload a photo of a valid government ID in your <a href="#" onclick="changePage('profile'); return false;">Profile</a> to get verified.</p>
+                <?php endif; ?>
+              </div>
+            </div>
+          <?php else: ?>
           <form id="feedbackForm" method="POST">
             <div class="location-fieldset">
               <div class="location-fieldset-head">
@@ -264,9 +304,9 @@ $statusChip = [
               <label for="feedbackCategory">Category *</label>
               <select id="feedbackCategory" name="category" required>
                 <option value="">Select category</option>
-                <option value="complaint">Complaint</option>
-                <option value="suggestion">Suggestion</option>
-                <option value="inquiry">Inquiry</option>
+                <?php foreach (feedbackCategories() as $catValue => $catLabel): ?>
+                  <option value="<?= htmlspecialchars($catValue) ?>"><?= htmlspecialchars($catLabel) ?></option>
+                <?php endforeach; ?>
               </select>
             </div>
             <div class="form-group">
@@ -297,6 +337,7 @@ $statusChip = [
 
             <button type="submit" class="btn-primary">Submit Feedback</button>
           </form>
+          <?php endif; ?>
         </div>
 
         <div class="feedback-map-card">
@@ -317,15 +358,17 @@ $statusChip = [
         <h1 class="page-title">Track Your Feedback & Complaints</h1>
       </div>
       <div id="trackedFeedbackContainer" class="feedback-list">
-        <p style="text-align: center; color: #999; padding: 2rem;">Loading your submissions...</p>
+        <p class="empty-state">Loading your submissions...</p>
       </div>
     </section>
 
     <!-- Transparency Dashboard -->
     <section id="page-transparency" class="page-section" style="display: none;">
       <div class="page-header">
-        <h1 class="page-title">Transparency Dashboard</h1>
-        <p style="color: #666; margin-top: 0.5rem;">Budget allocation, expenses, and project performance metrics</p>
+        <div>
+          <h1 class="page-title">Transparency Dashboard</h1>
+          <p class="citizen-scope-note">Budget allocation, expenses, and project performance metrics</p>
+        </div>
       </div>
       
       <div class="transparency-grid">
@@ -348,9 +391,11 @@ $statusChip = [
       </div>
 
       <section class="dashboard-section">
-        <h2>Project Expenses Breakdown</h2>
+        <div class="section-header">
+          <h2>Project Expenses Breakdown</h2>
+        </div>
         <div id="expensesContainer" class="expenses-list">
-          <p style="text-align: center; color: #999; padding: 2rem;">Loading expense data...</p>
+          <p class="empty-state">Loading expense data...</p>
         </div>
       </section>
     </section>
@@ -381,10 +426,10 @@ $statusChip = [
               Personal Information
             </h3>
             <div class="profile-grid">
-              <div class="profile-field"><span class="profile-label">Date of Birth</span><span class="profile-value"><?= htmlspecialchars($citizen['date_of_birth'] ? date('F j, Y', strtotime($citizen['date_of_birth'])) : '—') ?></span></div>
-              <div class="profile-field"><span class="profile-label">Gender</span><span class="profile-value"><?= htmlspecialchars($citizen['gender'] ?: '—') ?></span></div>
-              <div class="profile-field"><span class="profile-label">Civil Status</span><span class="profile-value"><?= htmlspecialchars($citizen['civil_status'] ?: '—') ?></span></div>
-              <div class="profile-field"><span class="profile-label">Phone</span><span class="profile-value"><?= htmlspecialchars($citizen['phone'] ?: '—') ?></span></div>
+              <div class="profile-field"><span class="profile-label">Date of Birth</span><span class="profile-value"><?= htmlspecialchars(!empty($citizen['date_of_birth']) ? date('F j, Y', strtotime($citizen['date_of_birth'])) : '—') ?></span></div>
+              <div class="profile-field"><span class="profile-label">Gender</span><span class="profile-value"><?= htmlspecialchars(($citizen['gender'] ?? '') ?: '—') ?></span></div>
+              <div class="profile-field"><span class="profile-label">Civil Status</span><span class="profile-value"><?= htmlspecialchars(($citizen['civil_status'] ?? '') ?: '—') ?></span></div>
+              <div class="profile-field"><span class="profile-label">Phone</span><span class="profile-value"><?= htmlspecialchars(($citizen['phone'] ?? '') ?: '—') ?></span></div>
             </div>
           </div>
 
@@ -395,11 +440,11 @@ $statusChip = [
               Address
             </h3>
             <div class="profile-grid">
-              <div class="profile-field profile-field-wide"><span class="profile-label">Street Address</span><span class="profile-value"><?= htmlspecialchars($citizen['address'] ?: '—') ?></span></div>
-              <div class="profile-field"><span class="profile-label">Barangay</span><span class="profile-value"><?= htmlspecialchars($citizen['barangay'] ?: '—') ?></span></div>
-              <div class="profile-field"><span class="profile-label">City</span><span class="profile-value"><?= htmlspecialchars($citizen['city'] ?: '—') ?></span></div>
-              <div class="profile-field"><span class="profile-label">Province</span><span class="profile-value"><?= htmlspecialchars($citizen['province'] ?: '—') ?></span></div>
-              <div class="profile-field"><span class="profile-label">Postal Code</span><span class="profile-value"><?= htmlspecialchars($citizen['postal_code'] ?: '—') ?></span></div>
+              <div class="profile-field profile-field-wide"><span class="profile-label">Street Address</span><span class="profile-value"><?= htmlspecialchars(($citizen['address'] ?? '') ?: '—') ?></span></div>
+              <div class="profile-field"><span class="profile-label">Barangay</span><span class="profile-value"><?= htmlspecialchars(($citizen['barangay'] ?? '') ?: '—') ?></span></div>
+              <div class="profile-field"><span class="profile-label">City</span><span class="profile-value"><?= htmlspecialchars(($citizen['city'] ?? '') ?: '—') ?></span></div>
+              <div class="profile-field"><span class="profile-label">Province</span><span class="profile-value"><?= htmlspecialchars(($citizen['province'] ?? '') ?: '—') ?></span></div>
+              <div class="profile-field"><span class="profile-label">Postal Code</span><span class="profile-value"><?= htmlspecialchars(($citizen['postal_code'] ?? '') ?: '—') ?></span></div>
             </div>
           </div>
 
@@ -411,8 +456,8 @@ $statusChip = [
             </h3>
 
             <div class="profile-grid" style="margin-bottom: 1.25rem;">
-              <div class="profile-field"><span class="profile-label">ID Type</span><span class="profile-value"><?= htmlspecialchars($citizen['id_type'] ?: '—') ?></span></div>
-              <div class="profile-field"><span class="profile-label">ID Number</span><span class="profile-value"><?= htmlspecialchars($citizen['id_number'] ?: '—') ?></span></div>
+              <div class="profile-field"><span class="profile-label">ID Type</span><span class="profile-value"><?= htmlspecialchars(($citizen['id_type'] ?? '') ?: '—') ?></span></div>
+              <div class="profile-field"><span class="profile-label">ID Number</span><span class="profile-value"><?= htmlspecialchars(($citizen['id_number'] ?? '') ?: '—') ?></span></div>
             </div>
 
             <?php if ($verificationStatus === 'verified'): ?>
@@ -432,13 +477,25 @@ $statusChip = [
                   <?php endif; ?>
                 </div>
                 <div class="current-id-preview">
-                  <span class="profile-label">Submitted ID</span>
-                  <img src="<?= htmlspecialchars(appUrl($citizen['id_photo_path'])) ?>" alt="Submitted ID photo" id="currentIdImage">
+                  <div class="current-id-head">
+                    <span class="profile-label">Submitted ID</span>
+                    <a class="id-fullsize-link" href="<?= htmlspecialchars(appUrl($citizen['id_photo_path'])) ?>" target="_blank" rel="noopener">
+                      <svg width="13" height="13" viewBox="0 0 20 20" fill="currentColor"><path d="M11 3a1 1 0 100 2h2.586l-6.293 6.293a1 1 0 101.414 1.414L15 6.414V9a1 1 0 102 0V4a1 1 0 00-1-1h-5z"/><path d="M5 5a2 2 0 00-2 2v8a2 2 0 002 2h8a2 2 0 002-2v-3a1 1 0 10-2 0v3H5V7h3a1 1 0 000-2H5z"/></svg>
+                      View full size
+                    </a>
+                  </div>
+                  <a href="<?= htmlspecialchars(appUrl($citizen['id_photo_path'])) ?>" target="_blank" rel="noopener" title="Open your submitted ID in a new tab">
+                    <img src="<?= htmlspecialchars(appUrl($citizen['id_photo_path'])) ?>" alt="Submitted ID photo" id="currentIdImage">
+                  </a>
                 </div>
               <?php else: ?>
                 <div class="verify-note verify-note-pending">
                   <svg width="17" height="17" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7 4a1 1 0 11-2 0 1 1 0 012 0zm-1-9a1 1 0 00-1 1v4a1 1 0 102 0V6a1 1 0 00-1-1z" clip-rule="evenodd"/></svg>
                   Upload a photo of a valid government ID to get your account verified.
+                </div>
+                <div class="verify-note verify-note-rejected">
+                  <svg width="17" height="17" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clip-rule="evenodd"/></svg>
+                  Accounts that stay unverified past the <?= $unverifiedGraceDays ?>-day grace period may be terminated and removed<?= $verifyDaysLeft !== null && $verifyDaysLeft > 0 ? ' — you have ' . $verifyDaysLeft . ' day' . ($verifyDaysLeft === 1 ? '' : 's') . ' left' : '' ?>.
                 </div>
               <?php endif; ?>
 
@@ -456,6 +513,27 @@ $statusChip = [
                 <button type="submit" class="btn-primary" id="idUploadBtn" style="display: none; margin-top: 1rem;">Submit for Verification</button>
               </form>
             <?php endif; ?>
+          </div>
+
+          <!-- Security -->
+          <div class="profile-card">
+            <h3 class="profile-card-title">
+              <svg width="17" height="17" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M5 9V7a5 5 0 0110 0v2a2 2 0 012 2v5a2 2 0 01-2 2H5a2 2 0 01-2-2v-5a2 2 0 012-2zm8-2v2H7V7a3 3 0 016 0z" clip-rule="evenodd"/></svg>
+              Security
+            </h3>
+            <div class="security-row">
+              <div class="security-info">
+                <strong>Password</strong>
+                <p>Use a strong password that you don't reuse on other sites. Changing it regularly keeps your account safe.</p>
+              </div>
+              <button type="button" class="btn-outline" onclick="showChangePassword()">Change Password</button>
+            </div>
+            <div class="security-row">
+              <div class="security-info">
+                <strong>Account email</strong>
+                <p><?= htmlspecialchars($citizen['email'] ?? $user['email']) ?> — used for sign-in, one-time codes, and password resets.</p>
+              </div>
+            </div>
           </div>
         </div>
       </div>
@@ -490,6 +568,22 @@ $statusChip = [
       <div class="id-upload-status" id="changePasswordStatus" style="display: none;"></div>
       <button type="submit" class="btn-primary" id="changePasswordBtn" style="width: 100%; margin-top: 0.5rem;">Update Password</button>
     </form>
+  </div>
+</div>
+
+<!-- Project Detail Modal (read-only view of staff-side project data) -->
+<div class="modal-overlay" id="projectDetailModal" style="display: none;">
+  <div class="modal-card modal-card-wide">
+    <div class="modal-head">
+      <h3 id="projectDetailTitle">
+        <svg width="17" height="17" viewBox="0 0 20 20" fill="currentColor"><path d="M2 6a2 2 0 012-2h5l2 2h5a2 2 0 012 2v6a2 2 0 01-2 2H4a2 2 0 01-2-2V6z"/></svg>
+        Project Details
+      </h3>
+      <button type="button" class="modal-close" id="projectDetailClose" title="Close">&times;</button>
+    </div>
+    <div class="project-detail-body" id="projectDetailBody">
+      <p class="empty-state">Loading project details...</p>
+    </div>
   </div>
 </div>
 

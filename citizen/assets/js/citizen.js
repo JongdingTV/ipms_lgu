@@ -9,6 +9,21 @@ document.addEventListener('DOMContentLoaded', function() {
     // Initialize the page
     loadDashboardData();
     setupEventListeners();
+
+    // Deep-linking: #projects, #profile, etc. restore the page on load…
+    const initialPage = (location.hash || '').replace(/^#/, '');
+    if (initialPage && document.getElementById('page-' + initialPage)) {
+        changePage(initialPage);
+    }
+});
+
+// …and browser back/forward moves between pages.
+let currentPageName = 'dashboard';
+window.addEventListener('hashchange', function() {
+    const page = (location.hash || '').replace(/^#/, '') || 'dashboard';
+    if (page !== currentPageName && document.getElementById('page-' + page)) {
+        changePage(page);
+    }
 });
 
 function setupEventListeners() {
@@ -40,6 +55,42 @@ function setupEventListeners() {
     setupLocationPicker();
     setupFeedbackPhotos();
     setupChangePassword();
+    setupProjectDetailModal();
+    setupSidebarToggle();
+}
+
+// Off-canvas sidebar for small screens. On desktop the sidebar is always
+// visible and the .open class has no styles attached, so this is a no-op there.
+function setupSidebarToggle() {
+    const toggle = document.getElementById('sidebarToggle');
+    const sidebar = document.getElementById('sidebar');
+    if (!toggle || !sidebar) return;
+
+    let backdrop = document.getElementById('sidebarBackdrop');
+    if (!backdrop) {
+        backdrop = document.createElement('div');
+        backdrop.id = 'sidebarBackdrop';
+        backdrop.className = 'sidebar-backdrop';
+        document.body.appendChild(backdrop);
+    }
+
+    const closeSidebar = () => {
+        sidebar.classList.remove('open');
+        backdrop.classList.remove('show');
+    };
+
+    toggle.addEventListener('click', () => {
+        const isOpen = sidebar.classList.toggle('open');
+        backdrop.classList.toggle('show', isOpen);
+    });
+    backdrop.addEventListener('click', closeSidebar);
+    document.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape') closeSidebar();
+    });
+    // Navigating closes the drawer so the chosen page is immediately visible.
+    sidebar.querySelectorAll('.nav-item').forEach(item => {
+        item.addEventListener('click', closeSidebar);
+    });
 }
 
 // ===== Feedback proof photos (max 3, 3MB each) =====
@@ -357,6 +408,8 @@ function initQcMap() {
                     layer.on('click', (e) => {
                         const districtSel = document.getElementById('feedbackDistrict');
                         const barangaySel = document.getElementById('feedbackBarangay');
+                        // Unverified accounts see the map but not the form.
+                        if (!districtSel || !barangaySel) return;
                         districtSel.value = info.district;
                         populateBarangayOptions(info.district);
                         barangaySel.value = info.name;
@@ -569,6 +622,123 @@ function setupChangePassword() {
     });
 }
 
+// ===== Project detail modal (read-only view of staff-side project data) =====
+function setupProjectDetailModal() {
+    const modal = document.getElementById('projectDetailModal');
+    if (!modal) return;
+
+    const closeModal = () => { modal.style.display = 'none'; };
+    document.getElementById('projectDetailClose').addEventListener('click', closeModal);
+    modal.addEventListener('click', (e) => {
+        if (e.target === modal) closeModal();
+    });
+    document.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape' && modal.style.display !== 'none') closeModal();
+    });
+}
+
+function openProjectDetail(projectId) {
+    const modal = document.getElementById('projectDetailModal');
+    const body = document.getElementById('projectDetailBody');
+    if (!modal || !body) return;
+
+    modal.style.display = 'flex';
+    body.innerHTML = '<p class="empty-state">Loading project details...</p>';
+
+    fetch(citizenUrl('citizen/api/project-details.php') + '?id=' + encodeURIComponent(projectId))
+        .then(res => res.json())
+        .then(data => {
+            if (!data.success) throw new Error(data.message || 'Not found');
+            body.innerHTML = renderProjectDetail(data);
+        })
+        .catch(() => {
+            body.innerHTML = '<p class="empty-state">Could not load this project. Please try again.</p>';
+        });
+}
+
+function renderProjectDetail(data) {
+    const p = data.project;
+    const progress = Number(p.progress) || 0;
+    const milestones = data.milestones || [];
+    const updates = data.updates || [];
+    const photos = data.photos || [];
+    const doneMilestones = milestones.filter(m => Number(m.completed) === 1).length;
+
+    return `
+        <div class="detail-header">
+            <span class="project-badge badge-${escapeHtml(p.status)}">${capitalizeFirst(p.status)}</span>
+            <h4 class="detail-name">${escapeHtml(p.name)}</h4>
+            <p class="detail-code">${escapeHtml(p.project_code || '')}${p.location ? ' · ' + escapeHtml(p.location) : ''}</p>
+            ${p.description ? `<p class="detail-desc">${escapeHtml(p.description)}</p>` : ''}
+        </div>
+
+        <div class="detail-stats">
+            <div class="detail-stat"><span class="profile-label">Budget</span><strong>₱${formatNumber(p.budget)}</strong></div>
+            <div class="detail-stat"><span class="profile-label">Spent so far</span><strong>₱${formatNumber(data.total_expenses)}</strong></div>
+            <div class="detail-stat"><span class="profile-label">Timeline</span><strong>${formatDate(p.start_date)} – ${formatDate(p.end_date)}</strong></div>
+            <div class="detail-stat"><span class="profile-label">Contractor</span><strong>${escapeHtml(p.contractor_name || 'Not yet awarded')}</strong></div>
+        </div>
+
+        <div class="detail-progress">
+            <div class="detail-progress-head"><span>Overall progress</span><strong>${progress}%</strong></div>
+            <div class="progress-bar"><div class="progress-fill" style="width: ${progress}%"></div></div>
+        </div>
+
+        ${data.bid_notice ? `
+        <div class="detail-section">
+            <h5>Procurement Notice</h5>
+            <p class="detail-bid">Reference <strong>${escapeHtml(data.bid_notice.reference_no)}</strong> · published ${formatDate(data.bid_notice.published_at)}${data.bid_notice.deadline ? ' · bid deadline ' + formatDate(data.bid_notice.deadline) : ''} · ${capitalizeFirst(data.bid_notice.status)}</p>
+        </div>` : ''}
+
+        <div class="detail-section">
+            <h5>Milestones ${milestones.length ? `<span class="detail-count">${doneMilestones}/${milestones.length} done</span>` : ''}</h5>
+            ${milestones.length ? `
+            <ul class="milestone-list">
+                ${milestones.map(m => `
+                    <li class="${Number(m.completed) === 1 ? 'done' : ''}">
+                        <svg width="15" height="15" viewBox="0 0 20 20" fill="currentColor">${Number(m.completed) === 1
+                            ? '<path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 10-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd"/>'
+                            : '<path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm1-12a1 1 0 10-2 0v4a1 1 0 00.293.707l2.828 2.829a1 1 0 101.415-1.415L11 9.586V6z" clip-rule="evenodd"/>'}</svg>
+                        <span>${escapeHtml(m.title)}</span>
+                        ${m.due_date ? `<span class="milestone-due">due ${formatDate(m.due_date)}</span>` : ''}
+                    </li>
+                `).join('')}
+            </ul>` : '<p class="empty-state empty-state-compact">No milestones published yet.</p>'}
+        </div>
+
+        <div class="detail-section">
+            <h5>Field Updates</h5>
+            ${updates.length ? `
+            <div class="updates-feed">
+                ${updates.map(u => `
+                    <div class="update-item update-item-static">
+                        <div class="update-dot update-dot-${escapeHtml(u.status)}"></div>
+                        <div class="update-body">
+                            <div class="update-head">
+                                <span class="update-progress">${Number(u.progress_percent)}% · ${capitalizeFirst(u.status)}</span>
+                                <span class="update-date">${formatDate(u.created_at)}</span>
+                            </div>
+                            ${u.notes ? `<p class="update-notes">${escapeHtml(u.notes)}</p>` : ''}
+                        </div>
+                    </div>
+                `).join('')}
+            </div>` : '<p class="empty-state empty-state-compact">No field updates posted yet.</p>'}
+        </div>
+
+        ${photos.length ? `
+        <div class="detail-section">
+            <h5>Progress Photos</h5>
+            <div class="detail-photos">
+                ${photos.map(ph => `
+                    <a href="${citizenUrl(escapeHtml(ph.file_path))}" target="_blank" rel="noopener" title="${escapeHtml(ph.title || 'Progress photo')}">
+                        <img src="${citizenUrl(escapeHtml(ph.file_path))}" alt="${escapeHtml(ph.title || 'Progress photo')}" loading="lazy">
+                    </a>
+                `).join('')}
+            </div>
+        </div>` : ''}
+    `;
+}
+
 // ===== Profile: ID verification upload =====
 function setupIdUpload() {
     const form = document.getElementById('idUploadForm');
@@ -690,8 +860,18 @@ function changePage(pageName) {
         initQcMap();
     }
 
+    // Keep the URL hash in sync so pages are deep-linkable and the browser
+    // back button works. currentPageName stops the resulting hashchange
+    // event from re-running changePage.
+    currentPageName = pageName;
+    const targetHash = '#' + pageName;
+    if (location.hash !== targetHash) {
+        location.hash = targetHash;
+    }
+
     // Scroll to top
     document.querySelector('.content').scrollTop = 0;
+    window.scrollTo(0, 0);
 }
 
 window.GLOBAL_SEARCH_NAVIGATE = changePage;
@@ -760,6 +940,8 @@ function loadDashboardData() {
     fetch(citizenUrl('citizen/api/dashboard.php'))
         .then(res => res.json())
         .then(data => {
+            if (!data || !data.stats) throw new Error(data && data.error ? data.error : 'Malformed response');
+
             // Update KPI cards
             document.getElementById('activeProjectsCount').textContent = data.stats.active_projects;
             document.getElementById('completedProjectsCount').textContent = data.stats.completed_projects;
@@ -772,13 +954,48 @@ function loadDashboardData() {
                 console.error('Failed to render status chart:', error);
             }
 
-            // Load recent projects
-            displayRecentProjects(data.recent_projects);
-
-            // Load recent feedback
-            displayRecentFeedback(data.recent_feedback);
+            displayRecentProjects(data.recent_projects || []);
+            displayRecentFeedback(data.recent_feedback || []);
+            displayLatestUpdates(data.recent_updates || []);
         })
-        .catch(err => console.error('Error loading dashboard:', err));
+        .catch(err => {
+            console.error('Error loading dashboard:', err);
+            // Swap the skeletons for a readable message instead of leaving
+            // them shimmering forever.
+            const failed = '<p class="empty-state">Could not load this section. Please refresh the page to try again.</p>';
+            ['recentProjectsContainer', 'recentFeedbackContainer', 'latestUpdatesContainer'].forEach(id => {
+                const el = document.getElementById(id);
+                if (el) el.innerHTML = failed;
+            });
+        });
+}
+
+// ===== Latest field updates (read-only feed of the engineers' status updates) =====
+function displayLatestUpdates(updates) {
+    const container = document.getElementById('latestUpdatesContainer');
+    if (!container) return;
+
+    if (!updates.length) {
+        container.innerHTML = '<p class="empty-state">No field updates yet. When project engineers post progress, it shows up here.</p>';
+        return;
+    }
+
+    container.innerHTML = updates.map(u => `
+        <div class="update-item" onclick="openProjectDetail(${Number(u.project_id)})" title="View project details">
+            <div class="update-dot ${'update-dot-' + escapeHtml(u.status)}"></div>
+            <div class="update-body">
+                <div class="update-head">
+                    <span class="update-project">${escapeHtml(u.project_name)}</span>
+                    <span class="update-date">${formatDate(u.created_at)}</span>
+                </div>
+                <div class="update-meta">
+                    <span class="project-badge badge-${escapeHtml(u.status)}">${capitalizeFirst(u.status)}</span>
+                    <span class="update-progress">${Number(u.progress_percent)}% complete</span>
+                </div>
+                ${u.notes ? `<p class="update-notes">${escapeHtml(u.notes)}</p>` : ''}
+            </div>
+        </div>
+    `).join('');
 }
 
 function loadProjects() {
@@ -834,7 +1051,7 @@ function displayRecentProjects(projects) {
     if (!container) return;
 
     if (projects.length === 0) {
-        container.innerHTML = '<p style="text-align: center; color: #999; padding: 2rem;">No recent projects</p>';
+        container.innerHTML = '<p class="empty-state">No recent projects</p>';
         return;
     }
 
@@ -846,7 +1063,7 @@ function displayProjects(projects) {
     if (!container) return;
 
     if (projects.length === 0) {
-        container.innerHTML = '<p style="text-align: center; color: #999; padding: 2rem; grid-column: 1/-1;">No projects found</p>';
+        container.innerHTML = '<p class="empty-state">No projects found</p>';
         return;
     }
 
@@ -856,9 +1073,9 @@ function displayProjects(projects) {
 function createProjectCard(project) {
     const progress = project.progress || 0;
     const statusClass = 'badge-' + project.status;
-    
+
     return `
-        <div class="project-card">
+        <div class="project-card" onclick="openProjectDetail(${Number(project.id)})" title="View project details">
             <span class="project-badge ${statusClass}">${capitalizeFirst(project.status)}</span>
             <div class="project-name">${escapeHtml(project.name)}</div>
             <div class="project-location">
@@ -884,12 +1101,12 @@ function displayProjectStatus(projects) {
     if (!container) return;
 
     if (projects.length === 0) {
-        container.innerHTML = '<p style="text-align: center; color: #999; padding: 2rem;">No projects to display</p>';
+        container.innerHTML = '<p class="empty-state">No projects to display</p>';
         return;
     }
 
     container.innerHTML = projects.map(project => `
-        <div class="status-item ${project.status}">
+        <div class="status-item ${project.status}" onclick="openProjectDetail(${Number(project.id)})" title="View project details">
             ${project.latest_photo_path ? `
                 <img class="status-photo" src="${citizenUrl(escapeHtml(project.latest_photo_path))}" alt="${escapeHtml(project.latest_photo_title || project.name)}">
             ` : ''}
@@ -928,7 +1145,7 @@ function displayRecentFeedback(feedback) {
     if (!container) return;
 
     if (feedback.length === 0) {
-        container.innerHTML = '<p style="text-align: center; color: #999; padding: 2rem;">No submissions yet. Submit your first feedback!</p>';
+        container.innerHTML = '<p class="empty-state">No submissions yet. Submit your first feedback!</p>';
         return;
     }
 
@@ -940,7 +1157,7 @@ function displayTrackedFeedback(feedback) {
     if (!container) return;
 
     if (feedback.length === 0) {
-        container.innerHTML = '<p style="text-align: center; color: #999; padding: 2rem;">No feedback submissions yet</p>';
+        container.innerHTML = '<p class="empty-state">No feedback submissions yet</p>';
         return;
     }
 
@@ -981,7 +1198,7 @@ function createFeedbackItem(item) {
                     </span>
                     <span>
                         <svg width="14" height="14" viewBox="0 0 20 20" fill="currentColor" class="meta-icon"><path d="M9 2a1 1 0 000 2h2a1 1 0 100-2H9z"/><path fill-rule="evenodd" d="M4 5a2 2 0 012-2 3 3 0 003 3h2a3 3 0 003-3 2 2 0 012 2v11a2 2 0 01-2 2H6a2 2 0 01-2-2V5zm3 4a1 1 0 000 2h.01a1 1 0 100-2H7zm3 0a1 1 0 000 2h3a1 1 0 100-2h-3zm-3 4a1 1 0 100 2h.01a1 1 0 100-2H7zm3 0a1 1 0 100 2h3a1 1 0 100-2h-3z" clip-rule="evenodd"/></svg>
-                        ${capitalizeFirst(item.category)}
+                        ${feedbackCategoryLabel(item.category)}
                     </span>
                     ${item.barangay ? `
                     <span>
@@ -1004,7 +1221,7 @@ function displayExpenses(expenses) {
     if (!container) return;
 
     if (expenses.length === 0) {
-        container.innerHTML = '<p style="text-align: center; color: #999; padding: 2rem;">No expense data available</p>';
+        container.innerHTML = '<p class="empty-state">No expense data available</p>';
         return;
     }
 
@@ -1066,6 +1283,24 @@ function formatDate(dateStr) {
 function capitalizeFirst(str) {
     if (!str) return '';
     return str.charAt(0).toUpperCase() + str.slice(1).replace(/_/g, ' ');
+}
+
+// Mirrors citizen/includes/feedback-categories.php (the server-side source of truth).
+const FEEDBACK_CATEGORY_LABELS = {
+    complaint: 'General Complaint',
+    road_damage: 'Road Damage',
+    drainage_flooding: 'Drainage & Flooding',
+    streetlight: 'Streetlight / Electrical',
+    sidewalk_accessibility: 'Sidewalk & Accessibility',
+    safety_hazard: 'Safety Hazard',
+    project_delay: 'Project Delay',
+    suggestion: 'Suggestion',
+    inquiry: 'Inquiry',
+    commendation: 'Commendation',
+};
+
+function feedbackCategoryLabel(value) {
+    return FEEDBACK_CATEGORY_LABELS[value] || capitalizeFirst(value);
 }
 
 function escapeHtml(text) {

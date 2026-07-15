@@ -8,17 +8,12 @@ $user = requireLogin(['citizen']);
 $pdo = getDB();
 projectWorkflowEnsureProjectStatusSchema($pdo);
 
-// Get citizen data
+// Get citizen data. A missing citizens row (e.g. the seeded demo account)
+// only means "no personal submissions" — public project data still loads.
 $stmt = $pdo->prepare("SELECT id FROM citizens WHERE user_id = ?");
 $stmt->execute([$user['user_id']]);
 $citizen = $stmt->fetch();
 $citizenId = $citizen['id'] ?? null;
-
-if (!$citizenId) {
-    http_response_code(404);
-    echo json_encode(['error' => 'Citizen profile not found']);
-    exit;
-}
 
 // Get statistics
 $stmt = $pdo->prepare("
@@ -32,9 +27,12 @@ $stmt->execute();
 $projectStats = $stmt->fetch();
 
 // Get citizen's feedback count
-$stmt = $pdo->prepare("SELECT COUNT(*) as count FROM feedback WHERE citizen_id = ?");
-$stmt->execute([$citizenId]);
-$feedbackStats = $stmt->fetch();
+$feedbackStats = ['count' => 0];
+if ($citizenId) {
+    $stmt = $pdo->prepare("SELECT COUNT(*) as count FROM feedback WHERE citizen_id = ?");
+    $stmt->execute([$citizenId]);
+    $feedbackStats = $stmt->fetch();
+}
 
 // Get recent projects
 $stmt = $pdo->prepare("
@@ -48,18 +46,36 @@ $stmt->execute();
 $recentProjects = $stmt->fetchAll();
 
 // Get recent feedback
+$recentFeedback = [];
+if ($citizenId) {
+    $stmt = $pdo->prepare("
+        SELECT f.id, f.project_id, f.message, f.category, f.priority, f.district, f.barangay,
+               f.latitude, f.longitude, f.status, f.created_at,
+               p.name as project_name
+        FROM feedback f
+        LEFT JOIN projects p ON f.project_id = p.id
+        WHERE f.citizen_id = ?
+        ORDER BY f.created_at DESC
+        LIMIT 5
+    ");
+    $stmt->execute([$citizenId]);
+    $recentFeedback = $stmt->fetchAll();
+}
+
+// Latest field activity across all public projects (engineer status updates,
+// falling back gracefully when there are none yet). Read-only view of the
+// staff side's work for the dashboard's "Latest Updates" feed.
 $stmt = $pdo->prepare("
-    SELECT f.id, f.project_id, f.message, f.category, f.priority, f.district, f.barangay,
-           f.latitude, f.longitude, f.status, f.created_at,
-           p.name as project_name
-    FROM feedback f
-    LEFT JOIN projects p ON f.project_id = p.id
-    WHERE f.citizen_id = ?
-    ORDER BY f.created_at DESC
-    LIMIT 5
+    SELECT u.progress_percent, u.status, u.notes, u.created_at,
+           p.id AS project_id, p.name AS project_name
+    FROM engineer_status_updates u
+    INNER JOIN projects p ON p.id = u.project_id
+    WHERE p.status IN ('approved','bidding','awarded','assigned','active','delayed','on_hold','completed')
+    ORDER BY u.created_at DESC
+    LIMIT 6
 ");
-$stmt->execute([$citizenId]);
-$recentFeedback = $stmt->fetchAll();
+$stmt->execute();
+$recentUpdates = $stmt->fetchAll();
 
 // Attach proof photos in one query, grouped by feedback id
 if ($recentFeedback) {
@@ -86,5 +102,6 @@ echo json_encode([
         'my_submissions' => (int)($feedbackStats['count'] ?? 0)
     ],
     'recent_projects' => $recentProjects,
-    'recent_feedback' => $recentFeedback
+    'recent_feedback' => $recentFeedback,
+    'recent_updates' => $recentUpdates
 ]);

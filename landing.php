@@ -185,21 +185,25 @@ function renderStat(?float $n, string $prefix = '', string $suffix = ''): string
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;600;700;800;900&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" crossorigin="anonymous">
-    <meta name="theme-color" content="#063b33">
+    <meta name="theme-color" content="#1e3a8a">
     <style>
+        /* Blue palette to match the QC City Hall photo used across the citizen
+           portal. Variable names kept from the original green theme so layout
+           CSS (and the PHP that references var(--green) etc.) is untouched:
+           --deep = navy, --green = primary blue, --mint = light blue. */
         :root {
-            --ink: #10201d;
-            --muted: #52615d;
-            --deep: #063b33;
-            --green: #0f7a5f;
-            --mint: #d9f3e7;
+            --ink: #0f1c2e;
+            --muted: #51617a;
+            --deep: #1e3a8a;
+            --green: #2563eb;
+            --mint: #dbeafe;
             --gold: #f6b83f;
             --red: #d64a3a;
             --blue: #1f66b2;
-            --paper: #fbfaf5;
+            --paper: #f2f7fd;
             --white: #ffffff;
-            --line: #dce4dd;
-            --shadow: 0 24px 60px rgba(16, 32, 29, .14);
+            --line: #d8e3f2;
+            --shadow: 0 24px 60px rgba(15, 23, 42, .18);
         }
 
         *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
@@ -259,9 +263,9 @@ function renderStat(?float $n, string $prefix = '', string $suffix = ''): string
             50% { transform: translateY(-10px); }
         }
         @keyframes pulseDot {
-            0% { box-shadow: 0 0 0 0 rgba(15, 122, 95, .5); }
-            70% { box-shadow: 0 0 0 8px rgba(15, 122, 95, 0); }
-            100% { box-shadow: 0 0 0 0 rgba(15, 122, 95, 0); }
+            0% { box-shadow: 0 0 0 0 rgba(37, 99, 235, .5); }
+            70% { box-shadow: 0 0 0 8px rgba(37, 99, 235, 0); }
+            100% { box-shadow: 0 0 0 0 rgba(37, 99, 235, 0); }
         }
         @keyframes shimmerSweep {
             0% { transform: translateX(-120%) skewX(-12deg); }
@@ -325,7 +329,7 @@ function renderStat(?float $n, string $prefix = '', string $suffix = ''): string
             background: var(--white);
             border-radius: 8px;
             padding: 4px;
-            box-shadow: 0 12px 28px rgba(6, 59, 51, .12);
+            box-shadow: 0 12px 28px rgba(30, 58, 138, .12);
         }
 
         .brand span {
@@ -360,7 +364,7 @@ function renderStat(?float $n, string $prefix = '', string $suffix = ''): string
             padding: 0 14px;
             font-size: .86rem;
             font-weight: 800;
-            color: #34443f;
+            color: #3c4a63;
             transition: background .2s ease, color .2s ease;
         }
 
@@ -382,9 +386,9 @@ function renderStat(?float $n, string $prefix = '', string $suffix = ''): string
         .nav-links a:not(.portal-btn).is-active::after { transform: scaleX(1); }
         .nav-links a:not(.portal-btn).is-active { color: var(--deep); }
 
-        .nav-links a:hover { background: rgba(15, 122, 95, .1); color: var(--deep); }
+        .nav-links a:hover { background: rgba(37, 99, 235, .1); color: var(--deep); }
         .nav-links .portal-btn { background: var(--deep); color: var(--white); transition: background .2s ease, transform .2s ease; }
-        .nav-links .portal-btn:hover { background: #0b4d43; color: var(--white); transform: translateY(-1px); }
+        .nav-links .portal-btn:hover { background: #16307a; color: var(--white); transform: translateY(-1px); }
 
         .hero {
             position: relative;
@@ -394,7 +398,7 @@ function renderStat(?float $n, string $prefix = '', string $suffix = ''): string
             display: flex;
             align-items: end;
             overflow: hidden;
-            background: #17302b;
+            background: #16255c;
         }
 
         .hero::before {
@@ -535,14 +539,14 @@ function renderStat(?float $n, string $prefix = '', string $suffix = ''): string
         }
 
         .btn:hover::before { transform: translateX(220%) skewX(-12deg); }
-        .btn:hover { transform: translateY(-2px); box-shadow: 0 14px 28px rgba(6, 59, 51, .18); }
+        .btn:hover { transform: translateY(-2px); box-shadow: 0 14px 28px rgba(30, 58, 138, .18); }
         .btn:active { transform: translateY(0); }
         .btn-primary { background: var(--gold); color: #221900; }
         .btn-primary:hover { background: #ffca5e; }
         .btn-light { background: rgba(255, 255, 255, .12); color: var(--white); border-color: rgba(255, 255, 255, .35); }
         .btn-light:hover { background: rgba(255, 255, 255, .2); }
         .btn-dark { background: var(--deep); color: var(--white); }
-        .btn-dark:hover { background: #0b4d43; }
+        .btn-dark:hover { background: #16307a; }
 
         .status-panel {
             background: rgba(251, 250, 245, .96);
@@ -583,7 +587,7 @@ function renderStat(?float $n, string $prefix = '', string $suffix = ''): string
 
         .status-row:last-child { border-bottom: 0; }
         .status-row { transition: background .2s ease; }
-        .status-row:hover { background: rgba(15, 122, 95, .05); }
+        .status-row:hover { background: rgba(37, 99, 235, .05); }
         .status-row i {
             width: 42px;
             height: 42px;
@@ -634,7 +638,7 @@ function renderStat(?float $n, string $prefix = '', string $suffix = ''): string
             transition: background .25s ease, transform .25s ease;
         }
 
-        .quick-item:hover { background: rgba(15, 122, 95, .05); transform: translateY(-3px); }
+        .quick-item:hover { background: rgba(37, 99, 235, .05); transform: translateY(-3px); }
         .quick-item:last-child { border-right: 0; }
         .quick-item i {
             color: var(--green);
@@ -699,7 +703,7 @@ function renderStat(?float $n, string $prefix = '', string $suffix = ''): string
 
         .search-form:focus-within {
             border-color: var(--green);
-            box-shadow: 0 0 0 4px rgba(15, 122, 95, .12);
+            box-shadow: 0 0 0 4px rgba(37, 99, 235, .12);
         }
 
         .search-form i.fa-magnifying-glass { color: var(--muted); font-size: .95rem; }
@@ -716,13 +720,13 @@ function renderStat(?float $n, string $prefix = '', string $suffix = ''): string
             color: var(--ink);
         }
 
-        .search-form input::placeholder { color: #8b9a94; }
+        .search-form input::placeholder { color: #8b97ab; }
 
         .search-spinner {
             width: 18px;
             height: 18px;
             border-radius: 50%;
-            border: 2px solid rgba(15, 122, 95, .25);
+            border: 2px solid rgba(37, 99, 235, .25);
             border-top-color: var(--green);
             opacity: 0;
             animation: spin .7s linear infinite;
@@ -849,7 +853,7 @@ function renderStat(?float $n, string $prefix = '', string $suffix = ''): string
             min-height: 320px;
             border-radius: 8px;
             overflow: hidden;
-            background: #17201d;
+            background: #131c2e;
             transition: box-shadow .35s ease;
         }
 
@@ -930,7 +934,7 @@ function renderStat(?float $n, string $prefix = '', string $suffix = ''): string
         .project-card { min-height: 301px; }
 
         .services {
-            background: #eef7f1;
+            background: #eaf2fc;
             border-top: 1px solid var(--line);
             border-bottom: 1px solid var(--line);
         }
@@ -957,7 +961,7 @@ function renderStat(?float $n, string $prefix = '', string $suffix = ''): string
         .service-card:hover {
             transform: translateY(-6px);
             box-shadow: 0 26px 48px rgba(16, 32, 29, .12);
-            border-color: rgba(15, 122, 95, .35);
+            border-color: rgba(37, 99, 235, .35);
         }
 
         .service-card i {
@@ -996,7 +1000,7 @@ function renderStat(?float $n, string $prefix = '', string $suffix = ''): string
             border-radius: 8px;
             overflow: hidden;
             min-height: 500px;
-            background: #17201d;
+            background: #131c2e;
             box-shadow: var(--shadow);
         }
 
@@ -1027,7 +1031,7 @@ function renderStat(?float $n, string $prefix = '', string $suffix = ''): string
         .timeline-item:hover {
             transform: translateX(6px);
             box-shadow: 0 16px 32px rgba(16, 32, 29, .08);
-            border-color: rgba(15, 122, 95, .3);
+            border-color: rgba(37, 99, 235, .3);
         }
 
         .timeline-item b {
@@ -1064,7 +1068,7 @@ function renderStat(?float $n, string $prefix = '', string $suffix = ''): string
             position: absolute;
             inset: 0;
             background:
-                linear-gradient(90deg, rgba(6, 59, 51, .95), rgba(6, 59, 51, .6)),
+                linear-gradient(90deg, rgba(30, 58, 138, .95), rgba(30, 58, 138, .6)),
                 url("<?= htmlspecialchars($landingImages['flood']) ?>") center/cover;
             transform: scale(1.08);
             transition: transform 6s ease;
@@ -1104,8 +1108,8 @@ function renderStat(?float $n, string $prefix = '', string $suffix = ''): string
         }
 
         .site-footer {
-            background: #101a18;
-            color: #b9c8c2;
+            background: #0e1626;
+            color: #b8c4d6;
             padding: 30px 0;
         }
 
@@ -1153,7 +1157,7 @@ function renderStat(?float $n, string $prefix = '', string $suffix = ''): string
             border-radius: 50%;
             background: var(--deep);
             color: var(--white);
-            box-shadow: 0 14px 30px rgba(6, 59, 51, .3);
+            box-shadow: 0 14px 30px rgba(30, 58, 138, .3);
             opacity: 0;
             visibility: hidden;
             transform: translateY(12px);
@@ -1450,7 +1454,7 @@ function renderStat(?float $n, string $prefix = '', string $suffix = ''): string
                     </article>
                     <article class="service-card reveal" style="transition-delay:.3s">
                         <div>
-                            <i class="fa-solid fa-chart-pie" style="background:#2a908d"></i>
+                            <i class="fa-solid fa-chart-pie" style="background:#2a6f90"></i>
                             <h3>Dashboards and reports</h3>
                             <p>See project health, delays, completion rates, and documented activity by office.</p>
                         </div>
