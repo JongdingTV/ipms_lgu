@@ -1,0 +1,29 @@
+<!DOCTYPE html>
+<html>
+<head><meta charset="utf-8"><title>probing</title></head>
+<body>
+<iframe id="fr" style="width:390px;height:900px;border:0"></iframe>
+<script>
+const fr = document.getElementById('fr');
+fr.onload = () => setTimeout(() => {
+    const d = fr.contentDocument;
+    const vw = fr.contentWindow.innerWidth;
+    const wide = [];
+    d.querySelectorAll('body *').forEach(el => {
+        const r = el.getBoundingClientRect();
+        if (r.width > vw + 2 && el.offsetParent !== null) {
+            const id = el.id ? '#' + el.id : '';
+            const cls = el.className && typeof el.className === 'string' ? '.' + el.className.trim().split(/\s+/).join('.') : '';
+            wide.push(el.tagName + id + cls + '=' + Math.round(r.width));
+        }
+    });
+    const out = 'vw=' + vw + ' docScrollW=' + d.documentElement.scrollWidth
+        + ' bodyW=' + Math.round(d.body.getBoundingClientRect().width)
+        + ' | WIDE(' + wide.length + '): ' + wide.slice(0, 12).join(' ; ');
+    document.title = 'DONE ' + out;
+    document.body.insertAdjacentText('beforeend', ' ==FINAL== ' + out);
+}, 1500);
+fr.src = 'dev-autologin.php';
+</script>
+</body>
+</html>

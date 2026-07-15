@@ -1,0 +1,13 @@
+<!DOCTYPE html>
+<html>
+<head><meta charset="utf-8"><title>mobile viewer</title>
+<style>body{margin:0;background:#222}iframe{width:390px;height:1650px;border:0;display:block}</style>
+</head>
+<body>
+<iframe id="fr"></iframe>
+<script>
+const params = new URLSearchParams(location.search);
+document.getElementById('fr').src = params.get('u') || '../landing.php';
+</script>
+</body>
+</html>
