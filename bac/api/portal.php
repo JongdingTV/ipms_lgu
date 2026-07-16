@@ -595,9 +595,13 @@ if ($action === 'recommend') {
 }
 
 if ($action === 'review_contractor_application') {
-    // Narrower than the file-level gate (which also allows admin) — contractor
-    // applications are specifically BAC's call, with super_admin as a fallback.
-    requireAnyRole(['bac', 'super_admin']);
+    // RA 12009 (New Government Procurement Act) vests contractor eligibility
+    // review in the BAC specifically — a constituted body with legally defined
+    // membership, not a generic system role. super_admin can still view this
+    // list (file-level gate below) for oversight, but must not be able to
+    // approve/reject in its place, since that action has no legal standing
+    // outside an actual BAC member exercising it.
+    requireAnyRole(['bac']);
 
     $validated = Validator::make($body, [
         'contractor_id' => 'required|integer',

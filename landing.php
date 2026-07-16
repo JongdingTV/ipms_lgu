@@ -1267,6 +1267,7 @@ function renderStat(?float $n, string $prefix = '', string $suffix = ''): string
                 <a href="#services" class="hide-tablet" data-nav-link><i class="fa-solid fa-building-columns"></i> Services</a>
                 <a href="#process" class="hide-tablet" data-nav-link><i class="fa-solid fa-list-check"></i> Process</a>
                 <a href="<?= htmlspecialchars(appUrl('/contractor/apply.php')) ?>" class="hide-tablet" data-nav-link><i class="fa-solid fa-building-user"></i> Become a Contractor</a>
+                <a href="https://infragovservices.com/" class="hide-tablet" target="_blank" rel="noopener noreferrer"><i class="fa-solid fa-arrow-up-right-from-square"></i> Main Site</a>
                 <a class="portal-btn" href="<?= htmlspecialchars(appUrl('/citizen/login.php')) ?>"><i class="fa-solid fa-right-to-bracket"></i> Portal</a>
             </div>
         </div>
