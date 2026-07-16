@@ -2911,15 +2911,44 @@ body {
     margin: 6px 0 0 50px;
 }
 
+.fb-contact-section {
+    margin: 4px 0 22px;
+    padding-top: 18px;
+    border-top: 1px solid var(--border, #dbe4ef);
+    transition: opacity .18s;
+}
+
+.fb-contact-heading {
+    font-size: .84rem;
+    font-weight: 700;
+    color: var(--text-primary, #1e293b);
+    margin-bottom: 12px;
+}
+
 .fb-contact-grid {
     display: grid;
-    grid-template-columns: 1fr 1fr;
+    grid-template-columns: 1fr 1fr 1fr;
     gap: 16px;
-    transition: opacity .18s;
 }
 
 .fb-contact-disabled {
     opacity: .45;
+}
+
+/* ---- In-panel action row (Back / Continue / Confirm & Submit) — lives
+   inside .fb-panel-main itself, not as a separate page-level bar. ---- */
+.fb-panel-actions {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 14px;
+    margin-top: 22px;
+    padding-top: 20px;
+    border-top: 1px solid var(--border, #dbe4ef);
+}
+
+.fb-panel-actions .btn-primary {
+    margin-left: auto;
 }
 
 /* ---- Step 3: review ---- */
@@ -3019,21 +3048,12 @@ body {
 }
 
 /* ---- Bottom nav row ---- */
-.fb-nav-row {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 18px;
-    margin-top: 20px;
-    padding-top: 18px;
-    border-top: 1px solid var(--border, #dbe4ef);
-}
-
 .fb-tips {
     display: flex;
     flex-wrap: wrap;
-    gap: 6px 18px;
-    justify-content: center;
+    gap: 6px 20px;
+    justify-content: flex-start;
+    margin-top: 14px;
     font-size: .78rem;
     color: var(--text-muted, #64748b);
 }
@@ -3175,14 +3195,21 @@ body {
         grid-template-columns: 1fr;
     }
 
-    .fb-nav-row {
+    .fb-panel-actions {
         flex-wrap: wrap;
     }
 
-    .fb-tips {
-        order: 3;
+    .fb-panel-actions .btn-primary,
+    .fb-panel-actions .btn-outline {
         width: 100%;
-        justify-content: flex-start;
+    }
+
+    .fb-panel-actions .btn-primary {
+        margin-left: 0;
+        order: -1;
+    }
+
+    .fb-tips {
         flex-direction: column;
         gap: 4px;
     }

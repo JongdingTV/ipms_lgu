@@ -359,6 +359,33 @@ $statusChip = [
                 <form id="feedbackForm" method="POST">
                   <input type="hidden" name="concern_type" id="feedbackConcernType" value="project">
 
+                  <div class="fb-anon-row">
+                    <label class="fb-toggle">
+                      <input type="checkbox" id="feedbackAnonymous" name="anonymous" value="1">
+                      <span class="fb-toggle-track"><span class="fb-toggle-thumb"></span></span>
+                      <span class="fb-toggle-label">Submit this report anonymously</span>
+                    </label>
+                    <p class="fb-toggle-hint">We won't attach your name to this report. You can still add contact details below if you want a callback.</p>
+                  </div>
+
+                  <div class="fb-contact-section" id="fbContactGrid">
+                    <p class="fb-contact-heading">Contact Information <span class="fb-optional">(optional)</span></p>
+                    <div class="fb-contact-grid">
+                      <div class="form-group">
+                        <label for="feedbackContactName">Contact Name</label>
+                        <input type="text" id="feedbackContactName" name="contact_name" placeholder="Your name">
+                      </div>
+                      <div class="form-group">
+                        <label for="feedbackContactPhone">Contact Number</label>
+                        <input type="text" id="feedbackContactPhone" name="contact_phone" placeholder="09xx xxx xxxx">
+                      </div>
+                      <div class="form-group">
+                        <label for="feedbackContactEmail">Email</label>
+                        <input type="email" id="feedbackContactEmail" name="contact_email" placeholder="you@example.com">
+                      </div>
+                    </div>
+                  </div>
+
                   <div class="form-group">
                     <label for="feedbackProjectName" id="fbProjectNameLabel">Project Name <span class="fb-optional">(optional)</span></label>
                     <input type="text" id="feedbackProjectName" name="project_name" placeholder="e.g. Barangay Culiat Road Widening">
@@ -446,26 +473,17 @@ $statusChip = [
                     <div class="id-upload-status" id="feedbackPhotoStatus" style="display: none;"></div>
                   </div>
 
-                  <div class="fb-anon-row">
-                    <label class="fb-toggle">
-                      <input type="checkbox" id="feedbackAnonymous" name="anonymous" value="1">
-                      <span class="fb-toggle-track"><span class="fb-toggle-thumb"></span></span>
-                      <span class="fb-toggle-label">Submit this report anonymously</span>
-                    </label>
-                    <p class="fb-toggle-hint">We won't attach your name to this report. You can still add contact details below if you want a callback.</p>
-                  </div>
-
-                  <div class="fb-contact-grid" id="fbContactGrid">
-                    <div class="form-group">
-                      <label for="feedbackContactName">Contact Name <span class="fb-optional">(optional)</span></label>
-                      <input type="text" id="feedbackContactName" name="contact_name" placeholder="Your name">
-                    </div>
-                    <div class="form-group">
-                      <label for="feedbackContactPhone">Contact Number / Email <span class="fb-optional">(optional)</span></label>
-                      <input type="text" id="feedbackContactPhone" name="contact_info" placeholder="09xx xxx xxxx or email">
-                    </div>
+                  <div class="fb-panel-actions">
+                    <button type="button" class="btn-outline" id="fbBackBtn2">Back</button>
+                    <button type="button" class="btn-primary" id="fbNextBtn2">Continue</button>
                   </div>
                 </form>
+              </div>
+
+              <div class="fb-tips" id="fbTips">
+                <span>✔ Include photos for faster verification.</span>
+                <span>✔ Pin the exact location.</span>
+                <span>✔ Provide clear descriptions.</span>
               </div>
             </div>
 
@@ -481,6 +499,11 @@ $statusChip = [
               <div class="fb-review-card" id="fbReviewCard"></div>
 
               <div class="fb-submit-error" id="fbSubmitError" style="display:none;"></div>
+
+              <div class="fb-panel-actions">
+                <button type="button" class="btn-outline" id="fbBackBtn3">Back</button>
+                <button type="button" class="btn-primary" id="fbNextBtn3">Confirm &amp; Submit</button>
+              </div>
             </div>
 
             <aside class="fb-illustration" id="fbIllustration3" data-state="project"></aside>
@@ -504,17 +527,6 @@ $statusChip = [
           </div>
 
         </div>
-      </div>
-
-      <!-- Bottom step navigation (hidden on step 1 — the cards themselves advance it; hidden on step 4 — success screen has its own actions) -->
-      <div class="fb-nav-row" id="fbNavRow">
-        <button type="button" class="btn-outline" id="fbBackBtn" style="visibility:hidden;">Back</button>
-        <div class="fb-tips" id="fbTips">
-          <span>✔ Include photos for faster verification.</span>
-          <span>✔ Pin the exact location.</span>
-          <span>✔ Provide clear descriptions.</span>
-        </div>
-        <button type="button" class="btn-primary" id="fbNextBtn">Continue</button>
       </div>
 
       <?php endif; ?>

@@ -1276,13 +1276,6 @@ function fbGoToStep(step) {
     if (label) label.textContent = `Step ${step} of 4 — ${FB_STEP_LABELS[step]}`;
     if (fill) fill.style.width = (step / 4 * 100) + '%';
 
-    const navRow = document.getElementById('fbNavRow');
-    const backBtn = document.getElementById('fbBackBtn');
-    const nextBtn = document.getElementById('fbNextBtn');
-    if (navRow) navRow.style.display = (step === 1 || step === 4) ? 'none' : 'flex';
-    if (backBtn) backBtn.style.visibility = step <= 1 ? 'hidden' : 'visible';
-    if (nextBtn) nextBtn.textContent = step === 3 ? 'Confirm & Submit' : 'Continue';
-
     if (step === 2) {
         fbApplyConcernType(fbConcernType);
         // The map only ever renders correctly once its container is visible.
@@ -1396,7 +1389,8 @@ function fbRenderReview() {
     const projectName = document.getElementById('feedbackProjectName');
     const isAnonymous = document.getElementById('feedbackAnonymous')?.checked;
     const contactName = document.getElementById('feedbackContactName')?.value.trim();
-    const contactInfo = document.getElementById('feedbackContactPhone')?.value.trim();
+    const contactPhone = document.getElementById('feedbackContactPhone')?.value.trim();
+    const contactEmail = document.getElementById('feedbackContactEmail')?.value.trim();
     const photoInput = document.getElementById('feedbackPhotos');
     const lat = document.getElementById('feedbackLat')?.value;
 
@@ -1407,7 +1401,7 @@ function fbRenderReview() {
     const photoCount = photoInput ? photoInput.files.length : 0;
     const contactText = isAnonymous
         ? 'Anonymous submission'
-        : ([contactName, contactInfo].filter(Boolean).join(' · ') || 'Not provided');
+        : ([contactName, contactPhone, contactEmail].filter(Boolean).join(' · ') || 'Not provided');
 
     card.innerHTML = `
         <div class="fb-review-row"><span>Concern Type</span><strong>${escapeHtml(concernLabel)}</strong></div>
@@ -1425,7 +1419,7 @@ function submitFeedbackWizard() {
     const form = document.getElementById('feedbackForm');
     if (!form) return;
 
-    const nextBtn = document.getElementById('fbNextBtn');
+    const nextBtn = document.getElementById('fbNextBtn3');
     const errorBox = document.getElementById('fbSubmitError');
     if (errorBox) errorBox.style.display = 'none';
     if (nextBtn) { nextBtn.disabled = true; nextBtn.textContent = 'Submitting…'; }
@@ -1481,19 +1475,17 @@ function setupFeedbackWizard() {
 
     document.getElementById('feedbackAnonymous')?.addEventListener('change', fbToggleAnonymous);
 
-    document.getElementById('fbBackBtn')?.addEventListener('click', () => {
-        if (fbCurrentStep > 1) fbGoToStep(fbCurrentStep - 1);
+    // Step 2 (Fill Information) in-panel actions
+    document.getElementById('fbBackBtn2')?.addEventListener('click', () => fbGoToStep(1));
+    document.getElementById('fbNextBtn2')?.addEventListener('click', () => {
+        const form = document.getElementById('feedbackForm');
+        if (form && !form.reportValidity()) return;
+        fbGoToStep(3);
     });
 
-    document.getElementById('fbNextBtn')?.addEventListener('click', () => {
-        if (fbCurrentStep === 2) {
-            const form = document.getElementById('feedbackForm');
-            if (form && !form.reportValidity()) return;
-            fbGoToStep(3);
-        } else if (fbCurrentStep === 3) {
-            submitFeedbackWizard();
-        }
-    });
+    // Step 3 (Review) in-panel actions
+    document.getElementById('fbBackBtn3')?.addEventListener('click', () => fbGoToStep(2));
+    document.getElementById('fbNextBtn3')?.addEventListener('click', () => submitFeedbackWizard());
 
     document.getElementById('fbBtnDashboard')?.addEventListener('click', () => changePage('dashboard'));
     document.getElementById('fbBtnTrack')?.addEventListener('click', () => changePage('track-feedback'));
