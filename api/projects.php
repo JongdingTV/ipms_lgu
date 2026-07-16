@@ -13,8 +13,26 @@ apiHeaders();
 
 $method = $_SERVER['REQUEST_METHOD'];
 $action = $_GET['action'] ?? '';
+// Phase 1 lifecycle gates: each new stage is carved out of the broad
+// admin/super_admin mutation gate below, the same way 'decide' already is,
+// so every new authority lands on exactly the role that owns it and no
+// role picks up the unscoped create/edit/delete access as a side effect.
+const PROJECT_ENGINEER_ACTIONS = ['engineering_review', 'completion_decide'];
+const PROJECT_ENGINEER_OR_ADMIN_ACTIONS = ['issue_ntp', 'request_completion_inspection', 'upload_document_version'];
+const PROJECT_ADMIN_ONLY_ACTIONS = ['turnover'];
+
 if ($method === 'GET') {
-    requireAnyRole(['super_admin', 'admin', 'bac', 'engineer', 'contractor', 'citizen']);
+    requireAnyRole(['super_admin', 'admin', 'bac', 'engineer', 'contractor', 'citizen', 'hope']);
+} elseif ($method === 'POST' && $action === 'decide') {
+    // Project approval is HOPE's specific statutory authority under RA 12009
+    // (Head of the Procuring Entity).
+    requireAnyRole(['hope']);
+} elseif ($method === 'POST' && in_array($action, PROJECT_ENGINEER_ACTIONS, true)) {
+    requireAnyRole(['engineer']);
+} elseif ($method === 'POST' && in_array($action, PROJECT_ENGINEER_OR_ADMIN_ACTIONS, true)) {
+    requireAnyRole(['engineer', 'admin']);
+} elseif ($method === 'POST' && in_array($action, PROJECT_ADMIN_ONLY_ACTIONS, true)) {
+    requireAnyRole(['admin']);
 } else {
     // Mutations here are unscoped (any project id, any field, including
     // contractor/budget/status). Engineers only have a scoped mutation path
@@ -28,6 +46,7 @@ requireCsrfProtection();
 $db     = getDB();
 engineerScopeEnsureTables($db);
 projectWorkflowEnsureProjectStatusSchema($db);
+documentsEnsureVersioningSchema($db);
 $id     = isset($_GET['id']) ? (int) $_GET['id'] : null;
 $user   = currentUser();
 $isContractor = ($user['role'] ?? '') === 'contractor';
@@ -166,7 +185,41 @@ if ($method === 'GET') {
         $ex->execute([$id]);
         $project['expenses'] = $ex->fetchAll();
 
+        // Supporting documents — current version of each document slot only;
+        // use action=document_versions to see a specific document's history.
+        $docs = $db->prepare("
+            SELECT id, document_type, title, original_name, file_path, file_size, version, status, created_at
+            FROM supporting_documents
+            WHERE owner_type = 'project' AND owner_id = ? AND is_current = 1
+            ORDER BY created_at ASC
+        ");
+        $docs->execute([$id]);
+        $project['documents'] = $docs->fetchAll();
+
         respond($project);
+    }
+
+    if ($action === 'document_versions') {
+        $documentId = (int) ($_GET['document_id'] ?? 0);
+        if ($documentId <= 0) {
+            respond(['error' => 'Document ID is required.'], 422);
+        }
+
+        $root = $db->prepare("SELECT COALESCE(root_document_id, id) AS root_id FROM supporting_documents WHERE id = ? AND owner_type = 'project'");
+        $root->execute([$documentId]);
+        $rootId = $root->fetchColumn();
+        if (!$rootId) {
+            respond(['error' => 'Document not found.'], 404);
+        }
+
+        $versions = $db->prepare("
+            SELECT id, title, original_name, file_path, file_size, version, is_current, status, uploaded_by, created_at, superseded_at
+            FROM supporting_documents
+            WHERE owner_type = 'project' AND (id = ? OR root_document_id = ?)
+            ORDER BY version DESC
+        ");
+        $versions->execute([$rootId, $rootId]);
+        respond(['data' => $versions->fetchAll()]);
     }
 
     // List with filters
@@ -198,6 +251,17 @@ if ($method === 'GET') {
         $where[]  = '(p.name LIKE ? OR p.project_code LIKE ? OR p.location LIKE ?)';
         $s = '%' . $_GET['search'] . '%';
         array_push($params, $s, $s, $s);
+    }
+    if (is_numeric($_GET['min_budget'] ?? null)) {
+        $where[]  = 'p.budget >= ?';
+        $params[] = (float) $_GET['min_budget'];
+    }
+    if (is_numeric($_GET['max_budget'] ?? null)) {
+        $where[]  = 'p.budget <= ?';
+        $params[] = (float) $_GET['max_budget'];
+    }
+    if (!empty($_GET['has_coordinates'])) {
+        $where[] = 'p.latitude IS NOT NULL AND p.longitude IS NOT NULL';
     }
 
     $whereSQL = implode(' AND ', $where);
@@ -232,10 +296,8 @@ if ($method === 'GET') {
     ]);
 }
 
-// ── POST action=decide (super_admin only — approve/return/reject) ──
+// ── POST action=decide (HOPE only — approve/return/reject) ──
 if ($method === 'POST' && $action === 'decide') {
-    requireAnyRole(['super_admin']);
-
     $body = requestBody();
     $validated = Validator::make($body, [
         'project_id' => 'required|integer',
@@ -257,6 +319,9 @@ if ($method === 'POST' && $action === 'decide') {
     if (!$project) {
         respond(['error' => 'Project not found.'], 404);
     }
+    if ($project['status'] !== 'endorsed') {
+        respond(['error' => 'This project has not been endorsed by Engineering Review yet.'], 422);
+    }
 
     $statusMap = ['approve' => 'approved', 'return' => 'returned', 'reject' => 'cancelled'];
     $pastTense = ['approve' => 'approved', 'return' => 'returned', 'reject' => 'rejected'];
@@ -277,6 +342,258 @@ if ($method === 'POST' && $action === 'decide') {
     }
 
     respond(['success' => true, 'status' => $newStatus]);
+}
+
+// ── POST action=engineering_review (Engineer only — endorse/return/reject a draft project) ──
+if ($method === 'POST' && $action === 'engineering_review') {
+    $body = requestBody();
+    $validated = Validator::make($body, [
+        'project_id' => 'required|integer',
+        'decision' => 'required|in:endorse,return,reject',
+        'reason' => 'nullable|string|max:1000',
+    ])->stopOnFailure();
+
+    $projectId = (int) $validated['project_id'];
+    $decision = (string) $validated['decision'];
+    $reason = trim((string) ($validated['reason'] ?? ''));
+
+    if ($decision !== 'endorse' && $reason === '') {
+        respond(['error' => 'A reason is required to return or reject a project.'], 422);
+    }
+
+    $stmt = $db->prepare("SELECT id, name, status, created_by FROM projects WHERE id = ?");
+    $stmt->execute([$projectId]);
+    $project = $stmt->fetch();
+    if (!$project) {
+        respond(['error' => 'Project not found.'], 404);
+    }
+    if ($project['status'] !== 'draft') {
+        respond(['error' => 'This project is not awaiting engineering review.'], 422);
+    }
+
+    $statusMap = ['endorse' => 'endorsed', 'return' => 'returned', 'reject' => 'cancelled'];
+    $pastTense = ['endorse' => 'endorsed', 'return' => 'returned', 'reject' => 'rejected'];
+    $newStatus = $statusMap[$decision];
+
+    $db->prepare("
+        UPDATE projects
+        SET status = ?, engineering_reviewed_by = ?, engineering_reviewed_at = NOW(), engineering_remarks = ?
+        WHERE id = ?
+    ")->execute([$newStatus, (int) ($user['user_id'] ?? 0), $reason !== '' ? $reason : null, $projectId]);
+
+    $details = $project['name'] . ' was ' . $pastTense[$decision] . ' by Engineering Review' . ($reason !== '' ? ' — ' . $reason : '') . '.';
+    projectWorkflowLog($db, 'Engineering review: ' . $pastTense[$decision], $projectId, $details, (int) ($user['user_id'] ?? 0) ?: null);
+    logActivity((int) ($user['user_id'] ?? 0), 'project_status_' . $newStatus, $details);
+
+    if (!empty($project['created_by'])) {
+        notifyUser((int) $project['created_by'], 'info', 'Engineering review: ' . $pastTense[$decision], $details);
+    }
+
+    respond(['success' => true, 'status' => $newStatus]);
+}
+
+// ── POST action=issue_ntp (Engineer/Admin — assigned -> active; the contract clock starts here, not at award) ──
+if ($method === 'POST' && $action === 'issue_ntp') {
+    $body = requestBody();
+    $validated = Validator::make($body, [
+        'project_id' => 'required|integer',
+        'notes' => 'nullable|string|max:1000',
+    ])->stopOnFailure();
+
+    $projectId = (int) $validated['project_id'];
+    $notes = trim((string) ($validated['notes'] ?? ''));
+
+    $stmt = $db->prepare("SELECT id, name, status, created_by, contractor_id FROM projects WHERE id = ?");
+    $stmt->execute([$projectId]);
+    $project = $stmt->fetch();
+    if (!$project) {
+        respond(['error' => 'Project not found.'], 404);
+    }
+    if ($project['status'] !== 'assigned') {
+        respond(['error' => 'Notice to Proceed can only be issued once a contractor is assigned.'], 422);
+    }
+
+    $db->prepare("
+        UPDATE projects
+        SET status = 'active', ntp_issued_by = ?, ntp_issued_at = NOW(), ntp_notes = ?
+        WHERE id = ?
+    ")->execute([(int) ($user['user_id'] ?? 0), $notes !== '' ? $notes : null, $projectId]);
+
+    $details = 'Notice to Proceed issued for ' . $project['name'] . ' — the contract implementation period begins today.';
+    projectWorkflowLog($db, 'Notice to Proceed issued', $projectId, $details, (int) ($user['user_id'] ?? 0) ?: null);
+    logActivity((int) ($user['user_id'] ?? 0), 'project_status_active', $details);
+
+    if (!empty($project['created_by'])) {
+        notifyUser((int) $project['created_by'], 'info', 'Notice to Proceed issued', $details);
+    }
+    if (!empty($project['contractor_id'])) {
+        $contractorUserStmt = $db->prepare("SELECT user_id FROM contractors WHERE id = ?");
+        $contractorUserStmt->execute([(int) $project['contractor_id']]);
+        $contractorUserId = $contractorUserStmt->fetchColumn();
+        if ($contractorUserId) {
+            notifyUser((int) $contractorUserId, 'info', 'Notice to Proceed issued', $details);
+        }
+    }
+
+    respond(['success' => true, 'status' => 'active']);
+}
+
+// ── POST action=request_completion_inspection (Engineer/Admin — final milestone reached) ──
+if ($method === 'POST' && $action === 'request_completion_inspection') {
+    $body = requestBody();
+    $validated = Validator::make($body, [
+        'project_id' => 'required|integer',
+    ])->stopOnFailure();
+
+    $projectId = (int) $validated['project_id'];
+
+    $stmt = $db->prepare("SELECT id, name, status, created_by, contractor_id FROM projects WHERE id = ?");
+    $stmt->execute([$projectId]);
+    $project = $stmt->fetch();
+    if (!$project) {
+        respond(['error' => 'Project not found.'], 404);
+    }
+    if (!in_array($project['status'], ['active', 'delayed', 'on_hold'], true)) {
+        respond(['error' => 'Only an active project can be sent for completion inspection.'], 422);
+    }
+
+    $db->prepare("UPDATE projects SET status = 'completion_inspection' WHERE id = ?")->execute([$projectId]);
+
+    $details = $project['name'] . ' was submitted for completion inspection.';
+    projectWorkflowLog($db, 'Completion inspection requested', $projectId, $details, (int) ($user['user_id'] ?? 0) ?: null);
+    logActivity((int) ($user['user_id'] ?? 0), 'project_status_completion_inspection', $details);
+
+    if (!empty($project['created_by'])) {
+        notifyUser((int) $project['created_by'], 'info', 'Completion inspection requested', $details);
+    }
+    if (!empty($project['contractor_id'])) {
+        $contractorUserStmt = $db->prepare("SELECT user_id FROM contractors WHERE id = ?");
+        $contractorUserStmt->execute([(int) $project['contractor_id']]);
+        $contractorUserId = $contractorUserStmt->fetchColumn();
+        if ($contractorUserId) {
+            notifyUser((int) $contractorUserId, 'info', 'Completion inspection scheduled', $details);
+        }
+    }
+
+    respond(['success' => true, 'status' => 'completion_inspection']);
+}
+
+// ── POST action=completion_decide (Engineer only — accept as complete, or return with a punch-list) ──
+if ($method === 'POST' && $action === 'completion_decide') {
+    $body = requestBody();
+    $validated = Validator::make($body, [
+        'project_id' => 'required|integer',
+        'decision' => 'required|in:accept,return',
+        'reason' => 'nullable|string|max:1000',
+    ])->stopOnFailure();
+
+    $projectId = (int) $validated['project_id'];
+    $decision = (string) $validated['decision'];
+    $reason = trim((string) ($validated['reason'] ?? ''));
+
+    if ($decision === 'return' && $reason === '') {
+        respond(['error' => 'A punch-list reason is required to return a project from completion inspection.'], 422);
+    }
+
+    $stmt = $db->prepare("SELECT id, name, status, created_by FROM projects WHERE id = ?");
+    $stmt->execute([$projectId]);
+    $project = $stmt->fetch();
+    if (!$project) {
+        respond(['error' => 'Project not found.'], 404);
+    }
+    if ($project['status'] !== 'completion_inspection') {
+        respond(['error' => 'This project is not awaiting a completion inspection decision.'], 422);
+    }
+
+    $newStatus = $decision === 'accept' ? 'completed' : 'active';
+
+    $db->prepare("
+        UPDATE projects
+        SET status = ?, completion_inspected_by = ?, completion_inspected_at = NOW(), completion_remarks = ?, progress = IF(? = 'accept', 100, progress)
+        WHERE id = ?
+    ")->execute([$newStatus, (int) ($user['user_id'] ?? 0), $reason !== '' ? $reason : null, $decision, $projectId]);
+
+    $verb = $decision === 'accept' ? 'accepted as complete' : 'returned with punch-list items';
+    $details = $project['name'] . ' was ' . $verb . ($reason !== '' ? ' — ' . $reason : '') . '.';
+    projectWorkflowLog($db, 'Completion inspection: ' . $verb, $projectId, $details, (int) ($user['user_id'] ?? 0) ?: null);
+    logActivity((int) ($user['user_id'] ?? 0), 'project_status_' . $newStatus, $details);
+
+    if (!empty($project['created_by'])) {
+        notifyUser((int) $project['created_by'], 'info', 'Completion inspection: ' . $verb, $details);
+    }
+
+    respond(['success' => true, 'status' => $newStatus]);
+}
+
+// ── POST action=turnover (Admin only — completed -> turnover) ──
+if ($method === 'POST' && $action === 'turnover') {
+    $body = requestBody();
+    $validated = Validator::make($body, [
+        'project_id' => 'required|integer',
+        'turnover_office' => 'required|string|max:180',
+        'notes' => 'nullable|string|max:1000',
+    ])->stopOnFailure();
+
+    $projectId = (int) $validated['project_id'];
+    $turnoverOffice = trim((string) $validated['turnover_office']);
+    $notes = trim((string) ($validated['notes'] ?? ''));
+
+    $stmt = $db->prepare("SELECT id, name, status, created_by FROM projects WHERE id = ?");
+    $stmt->execute([$projectId]);
+    $project = $stmt->fetch();
+    if (!$project) {
+        respond(['error' => 'Project not found.'], 404);
+    }
+    if ($project['status'] !== 'completed') {
+        respond(['error' => 'Only a completed project can be turned over.'], 422);
+    }
+
+    $db->prepare("
+        UPDATE projects
+        SET status = 'turnover', turnover_by = ?, turnover_at = NOW(), turnover_office = ?, turnover_notes = ?
+        WHERE id = ?
+    ")->execute([(int) ($user['user_id'] ?? 0), $turnoverOffice, $notes !== '' ? $notes : null, $projectId]);
+
+    $details = $project['name'] . ' was turned over to ' . $turnoverOffice . '.';
+    projectWorkflowLog($db, 'Project turned over', $projectId, $details, (int) ($user['user_id'] ?? 0) ?: null);
+    logActivity((int) ($user['user_id'] ?? 0), 'project_status_turnover', $details);
+
+    respond(['success' => true, 'status' => 'turnover']);
+}
+
+// ── POST action=upload_document_version (Engineer/Admin — supersedes an existing project document) ──
+if ($method === 'POST' && $action === 'upload_document_version') {
+    $documentId = (int) ($_POST['document_id'] ?? 0);
+    if ($documentId <= 0) {
+        respond(['error' => 'Document ID is required.'], 422);
+    }
+
+    $doc = $db->prepare("SELECT id FROM supporting_documents WHERE id = ? AND owner_type = 'project' AND is_current = 1");
+    $doc->execute([$documentId]);
+    if (!$doc->fetchColumn()) {
+        respond(['error' => 'Document not found, or it is not the current version.'], 404);
+    }
+
+    $error = FileUpload::validate($_FILES['file'] ?? null, [
+        'required' => true,
+        'max_size' => PROJECT_DOC_MAX_SIZE,
+        'extensions' => PROJECT_DOC_EXTENSIONS,
+    ]);
+    if ($error !== null) {
+        respond(['error' => $error], 422);
+    }
+
+    try {
+        $stored = FileUpload::store($_FILES['file'], 'supporting-documents/project', [
+            'max_size' => PROJECT_DOC_MAX_SIZE,
+            'extensions' => PROJECT_DOC_EXTENSIONS,
+        ]);
+        $newDocId = documentsCreateNewVersion($db, $documentId, $stored, (int) ($user['user_id'] ?? 0));
+    } catch (Throwable $e) {
+        respond(['error' => 'Unable to upload new version.'], 422);
+    }
+
+    respond(['success' => true, 'id' => $newDocId], 201);
 }
 
 // ── POST (create) ──────────────────────────────────────────
@@ -313,8 +630,8 @@ if ($method === 'POST') {
         $stmt = $db->prepare("
             INSERT INTO projects
                 (project_code, name, description, location, contractor_id,
-                 budget, start_date, end_date, progress, status, created_by)
-            VALUES (?,?,?,?,?,?,?,?,?,?,?)
+                 budget, start_date, end_date, progress, status, created_by, latitude, longitude)
+            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)
         ");
         $stmt->execute([
             $code,
@@ -328,6 +645,8 @@ if ($method === 'POST') {
             (int) ($b['progress'] ?? 0),
             $status,
             (int) ($user['user_id'] ?? 0) ?: null,
+            isset($b['latitude']) && $b['latitude'] !== '' ? (float) $b['latitude'] : null,
+            isset($b['longitude']) && $b['longitude'] !== '' ? (float) $b['longitude'] : null,
         ]);
 
         $newId = (int) $db->lastInsertId();
@@ -362,14 +681,14 @@ if ($method === 'PUT') {
     $fields = [];
     $params = [];
     $allowed = ['name','description','location','contractor_id','budget',
-                'start_date','end_date','progress','status'];
+                'start_date','end_date','progress','status','latitude','longitude'];
     foreach ($allowed as $f) {
         if (array_key_exists($f, $b)) {
             if ($f === 'status' && !in_array((string) $b[$f], projectWorkflowStatuses(), true)) {
                 respond(['error' => 'Invalid project status'], 422);
             }
-            if ($f === 'status' && (string) $b[$f] === 'approved') {
-                respond(['error' => 'Use the project approval action to approve a project.'], 422);
+            if ($f === 'status' && in_array((string) $b[$f], ['endorsed', 'approved', 'completion_inspection', 'completed', 'turnover'], true)) {
+                respond(['error' => 'This status can only be reached through its dedicated workflow action, not a direct edit.'], 422);
             }
 
             $fields[] = "$f = ?";
@@ -379,6 +698,8 @@ if ($method === 'PUT') {
                 $params[] = max(0, min(100, (int) $b[$f]));
             } elseif ($f === 'budget') {
                 $params[] = (float) $b[$f];
+            } elseif ($f === 'latitude' || $f === 'longitude') {
+                $params[] = $b[$f] === '' || $b[$f] === null ? null : (float) $b[$f];
             } else {
                 $params[] = $b[$f] === '' ? null : $b[$f];
             }

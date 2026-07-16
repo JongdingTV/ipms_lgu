@@ -19,6 +19,17 @@ function contractorPerformanceScoreWeights(): array
 
 function contractorCalculatePerformanceScore(PDO $db, int $contractorId): int
 {
+    return contractorCalculatePerformanceScoreBreakdown($db, $contractorId)['score'];
+}
+
+/**
+ * Same calculation as contractorCalculatePerformanceScore(), but returns the
+ * four weighted components alongside the final score — used by the
+ * Contractor Portal's Performance Rating page so a contractor can see why
+ * their score is what it is, not just the final number.
+ */
+function contractorCalculatePerformanceScoreBreakdown(PDO $db, int $contractorId): array
+{
     $weights = contractorPerformanceScoreWeights();
 
     $projectStmt = $db->prepare("
@@ -32,7 +43,16 @@ function contractorCalculatePerformanceScore(PDO $db, int $contractorId): int
     $totalProjects = (int) ($projectRow['total'] ?? 0);
 
     if ($totalProjects === 0) {
-        return 65; // Neutral default: no assignment history yet, neither penalized nor rewarded.
+        // Neutral default: no assignment history yet, neither penalized nor rewarded.
+        return [
+            'score' => 65,
+            'components' => [
+                'completion' => ['weight' => $weights['completion'], 'earned' => null],
+                'delay' => ['weight' => $weights['delay'], 'earned' => null],
+                'issues' => ['weight' => $weights['issues'], 'earned' => null],
+                'financial' => ['weight' => $weights['financial'], 'earned' => null],
+            ],
+        ];
     }
 
     $completionRate = ((int) $projectRow['completed']) / $totalProjects;
@@ -82,7 +102,15 @@ function contractorCalculatePerformanceScore(PDO $db, int $contractorId): int
 
     $score = $completionScore + $delayScore + $issueScore + $financialScore;
 
-    return (int) round(max(0, min(100, $score)));
+    return [
+        'score' => (int) round(max(0, min(100, $score))),
+        'components' => [
+            'completion' => ['weight' => $weights['completion'], 'earned' => round($completionScore, 1)],
+            'delay' => ['weight' => $weights['delay'], 'earned' => round($delayScore, 1)],
+            'issues' => ['weight' => $weights['issues'], 'earned' => round($issueScore, 1)],
+            'financial' => ['weight' => $weights['financial'], 'earned' => round($financialScore, 1)],
+        ],
+    ];
 }
 
 /** Recomputes and persists every contractor's score. Never throws. */

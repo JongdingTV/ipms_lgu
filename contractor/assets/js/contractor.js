@@ -16,6 +16,14 @@ let contractorListState = {
   documents: { page: 1, perPage: 10 },
 };
 
+/* Bidding, accreditation, and performance data is fetched lazily the first
+   time its own page is opened — see contractorShowPage() — rather than
+   eagerly in contractorRefreshData(), since most visits to the portal won't
+   touch these pages. */
+let contractorBiddingState = { openBiddings: null, myBids: null };
+let contractorAccreditationState = { documents: null };
+let contractorPerformanceState = { data: null };
+
 function contractorEscape(value) {
   return String(value ?? '')
     .replaceAll('&', '&amp;')
@@ -259,26 +267,110 @@ function contractorRenderDashboard() {
   document.getElementById('contractorPendingPayment').textContent = contractorMoney(stats.pending_payment_amount || 0);
   document.getElementById('contractorPerformanceScore').textContent = contractorState.summary?.contractor?.performance_score ?? 0;
 
+  // "Submit Report" only makes sense once a project has actually been won.
+  const submitReportBtn = document.getElementById('contractorSubmitReportBtn');
+  if (submitReportBtn) {
+    submitReportBtn.style.display = contractorState.summary?.has_awarded_projects ? '' : 'none';
+  }
+
   try {
     contractorRenderStatusChart(stats);
   } catch (error) {
     console.error('Failed to render status chart:', error);
   }
 
-  const projectPreview = document.getElementById('contractorProjectPreview');
-  projectPreview.innerHTML = contractorState.projects.length
-    ? contractorState.projects.slice(0, 3).map(project => contractorProjectCard(project, true)).join('')
-    : '<p class="empty-state">No assigned projects yet.</p>';
+  contractorRenderStageWidgets();
+}
 
-  const paymentPreview = document.getElementById('contractorPaymentPreview');
-  paymentPreview.innerHTML = contractorState.payments.length
-    ? contractorState.payments.slice(0, 5).map(payment => `
-      <div class="contractor-mini-row">
-        <span>${contractorEscape(payment.project_code)} - ${contractorEscape(payment.name)}</span>
-        <strong>${contractorFullMoney(payment.balance_amount)}</strong>
+/**
+ * The dashboard shows a different widget set depending on whether the
+ * contractor has ever won a project (summary.has_awarded_projects) —
+ * pre-award, the priority is accreditation/bidding; post-award, it's
+ * execution/payment. See contractor/api/portal.php's contractorPortalPreAwardStage()/
+ * contractorPortalPostAwardStage() for where stage_data comes from.
+ */
+function contractorRenderStageWidgets() {
+  const container = document.getElementById('contractorStageWidgets');
+  if (!container) return;
+
+  const hasAwarded = Boolean(contractorState.summary?.has_awarded_projects);
+  const stageData = contractorState.summary?.stage_data || {};
+
+  if (!hasAwarded) {
+    container.innerHTML = `
+      <article class="contractor-panel">
+        <div class="contractor-panel-head">
+          <h2>Accreditation Status</h2>
+          <button class="btn-secondary btn-compact" type="button" onclick="contractorShowPage('accreditation-status')">View</button>
+        </div>
+        <div class="contractor-mini-list">
+          <div class="contractor-mini-row"><span>Status</span><strong>${contractorEscape(contractorStatus(contractorState.summary?.contractor?.application_status))}</strong></div>
+          <div class="contractor-mini-row"><span>PCAB Classification</span><strong>${contractorEscape(contractorState.summary?.contractor?.pcab_classification || 'Not on file')}</strong></div>
+        </div>
+      </article>
+      <article class="contractor-panel contractor-panel-wide">
+        <div class="contractor-panel-head">
+          <h2>Available Bidding Projects</h2>
+          <button class="btn-secondary btn-compact" type="button" onclick="contractorShowPage('open-biddings')">Browse</button>
+        </div>
+        <div class="contractor-mini-list">
+          <div class="contractor-mini-row"><span>Open for bidding</span><strong>${Number(stageData.open_biddings_count || 0)}</strong></div>
+          <div class="contractor-mini-row"><span>Your submitted bids</span><strong>${Number(stageData.submitted_bids_count || 0)}</strong></div>
+        </div>
+      </article>
+      <article class="contractor-panel">
+        <div class="contractor-panel-head">
+          <h2>Recent Bid Results</h2>
+          <button class="btn-secondary btn-compact" type="button" onclick="contractorShowPage('bid-results')">View All</button>
+        </div>
+        <div class="contractor-mini-list">
+          ${(stageData.recent_results || []).length ? stageData.recent_results.map(bid => `
+            <div class="contractor-mini-row">
+              <span>${contractorEscape(bid.project_code)} - ${contractorEscape(bid.project_name)}</span>
+              ${contractorBadge(bid.status)}
+            </div>
+          `).join('') : '<p class="empty-state">No bid decisions yet.</p>'}
+        </div>
+      </article>
+    `;
+    return;
+  }
+
+  container.innerHTML = `
+    <article class="contractor-panel contractor-panel-wide">
+      <div class="contractor-panel-head">
+        <h2>Assigned Projects</h2>
+        <button class="btn-secondary btn-compact" type="button" onclick="contractorShowPage('assigned-projects')">View All</button>
       </div>
-    `).join('')
-    : '<p class="empty-state">No payment records yet.</p>';
+      <div id="contractorProjectPreview" class="contractor-project-list">
+        ${contractorState.projects.length ? contractorState.projects.slice(0, 3).map(project => contractorProjectCard(project, true)).join('') : '<p class="empty-state">No assigned projects yet.</p>'}
+      </div>
+    </article>
+    <article class="contractor-panel">
+      <div class="contractor-panel-head">
+        <h2>Upcoming &amp; Pending</h2>
+      </div>
+      <div class="contractor-mini-list">
+        <div class="contractor-mini-row"><span>Upcoming deadline</span><strong>${stageData.upcoming_deadline ? contractorDate(stageData.upcoming_deadline) : 'None scheduled'}</strong></div>
+        <div class="contractor-mini-row"><span>Pending inspections</span><strong>${Number(stageData.pending_inspections_count || 0)}</strong></div>
+        <div class="contractor-mini-row"><span>Pending payment requests</span><strong>${Number(stageData.pending_payment_requests_count || 0)}</strong></div>
+      </div>
+    </article>
+    <article class="contractor-panel">
+      <div class="contractor-panel-head">
+        <h2>Payment Status</h2>
+        <button class="btn-secondary btn-compact" type="button" onclick="contractorShowPage('payment-status')">Review</button>
+      </div>
+      <div id="contractorPaymentPreview" class="contractor-mini-list">
+        ${contractorState.payments.length ? contractorState.payments.slice(0, 5).map(payment => `
+          <div class="contractor-mini-row">
+            <span>${contractorEscape(payment.project_code)} - ${contractorEscape(payment.name)}</span>
+            <strong>${contractorFullMoney(payment.balance_amount)}</strong>
+          </div>
+        `).join('') : '<p class="empty-state">No payment records yet.</p>'}
+      </div>
+    </article>
+  `;
 }
 
 function contractorRenderAssignedProjects() {
@@ -519,6 +611,686 @@ function contractorRenderPaymentStatus() {
   `;
 }
 
+/* ---- Accreditation ------------------------------------------------------ */
+
+function contractorRenderCompanyProfile() {
+  const page = document.getElementById('page-company-profile');
+  const c = contractorState.summary?.contractor || {};
+  page.innerHTML = `
+    <div class="page-header">
+      <div>
+        <h1 class="page-title">Company Profile</h1>
+        <p class="contractor-scope-note">Business information on file with BAC. Name, PCAB details, and accreditation status are controlled by BAC — only your contact details can be updated here.</p>
+      </div>
+    </div>
+    <section class="contractor-layout">
+      <article class="contractor-form-card">
+        <h2>Business Information</h2>
+        <div class="contractor-detail-grid">
+          <div class="contractor-detail-box"><span>Company Name</span><strong>${contractorEscape(c.name)}</strong></div>
+          <div class="contractor-detail-box"><span>PCAB License No.</span><strong>${contractorEscape(c.pcab_license_no || 'Not on file')}</strong></div>
+          <div class="contractor-detail-box"><span>PCAB Classification</span><strong>${contractorEscape(c.pcab_classification || 'Not on file')}</strong></div>
+        </div>
+        <h2 style="margin-top:20px;">Contact Details</h2>
+        <form id="contractorCompanyProfileForm">
+          <div class="form-grid">
+            <div class="form-group">
+              <label>Contact Person</label>
+              <input class="form-input" name="contact_person" value="${contractorEscape(c.contact_person)}">
+            </div>
+            <div class="form-group">
+              <label>Phone</label>
+              <input class="form-input" name="phone" value="${contractorEscape(c.phone)}">
+            </div>
+          </div>
+          <div class="form-group" style="margin-top:12px;">
+            <label>Address</label>
+            <textarea class="form-input" name="address" rows="2">${contractorEscape(c.address)}</textarea>
+          </div>
+          <div class="form-actions">
+            <button class="btn-primary" type="submit">Save Contact Details</button>
+          </div>
+        </form>
+      </article>
+    </section>
+  `;
+
+  document.getElementById('contractorCompanyProfileForm').addEventListener('submit', contractorSubmitCompanyProfile);
+}
+
+async function contractorSubmitCompanyProfile(event) {
+  event.preventDefault();
+  const formEl = event.target;
+  contractorClearFieldErrors(formEl);
+  const form = new FormData(formEl);
+  try {
+    await contractorPostJson('update_profile', {
+      contact_person: form.get('contact_person'),
+      phone: form.get('phone'),
+      address: form.get('address'),
+    });
+    contractorToast('Contact details updated.');
+    await contractorRefreshData();
+    contractorRenderCompanyProfile();
+  } catch (error) {
+    contractorShowFieldErrors(formEl, error.fieldErrors);
+    contractorToast(error.message, 'error');
+  }
+}
+
+function contractorRenderAccreditationStatus() {
+  const page = document.getElementById('page-accreditation-status');
+  const c = contractorState.summary?.contractor || {};
+  const isBlacklisted = Number(c.is_blacklisted || 0) === 1;
+
+  page.innerHTML = `
+    <div class="page-header">
+      <div>
+        <h1 class="page-title">Accreditation Status</h1>
+        <p class="contractor-scope-note">Your standing with the Bids and Awards Committee.</p>
+      </div>
+    </div>
+    ${isBlacklisted ? `
+      <div class="empty-state" style="background:#fef2f2;color:#991b1b;border-radius:8px;padding:16px;margin-bottom:16px;">
+        <strong>Blacklisted</strong> — ${contractorEscape(c.blacklist_reason || 'No reason on file.')}
+        ${c.blacklist_date ? `<br><small>Since ${contractorDate(c.blacklist_date)}</small>` : ''}
+      </div>
+    ` : ''}
+    <div class="contractor-detail-grid">
+      <div class="contractor-detail-box"><span>Application Status</span><strong>${contractorEscape(contractorStatus(c.application_status))}</strong></div>
+      <div class="contractor-detail-box"><span>Account Status</span><strong>${contractorEscape(contractorStatus(c.status))}</strong></div>
+      <div class="contractor-detail-box"><span>PCAB License No.</span><strong>${contractorEscape(c.pcab_license_no || 'Not on file')}</strong></div>
+      <div class="contractor-detail-box"><span>PCAB Classification</span><strong>${contractorEscape(c.pcab_classification || 'Not on file')}</strong></div>
+      <div class="contractor-detail-box"><span>Accredited Since</span><strong>${contractorDate(c.created_at)}</strong></div>
+    </div>
+  `;
+}
+
+const ACCREDITATION_DOCUMENT_TYPES = ['Business Permit', 'DTI/SEC Registration', 'Tax Clearance', 'PCAB License', 'Audited Financial Statement', 'Other'];
+
+function contractorAccreditationDocRowHtml(index) {
+  return `
+    <div class="doc-row" data-doc-index="${index}">
+      <select class="form-input" name="documents[${index}][document_type]">
+        ${ACCREDITATION_DOCUMENT_TYPES.map(type => `<option value="${contractorEscape(type)}">${contractorEscape(type)}</option>`).join('')}
+      </select>
+      <input class="form-input" type="text" name="documents[${index}][title]" placeholder="Document title">
+      <input class="form-input" type="file" name="document_files[${index}]">
+      <button type="button" class="doc-row-remove" aria-label="Remove document row">&times;</button>
+    </div>
+  `;
+}
+
+async function contractorRenderAccreditationDocuments() {
+  const page = document.getElementById('page-accreditation-documents');
+  page.innerHTML = `
+    <div class="page-header">
+      <div>
+        <h1 class="page-title">Accreditation Documents</h1>
+        <p class="contractor-scope-note">Documents submitted with your original application, plus any renewals (e.g. an updated business permit) you upload here for BAC's review.</p>
+      </div>
+    </div>
+    <section class="contractor-layout">
+      <article class="contractor-form-card">
+        <h2>Upload a Renewal or Update</h2>
+        <form id="contractorAccreditationDocForm" enctype="multipart/form-data">
+          <div class="doc-section">
+            <label>Documents</label>
+            <div class="doc-rows" id="accreditationDocRows">${contractorAccreditationDocRowHtml(0)}</div>
+            <button type="button" class="doc-add-btn" id="accreditationDocAddBtn">+ Add another document</button>
+          </div>
+          <div class="form-actions">
+            <button class="btn-primary" type="submit">Submit for Review</button>
+          </div>
+        </form>
+      </article>
+      <article class="contractor-history-card">
+        <h2>Documents on File</h2>
+        <div id="contractorAccreditationDocsList" class="contractor-mini-list"><p class="empty-state">Loading...</p></div>
+      </article>
+    </section>
+  `;
+
+  contractorWireDocRows(document.getElementById('accreditationDocRows'), document.getElementById('accreditationDocAddBtn'));
+  document.getElementById('contractorAccreditationDocForm').addEventListener('submit', contractorSubmitAccreditationDocument);
+  await contractorLoadAccreditationDocuments();
+}
+
+async function contractorLoadAccreditationDocuments() {
+  const container = document.getElementById('contractorAccreditationDocsList');
+  if (!container) return;
+  try {
+    const result = await contractorGet('accreditation_documents');
+    contractorAccreditationState.documents = result.data || [];
+    container.innerHTML = contractorAccreditationState.documents.length ? contractorAccreditationState.documents.map(doc => `
+      <div class="contractor-mini-row">
+        <span>${contractorEscape(doc.document_type)} - ${contractorEscape(doc.title)}</span>
+        <span>${contractorBadge(doc.status)} <a class="document-link" href="${window.BASE_PATH}${contractorEscape(doc.file_path)}" target="_blank" rel="noopener">Open</a></span>
+      </div>
+    `).join('') : '<p class="empty-state">No accreditation documents on file.</p>';
+  } catch (error) {
+    container.innerHTML = '<p class="empty-state">Unable to load documents.</p>';
+  }
+}
+
+async function contractorSubmitAccreditationDocument(event) {
+  event.preventDefault();
+  const formEl = event.target;
+  contractorClearFieldErrors(formEl);
+  const form = new FormData(formEl);
+  try {
+    await contractorPostForm('upload_accreditation_document', form);
+    contractorToast('Document(s) submitted for BAC review.');
+    formEl.reset();
+    await contractorLoadAccreditationDocuments();
+  } catch (error) {
+    contractorShowFieldErrors(formEl, error.fieldErrors);
+    contractorToast(error.message, 'error');
+  }
+}
+
+/* ---- Procurement / Bidding ----------------------------------------------- */
+
+async function contractorRenderOpenBiddings() {
+  const page = document.getElementById('page-open-biddings');
+  page.innerHTML = `
+    <div class="page-header">
+      <div>
+        <h1 class="page-title">Available Bidding Projects</h1>
+        <p class="contractor-scope-note">Projects currently open for bidding, with their submission deadline.</p>
+      </div>
+    </div>
+    <div id="contractorOpenBiddingsList" class="contractor-stack"><p class="empty-state">Loading...</p></div>
+  `;
+
+  const container = document.getElementById('contractorOpenBiddingsList');
+  try {
+    const result = await contractorGet('list_open_biddings');
+    contractorBiddingState.openBiddings = result.data || [];
+
+    container.innerHTML = contractorBiddingState.openBiddings.length ? contractorBiddingState.openBiddings.map(item => `
+      <article class="contractor-panel">
+        <div class="contractor-panel-head">
+          <h2>${contractorEscape(item.project_code)} - ${contractorEscape(item.name)}</h2>
+          ${item.my_bid_id ? contractorBadge(item.my_bid_status, 'Bid submitted') : ''}
+        </div>
+        <div class="contractor-detail-grid">
+          <div class="contractor-detail-box"><span>Location</span><strong>${contractorEscape(item.location || '-')}</strong></div>
+          <div class="contractor-detail-box"><span>Approved Budget</span><strong>${contractorFullMoney(item.budget)}</strong></div>
+          <div class="contractor-detail-box"><span>Reference No.</span><strong>${contractorEscape(item.reference_no)}</strong></div>
+          <div class="contractor-detail-box"><span>Bid Deadline</span><strong>${item.deadline ? contractorDate(item.deadline) : 'No deadline set'}</strong></div>
+        </div>
+        <div class="contractor-card-actions">
+          ${item.my_bid_id
+            ? `<span class="contractor-scope-note">Your bid: ${contractorFullMoney(item.my_bid_amount)}</span>`
+            : `<button class="btn-primary btn-compact" type="button" onclick="contractorOpenBidForm(${item.project_id})">Submit Bid</button>`}
+        </div>
+      </article>
+    `).join('') : '<p class="empty-state">No projects are currently open for bidding.</p>';
+  } catch (error) {
+    container.innerHTML = '<p class="empty-state">Unable to load open biddings.</p>';
+  }
+}
+
+function contractorOpenBidForm(projectId) {
+  const item = (contractorBiddingState.openBiddings || []).find(p => p.project_id === projectId);
+  if (!item) {
+    contractorToast('Project not found.', 'error');
+    return;
+  }
+
+  contractorOpenModal(`Submit Bid — ${item.project_code}`, `
+    <form id="contractorBidForm">
+      <div class="contractor-decision-list" style="margin-bottom:12px;">
+        <div class="contractor-detail-box"><span>Project</span><strong>${contractorEscape(item.name)}</strong></div>
+        <div class="contractor-detail-box"><span>Approved Budget</span><strong>${contractorFullMoney(item.budget)}</strong></div>
+      </div>
+      <div class="form-group">
+        <label>Bid Amount</label>
+        <input class="form-input" type="number" min="1" step="0.01" name="bid_amount" required>
+      </div>
+      <div class="form-group" style="margin-top:12px;">
+        <label>Proposed Delivery Days</label>
+        <input class="form-input" type="number" min="1" name="delivery_days" placeholder="Optional">
+      </div>
+      <div class="form-group" style="margin-top:12px;">
+        <label>Remarks</label>
+        <textarea class="form-input" name="remarks" rows="3" placeholder="Optional"></textarea>
+      </div>
+      <div class="form-actions">
+        <button class="btn-secondary" type="button" onclick="contractorCloseModal()">Cancel</button>
+        <button class="btn-primary" type="submit">Submit Bid</button>
+      </div>
+    </form>
+  `);
+
+  document.getElementById('contractorBidForm').addEventListener('submit', async event => {
+    event.preventDefault();
+    const formEl = event.target;
+    contractorClearFieldErrors(formEl);
+    const form = new FormData(formEl);
+    try {
+      await contractorPostJson('submit_bid', {
+        project_id: projectId,
+        bid_amount: form.get('bid_amount'),
+        delivery_days: form.get('delivery_days'),
+        remarks: form.get('remarks'),
+      });
+      contractorCloseModal();
+      contractorToast('Bid submitted.');
+      await contractorRenderOpenBiddings();
+    } catch (error) {
+      contractorShowFieldErrors(formEl, error.fieldErrors);
+      contractorToast(error.message, 'error');
+    }
+  });
+}
+
+async function contractorEnsureMyBidsLoaded() {
+  if (contractorBiddingState.myBids === null) {
+    const result = await contractorGet('my_bids');
+    contractorBiddingState.myBids = result.data || [];
+  }
+  return contractorBiddingState.myBids;
+}
+
+function contractorBidRow(bid) {
+  return `
+    <div class="contractor-mini-row">
+      <span>${contractorEscape(bid.project_code)} - ${contractorEscape(bid.project_name)} (${contractorFullMoney(bid.bid_amount)})</span>
+      ${contractorBadge(bid.status)}
+    </div>
+  `;
+}
+
+async function contractorRenderMyBids() {
+  const page = document.getElementById('page-my-bids');
+  page.innerHTML = `
+    <div class="page-header">
+      <div>
+        <h1 class="page-title">My Submitted Bids</h1>
+        <p class="contractor-scope-note">Bids you've submitted that BAC hasn't decided on yet.</p>
+      </div>
+    </div>
+    <div id="contractorMyBidsList" class="contractor-mini-list"><p class="empty-state">Loading...</p></div>
+  `;
+
+  const container = document.getElementById('contractorMyBidsList');
+  try {
+    const bids = await contractorEnsureMyBidsLoaded();
+    const pending = bids.filter(b => ['submitted', 'for_review'].includes(b.status));
+    container.innerHTML = pending.length ? pending.map(contractorBidRow).join('') : '<p class="empty-state">No pending bids.</p>';
+  } catch (error) {
+    container.innerHTML = '<p class="empty-state">Unable to load bids.</p>';
+  }
+}
+
+async function contractorRenderBidResults() {
+  const page = document.getElementById('page-bid-results');
+  page.innerHTML = `
+    <div class="page-header">
+      <div>
+        <h1 class="page-title">Bid Results</h1>
+        <p class="contractor-scope-note">Bids BAC has already decided on.</p>
+      </div>
+    </div>
+    <div id="contractorBidResultsList" class="contractor-mini-list"><p class="empty-state">Loading...</p></div>
+  `;
+
+  const container = document.getElementById('contractorBidResultsList');
+  try {
+    const bids = await contractorEnsureMyBidsLoaded();
+    const decided = bids.filter(b => ['recommended', 'rejected'].includes(b.status));
+    container.innerHTML = decided.length ? decided.map(contractorBidRow).join('') : '<p class="empty-state">No bid decisions yet.</p>';
+  } catch (error) {
+    container.innerHTML = '<p class="empty-state">Unable to load bid results.</p>';
+  }
+}
+
+/* ---- Projects ------------------------------------------------------------ */
+
+async function contractorRenderProjectTimeline(selectedProjectId = '') {
+  const page = document.getElementById('page-project-timeline');
+  page.innerHTML = `
+    <div class="page-header">
+      <div>
+        <h1 class="page-title">Project Timeline</h1>
+        <p class="contractor-scope-note">Milestone schedule for one assigned project at a time.</p>
+      </div>
+    </div>
+    <div class="form-group" style="max-width:420px;">
+      <label>Project</label>
+      <select class="form-input" id="contractorTimelineProjectSelect">${contractorProjectOptions(selectedProjectId)}</select>
+    </div>
+    <div id="contractorTimelineBody" class="contractor-stack"></div>
+  `;
+
+  const select = document.getElementById('contractorTimelineProjectSelect');
+  const loadTimeline = async projectId => {
+    const body = document.getElementById('contractorTimelineBody');
+    if (!projectId) {
+      body.innerHTML = '<p class="empty-state">No assigned projects yet.</p>';
+      return;
+    }
+    body.innerHTML = '<p class="empty-state">Loading...</p>';
+    try {
+      const response = await contractorGet('project', { id: projectId });
+      const project = response.data;
+      body.innerHTML = `
+        <article class="contractor-panel">
+          <div class="contractor-detail-grid">
+            <div class="contractor-detail-box"><span>Start Date</span><strong>${contractorDate(project.start_date)}</strong></div>
+            <div class="contractor-detail-box"><span>Target End Date</span><strong>${contractorDate(project.end_date)}</strong></div>
+            <div class="contractor-detail-box"><span>Status</span><strong>${contractorStatus(project.status)}</strong></div>
+          </div>
+          <h4 style="margin:16px 0 8px;color:#1e293b;">Milestones</h4>
+          <div class="contractor-mini-list">
+            ${project.milestones.length ? project.milestones.map(m => `
+              <div class="contractor-mini-row">
+                <span>${contractorEscape(m.title)} — due ${contractorDate(m.due_date)}</span>
+                <strong>${Number(m.completed) === 1 ? 'Done' : 'Open'}</strong>
+              </div>
+            `).join('') : '<p class="empty-state">No milestones recorded for this project.</p>'}
+          </div>
+        </article>
+      `;
+    } catch (error) {
+      body.innerHTML = '<p class="empty-state">Unable to load project timeline.</p>';
+    }
+  };
+
+  select.addEventListener('change', () => loadTimeline(select.value));
+  await loadTimeline(select.value);
+}
+
+/* ---- Project Execution ---------------------------------------------------- */
+
+async function contractorRenderProgressUpdates() {
+  const page = document.getElementById('page-progress-updates');
+  page.innerHTML = `
+    <div class="page-header">
+      <div>
+        <h1 class="page-title">Progress Updates</h1>
+        <p class="contractor-scope-note">A quick chronological view of your logged progress. Use Accomplishment Reports to submit a new one.</p>
+      </div>
+      <button class="btn-primary" type="button" onclick="contractorShowPage('accomplishment-report')">Submit New Report</button>
+    </div>
+    <div id="contractorProgressUpdatesList" class="contractor-mini-list"><p class="empty-state">Loading...</p></div>
+  `;
+
+  const container = document.getElementById('contractorProgressUpdatesList');
+  try {
+    const result = await contractorGet('reports', { page: 1, per_page: 25 });
+    container.innerHTML = result.data.length ? result.data.map(report => `
+      <div class="contractor-mini-row">
+        <span>${contractorDate(report.report_date)} — ${contractorEscape(report.project_code)}</span>
+        <strong>${Number(report.progress_percent || 0)}%</strong>
+      </div>
+    `).join('') : '<p class="empty-state">No progress logged yet.</p>';
+  } catch (error) {
+    container.innerHTML = '<p class="empty-state">Unable to load progress updates.</p>';
+  }
+}
+
+async function contractorRenderSitePhotos() {
+  const page = document.getElementById('page-site-photos');
+  page.innerHTML = `
+    <div class="page-header">
+      <div>
+        <h1 class="page-title">Site Photos</h1>
+        <p class="contractor-scope-note">Accomplishment photos uploaded through Supporting Documents.</p>
+      </div>
+      <button class="btn-primary" type="button" onclick="contractorShowPage('supporting-documents')">Upload Photos</button>
+    </div>
+    <div id="contractorSitePhotosGrid" class="contractor-photo-grid"><p class="empty-state">Loading...</p></div>
+  `;
+
+  const container = document.getElementById('contractorSitePhotosGrid');
+  try {
+    const result = await contractorGet('documents', { page: 1, per_page: 50, type: 'Accomplishment Photo' });
+    container.innerHTML = result.data.length ? result.data.map(doc => `
+      <a class="contractor-photo-card" href="${window.BASE_PATH}${contractorEscape(doc.file_path)}" target="_blank" rel="noopener">
+        <img src="${window.BASE_PATH}${contractorEscape(doc.file_path)}" alt="${contractorEscape(doc.title)}" loading="lazy">
+        <span>${contractorEscape(doc.project_code)} — ${contractorEscape(doc.title)}</span>
+      </a>
+    `).join('') : '<p class="empty-state">No site photos uploaded yet.</p>';
+  } catch (error) {
+    container.innerHTML = '<p class="empty-state">Unable to load site photos.</p>';
+  }
+}
+
+/* ---- Payments -------------------------------------------------------------- */
+
+function contractorRenderPaymentRequests() {
+  const page = document.getElementById('page-payment-requests');
+  const pending = contractorState.payments.filter(p => p.source === 'request' && ['submitted', 'under_review'].includes(p.status));
+
+  page.innerHTML = `
+    <div class="page-header">
+      <div>
+        <h1 class="page-title">Payment Requests</h1>
+        <p class="contractor-scope-note">Requests you've made that are still awaiting review.</p>
+      </div>
+      <button class="btn-primary" type="button" onclick="contractorOpenPaymentRequestForm()">Request Payment</button>
+    </div>
+    <div class="contractor-mini-list">
+      ${pending.length ? pending.map(payment => `
+        <div class="contractor-mini-row">
+          <span>${contractorEscape(payment.project_code)} - ${contractorEscape(payment.billing_no || '')}</span>
+          <span>${contractorFullMoney(payment.requested_amount)} ${contractorBadge(payment.status, payment.label)}</span>
+        </div>
+      `).join('') : '<p class="empty-state">No pending payment requests.</p>'}
+    </div>
+  `;
+}
+
+function contractorRenderPaymentHistory() {
+  const page = document.getElementById('page-payment-history');
+  const history = contractorState.payments.filter(p => p.source === 'request' && ['paid', 'rejected'].includes(p.status));
+
+  page.innerHTML = `
+    <div class="page-header">
+      <div>
+        <h1 class="page-title">Payment History</h1>
+        <p class="contractor-scope-note">Payment requests that have already been decided.</p>
+      </div>
+    </div>
+    <div class="table-card">
+      <table class="data-table">
+        <thead><tr><th>Project</th><th>Billing No.</th><th>Amount</th><th>Submitted</th><th>Status</th></tr></thead>
+        <tbody>
+          ${history.length ? history.map(payment => `
+            <tr>
+              <td>${contractorEscape(payment.project_code)}</td>
+              <td>${contractorEscape(payment.billing_no || '-')}</td>
+              <td>${contractorFullMoney(payment.requested_amount)}</td>
+              <td>${contractorDate(payment.submitted_at)}</td>
+              <td>${contractorBadge(payment.status, payment.label)}</td>
+            </tr>
+          `).join('') : '<tr><td colspan="5"><p class="empty-state">No decided payment requests yet.</p></td></tr>'}
+        </tbody>
+      </table>
+    </div>
+  `;
+}
+
+/* ---- Performance ------------------------------------------------------------ */
+
+async function contractorEnsurePerformanceLoaded() {
+  if (contractorPerformanceState.data === null) {
+    contractorPerformanceState.data = await contractorGet('performance');
+  }
+  return contractorPerformanceState.data;
+}
+
+async function contractorRenderPerformanceRating() {
+  const page = document.getElementById('page-performance-rating');
+  page.innerHTML = `
+    <div class="page-header">
+      <div>
+        <h1 class="page-title">Performance Rating</h1>
+        <p class="contractor-scope-note">Modeled on DPWH's Constructors' Performance Evaluation System.</p>
+      </div>
+    </div>
+    <div id="contractorPerformanceBody"><p class="empty-state">Loading...</p></div>
+  `;
+
+  const body = document.getElementById('contractorPerformanceBody');
+  try {
+    const data = await contractorEnsurePerformanceLoaded();
+    const componentLabels = { completion: 'Completion Rate', delay: 'Delay Record', issues: 'Issue Reports', financial: 'Financial Discipline' };
+    body.innerHTML = `
+      <div class="contractor-detail-grid">
+        <div class="contractor-detail-box"><span>Overall Score</span><strong>${data.score}/100</strong></div>
+      </div>
+      <h4 style="margin:16px 0 8px;color:#1e293b;">Score Breakdown</h4>
+      <div class="contractor-mini-list">
+        ${Object.entries(data.components).map(([key, value]) => `
+          <div class="contractor-mini-row">
+            <span>${componentLabels[key] || key}</span>
+            <strong>${value.earned === null ? 'Not yet rated' : `${value.earned} / ${value.weight}`}</strong>
+          </div>
+        `).join('')}
+      </div>
+    `;
+  } catch (error) {
+    body.innerHTML = '<p class="empty-state">Unable to load performance rating.</p>';
+  }
+}
+
+async function contractorRenderComplianceRecords() {
+  const page = document.getElementById('page-compliance-records');
+  page.innerHTML = `
+    <div class="page-header">
+      <div>
+        <h1 class="page-title">Compliance Records</h1>
+        <p class="contractor-scope-note">Standing indicators BAC and Admin consider during procurement.</p>
+      </div>
+    </div>
+    <div id="contractorComplianceBody"><p class="empty-state">Loading...</p></div>
+  `;
+
+  const body = document.getElementById('contractorComplianceBody');
+  try {
+    const data = await contractorEnsurePerformanceLoaded();
+    body.innerHTML = `
+      ${data.is_blacklisted ? `
+        <div class="empty-state" style="background:#fef2f2;color:#991b1b;border-radius:8px;padding:16px;margin-bottom:16px;">
+          <strong>Blacklisted</strong> — ${contractorEscape(data.blacklist_reason || 'No reason on file.')}
+        </div>
+      ` : ''}
+      <div class="contractor-detail-grid">
+        <div class="contractor-detail-box"><span>Credibility Score</span><strong>${data.credibility_score} / 5.00</strong></div>
+        <div class="contractor-detail-box"><span>Delay Reports Logged</span><strong>${data.delay_report_count}</strong></div>
+        <div class="contractor-detail-box"><span>Open Issue Reports</span><strong>${data.open_issue_count}</strong></div>
+      </div>
+    `;
+  } catch (error) {
+    body.innerHTML = '<p class="empty-state">Unable to load compliance records.</p>';
+  }
+}
+
+/* ---- Notifications & Profile ------------------------------------------------ */
+
+async function contractorRenderNotificationsPage() {
+  const page = document.getElementById('page-notifications');
+  page.innerHTML = `
+    <div class="page-header">
+      <div>
+        <h1 class="page-title">Notifications</h1>
+        <p class="contractor-scope-note">Every alert sent to your account.</p>
+      </div>
+    </div>
+    <div id="contractorNotificationsList" class="contractor-mini-list"><p class="empty-state">Loading...</p></div>
+  `;
+
+  const container = document.getElementById('contractorNotificationsList');
+  try {
+    const response = await fetch(`${window.BASE_PATH}api/notifications.php?per_page=30`, { headers: CONTRACTOR_CSRF_HEADERS });
+    const result = await response.json();
+    if (!response.ok) throw new Error(result.error || 'Unable to load notifications.');
+
+    container.innerHTML = (result.data || []).length ? result.data.map(notif => `
+      <div class="contractor-mini-row">
+        <span>${notif.is_read ? '' : '<strong>&bull;</strong> '}${contractorEscape(notif.title)} — ${contractorEscape(notif.message)}</span>
+        <span class="contractor-scope-note">${contractorDate(notif.created_at)}</span>
+      </div>
+    `).join('') : '<p class="empty-state">No notifications yet.</p>';
+  } catch (error) {
+    container.innerHTML = '<p class="empty-state">Unable to load notifications.</p>';
+  }
+}
+
+async function contractorRenderProfilePage() {
+  const page = document.getElementById('page-profile');
+  page.innerHTML = `
+    <div class="page-header">
+      <div>
+        <h1 class="page-title">Profile</h1>
+        <p class="contractor-scope-note">Your personal login account — separate from your company's business profile.</p>
+      </div>
+    </div>
+    <section class="contractor-layout">
+      <article class="contractor-form-card">
+        <h2>Account Details</h2>
+        <form id="contractorAccountProfileForm">
+          <div class="form-grid" id="contractorAccountProfileFields"><p class="empty-state">Loading...</p></div>
+          <div class="form-actions">
+            <button class="btn-primary" type="submit">Update Profile</button>
+          </div>
+        </form>
+      </article>
+      <article class="contractor-form-card">
+        <h2>Change Password</h2>
+        <form id="contractorAccountPasswordForm">
+          <div class="form-group">
+            <label>Current Password</label>
+            <input class="form-input" type="password" name="current_password" required>
+          </div>
+          <div class="form-grid" style="margin-top:12px;">
+            <div class="form-group">
+              <label>New Password</label>
+              <input class="form-input" type="password" name="new_password" required minlength="6">
+            </div>
+            <div class="form-group">
+              <label>Confirm Password</label>
+              <input class="form-input" type="password" name="confirm_password" required minlength="6">
+            </div>
+          </div>
+          <div class="form-actions">
+            <button class="btn-primary" type="submit">Change Password</button>
+          </div>
+        </form>
+      </article>
+    </section>
+  `;
+
+  document.getElementById('contractorAccountPasswordForm').addEventListener('submit', submitPasswordForm);
+  document.getElementById('contractorAccountProfileForm').addEventListener('submit', submitProfileForm);
+
+  try {
+    const response = await fetch(USER_API);
+    const result = await response.json();
+    const user = result.data || {};
+    document.getElementById('contractorAccountProfileFields').innerHTML = `
+      <div class="form-group">
+        <label>Full Name</label>
+        <input class="form-input" name="full_name" required value="${contractorEscape(user.full_name)}">
+      </div>
+      <div class="form-group">
+        <label>Email</label>
+        <input class="form-input" type="email" name="email" required value="${contractorEscape(user.email)}">
+      </div>
+      <div class="form-group">
+        <label>Username</label>
+        <input class="form-input" disabled value="${contractorEscape(user.username)}">
+      </div>
+    `;
+  } catch {
+    document.getElementById('contractorAccountProfileFields').innerHTML = '<p class="empty-state">Unable to load profile.</p>';
+  }
+}
+
 function contractorOpenPaymentRequestForm() {
   contractorOpenModal('Submit Payment Request', `
     <form id="contractorPaymentRequestForm">
@@ -667,11 +1439,26 @@ function contractorShowPage(page) {
   });
 
   if (page === 'dashboard') contractorRenderDashboard();
+  if (page === 'company-profile') contractorRenderCompanyProfile();
+  if (page === 'accreditation-status') contractorRenderAccreditationStatus();
+  if (page === 'accreditation-documents') contractorRenderAccreditationDocuments();
+  if (page === 'open-biddings') contractorRenderOpenBiddings();
+  if (page === 'my-bids') contractorRenderMyBids();
+  if (page === 'bid-results') contractorRenderBidResults();
   if (page === 'assigned-projects') contractorRenderAssignedProjects();
-  if (page === 'accomplishment-report') contractorRenderReportPage();
-  if (page === 'supporting-documents') contractorRenderDocumentsPage();
+  if (page === 'project-timeline') contractorRenderProjectTimeline();
   if (page === 'contract-details') contractorRenderContractDetails();
+  if (page === 'progress-updates') contractorRenderProgressUpdates();
+  if (page === 'accomplishment-report') contractorRenderReportPage();
+  if (page === 'site-photos') contractorRenderSitePhotos();
+  if (page === 'supporting-documents') contractorRenderDocumentsPage();
+  if (page === 'payment-requests') contractorRenderPaymentRequests();
   if (page === 'payment-status') contractorRenderPaymentStatus();
+  if (page === 'payment-history') contractorRenderPaymentHistory();
+  if (page === 'performance-rating') contractorRenderPerformanceRating();
+  if (page === 'compliance-records') contractorRenderComplianceRecords();
+  if (page === 'notifications') contractorRenderNotificationsPage();
+  if (page === 'profile') contractorRenderProfilePage();
 }
 
 function contractorGoToReport(projectId = '') {
@@ -844,6 +1631,7 @@ window.contractorGoToReport = contractorGoToReport;
 window.contractorOpenProject = contractorOpenProject;
 window.contractorCloseModal = contractorCloseModal;
 window.contractorOpenPaymentRequestForm = contractorOpenPaymentRequestForm;
+window.contractorOpenBidForm = contractorOpenBidForm;
 window.showProfileSettings = showProfileSettings;
 window.showChangePassword = showChangePassword;
 

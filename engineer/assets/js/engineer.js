@@ -2,6 +2,7 @@
 const ENGINEER_API = window.BASE_PATH + 'engineer/api/portal.php';
 const ENGINEER_WORKFLOW_API = window.BASE_PATH + 'api/workflow.php';
 const ENGINEER_USER_API = window.BASE_PATH + 'api/user.php';
+const ENGINEER_PROJECTS_API = window.BASE_PATH + 'api/projects.php';
 const ENGINEER_CSRF_HEADERS = window.CSRF_TOKEN ? { 'X-CSRF-Token': window.CSRF_TOKEN } : {};
 
 let engineerCurrentPage = 'dashboard';
@@ -97,6 +98,28 @@ async function engineerPostForm(action, formData) {
     method: 'POST',
     headers: { ...ENGINEER_CSRF_HEADERS },
     body: formData,
+  });
+  const data = await response.json();
+  if (!response.ok || data.error) throw engineerErrorFrom(data, response);
+  return data;
+}
+
+/* ---- Shared api/projects.php (Engineering Review, NTP, Completion Inspection,
+   Turnover, document versions — the lifecycle-gate actions the shared endpoint
+   owns, so project data stays one source of truth instead of duplicated here) --- */
+async function engineerGetProjects(action, params = {}) {
+  const qs = new URLSearchParams({ action, ...params }).toString();
+  const response = await fetch(`${ENGINEER_PROJECTS_API}?${qs}`);
+  const data = await response.json();
+  if (!response.ok || data.error) throw engineerErrorFrom(data, response);
+  return data;
+}
+
+async function engineerPostProjects(action, body) {
+  const response = await fetch(`${ENGINEER_PROJECTS_API}?action=${encodeURIComponent(action)}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...ENGINEER_CSRF_HEADERS },
+    body: JSON.stringify(body),
   });
   const data = await response.json();
   if (!response.ok || data.error) throw engineerErrorFrom(data, response);
@@ -220,6 +243,12 @@ function engineerProjectCard(project, compact = false) {
           <button class="btn-secondary btn-compact" type="button" onclick="engineerOpenProject(${project.id})">Details</button>
           <button class="btn-secondary btn-compact" type="button" onclick="engineerShowPage('progress-photos', ${project.id})">Photo</button>
           <button class="btn-primary btn-compact" type="button" onclick="engineerShowPage('status-tracker', ${project.id})">Update Status</button>
+          ${project.status === 'assigned' ? `<button class="btn-primary btn-compact" type="button" onclick="engineerOpenIssueNtp(${project.id})">Issue Notice to Proceed</button>` : ''}
+          ${['active', 'delayed', 'on_hold'].includes(project.status) ? `<button class="btn-secondary btn-compact" type="button" onclick="engineerRequestCompletionInspection(${project.id})">Request Completion Inspection</button>` : ''}
+          ${project.status === 'completion_inspection' ? `
+            <button class="btn-secondary btn-compact" type="button" onclick="engineerOpenCompletionDecision(${project.id}, 'return')">Return (Punch-List)</button>
+            <button class="btn-primary btn-compact" type="button" onclick="engineerOpenCompletionDecision(${project.id}, 'accept')">Accept as Complete</button>
+          ` : ''}
         </div>
       `}
     </article>
@@ -362,6 +391,185 @@ function engineerRenderAssignedProjects() {
       ${engineerState.projects.length ? engineerState.projects.map(project => engineerProjectCard(project)).join('') : '<p class="empty-state">No assigned projects yet.</p>'}
     </div>
   `;
+}
+
+async function engineerRenderEngineeringReviewPage() {
+  const page = document.getElementById('page-engineering-review');
+  page.innerHTML = `
+    <div class="page-header">
+      <div>
+        <h1 class="page-title">Engineering Review</h1>
+        <p class="engineer-scope-note">Newly registered projects awaiting a technical feasibility endorsement, before Budget/HOPE review.</p>
+      </div>
+    </div>
+    <div class="engineer-stack" id="engineeringReviewList"><p class="empty-state">Loading...</p></div>
+  `;
+
+  try {
+    const result = await engineerGetProjects('list', { status: 'draft' });
+    const rows = result.data || [];
+    document.getElementById('engineeringReviewList').innerHTML = rows.length
+      ? rows.map(p => `
+        <article class="engineer-project-card">
+          <div class="engineer-project-card-head">
+            <div>
+              <span class="engineer-project-code">${engineerEscape(p.project_code)}</span>
+              <h3 class="engineer-project-title">${engineerEscape(p.name)}</h3>
+              <p class="engineer-project-location">${engineerEscape(p.location || 'No location set')}</p>
+            </div>
+            ${engineerBadge(p.status)}
+          </div>
+          <div class="engineer-project-meta">
+            <div class="engineer-meta-item"><span>Budget</span><strong>${engineerMoney(p.budget)}</strong></div>
+            <div class="engineer-meta-item"><span>Schedule</span><strong>${engineerDate(p.start_date)} - ${engineerDate(p.end_date)}</strong></div>
+          </div>
+          <div class="engineer-card-actions">
+            <button class="btn-secondary btn-compact" type="button" onclick="engineerOpenProjectPreview(${p.id})">View Details</button>
+            <button class="btn-secondary btn-compact" type="button" onclick="engineerOpenEngineeringDecision(${p.id}, 'return')">Return</button>
+            <button class="btn-secondary btn-compact" type="button" onclick="engineerOpenEngineeringDecision(${p.id}, 'reject')">Reject</button>
+            <button class="btn-primary btn-compact" type="button" onclick="engineerOpenEngineeringDecision(${p.id}, 'endorse')">Endorse</button>
+          </div>
+        </article>
+      `).join('')
+      : '<p class="empty-state">No projects are currently awaiting engineering review.</p>';
+  } catch (error) {
+    document.getElementById('engineeringReviewList').innerHTML = '<p class="empty-state">Failed to load projects.</p>';
+  }
+}
+
+async function engineerOpenProjectPreview(projectId) {
+  try {
+    const project = await engineerGetProjects('single', { id: projectId });
+    engineerOpenModal(`${engineerEscape(project.project_code)} — ${engineerEscape(project.name)}`, `
+      <div class="engineer-detail-grid">
+        <div class="engineer-detail-box"><span>Location</span><strong>${engineerEscape(project.location || '-')}</strong></div>
+        <div class="engineer-detail-box"><span>Budget</span><strong>${engineerMoney(project.budget)}</strong></div>
+        <div class="engineer-detail-box"><span>Schedule</span><strong>${engineerDate(project.start_date)} - ${engineerDate(project.end_date)}</strong></div>
+        <div class="engineer-detail-box"><span>Status</span><strong>${engineerStatus(project.status)}</strong></div>
+      </div>
+      <h4 style="margin: 12px 0 8px; color:#1e293b;">Description</h4>
+      <p style="font-size:.85rem; color:#475569;">${engineerEscape(project.description || 'No description provided.')}</p>
+      <h4 style="margin: 16px 0 8px; color:#1e293b;">Supporting Documents</h4>
+      <div class="engineer-mini-list">
+        ${(project.documents || []).length ? project.documents.map(doc => `
+          <div class="engineer-mini-row">
+            <span><a href="${window.BASE_PATH}${engineerEscape(doc.file_path)}" target="_blank" rel="noopener">${engineerEscape(doc.title)}</a> (${engineerEscape(doc.document_type)})</span>
+            <strong>v${Number(doc.version || 1)}</strong>
+          </div>
+        `).join('') : '<p class="empty-state">No documents attached.</p>'}
+      </div>
+    `);
+  } catch (error) {
+    engineerToast(error.message || 'Failed to load project details.', 'error');
+  }
+}
+
+function engineerOpenEngineeringDecision(id, decision) {
+  const labels = { endorse: 'Endorse', return: 'Return for Revision', reject: 'Reject' };
+  const reasonRequired = decision !== 'endorse';
+
+  engineerOpenModal(`${labels[decision]} Project`, `
+    <form id="engineeringDecisionForm">
+      <div class="form-group">
+        <label>Reason${reasonRequired ? ' *' : ' (optional)'}</label>
+        <textarea name="reason" class="form-input" rows="4" placeholder="Explain the decision" ${reasonRequired ? 'required' : ''}></textarea>
+      </div>
+      <div class="form-actions">
+        <button type="button" class="btn-secondary" onclick="engineerCloseModal()">Cancel</button>
+        <button type="submit" class="btn-primary">Confirm ${labels[decision]}</button>
+      </div>
+    </form>
+  `);
+
+  document.getElementById('engineeringDecisionForm').addEventListener('submit', async event => {
+    event.preventDefault();
+    const reason = new FormData(event.target).get('reason') || '';
+    try {
+      const result = await engineerPostProjects('engineering_review', { project_id: id, decision, reason });
+      engineerToast(`Project ${result.status}.`);
+      engineerCloseModal();
+      engineerRenderEngineeringReviewPage();
+    } catch (error) {
+      engineerToast(error.message || 'Failed to record decision.', 'error');
+    }
+  });
+}
+
+/* ---- Notice to Proceed / Completion Inspection (contextual actions on an
+   already-assigned project — see engineerProjectCard's action buttons) ---- */
+
+function engineerOpenIssueNtp(id) {
+  engineerOpenModal('Issue Notice to Proceed', `
+    <form id="engineerNtpForm">
+      <p style="font-size:.85rem; color:#475569; margin-bottom:12px;">Confirms the site is ready for the contractor to begin. The contract's implementation period starts from today's date, not the award date.</p>
+      <div class="form-group">
+        <label>Notes (optional)</label>
+        <textarea name="notes" class="form-input" rows="3" placeholder="Site readiness notes"></textarea>
+      </div>
+      <div class="form-actions">
+        <button type="button" class="btn-secondary" onclick="engineerCloseModal()">Cancel</button>
+        <button type="submit" class="btn-primary">Confirm &amp; Issue NTP</button>
+      </div>
+    </form>
+  `);
+
+  document.getElementById('engineerNtpForm').addEventListener('submit', async event => {
+    event.preventDefault();
+    const notes = new FormData(event.target).get('notes') || '';
+    try {
+      await engineerPostProjects('issue_ntp', { project_id: id, notes });
+      engineerToast('Notice to Proceed issued.');
+      engineerCloseModal();
+      await engineerRefreshData();
+      engineerShowPage(engineerCurrentPage);
+    } catch (error) {
+      engineerToast(error.message || 'Failed to issue Notice to Proceed.', 'error');
+    }
+  });
+}
+
+async function engineerRequestCompletionInspection(id) {
+  if (!confirm('Submit this project for completion inspection? This should only be done once the final milestone is reached.')) return;
+  try {
+    await engineerPostProjects('request_completion_inspection', { project_id: id });
+    engineerToast('Project submitted for completion inspection.');
+    await engineerRefreshData();
+    engineerShowPage(engineerCurrentPage);
+  } catch (error) {
+    engineerToast(error.message || 'Failed to submit for completion inspection.', 'error');
+  }
+}
+
+function engineerOpenCompletionDecision(id, decision) {
+  const labels = { accept: 'Accept as Complete', return: 'Return with Punch-List' };
+  const reasonRequired = decision === 'return';
+
+  engineerOpenModal(labels[decision], `
+    <form id="engineerCompletionForm">
+      <div class="form-group">
+        <label>${decision === 'return' ? 'Punch-list items *' : 'Notes (optional)'}</label>
+        <textarea name="reason" class="form-input" rows="4" placeholder="${decision === 'return' ? 'List what still needs correction' : 'Final inspection notes'}" ${reasonRequired ? 'required' : ''}></textarea>
+      </div>
+      <div class="form-actions">
+        <button type="button" class="btn-secondary" onclick="engineerCloseModal()">Cancel</button>
+        <button type="submit" class="btn-primary">Confirm</button>
+      </div>
+    </form>
+  `);
+
+  document.getElementById('engineerCompletionForm').addEventListener('submit', async event => {
+    event.preventDefault();
+    const reason = new FormData(event.target).get('reason') || '';
+    try {
+      const result = await engineerPostProjects('completion_decide', { project_id: id, decision, reason });
+      engineerToast(`Project ${result.status}.`);
+      engineerCloseModal();
+      await engineerRefreshData();
+      engineerShowPage(engineerCurrentPage);
+    } catch (error) {
+      engineerToast(error.message || 'Failed to record completion decision.', 'error');
+    }
+  });
 }
 
 function engineerRenderMilestonePage() {
@@ -1014,6 +1222,7 @@ function engineerShowPage(page, selectedProjectId = '') {
 
   if (page === 'dashboard') engineerRenderDashboard();
   if (page === 'assigned-projects') engineerRenderAssignedProjects();
+  if (page === 'engineering-review') engineerRenderEngineeringReviewPage();
   if (page === 'milestone-update') engineerRenderMilestonePage();
   if (page === 'inspection-review') engineerRenderInspectionPage();
   if (page === 'payment-review') engineerRenderPaymentReviewPage();
@@ -1343,6 +1552,11 @@ window.engineerShowPage = engineerShowPage;
 window.engineerOpenProject = engineerOpenProject;
 window.engineerCloseModal = engineerCloseModal;
 window.engineerOpenPaymentReview = engineerOpenPaymentReview;
+window.engineerOpenProjectPreview = engineerOpenProjectPreview;
+window.engineerOpenEngineeringDecision = engineerOpenEngineeringDecision;
+window.engineerOpenIssueNtp = engineerOpenIssueNtp;
+window.engineerRequestCompletionInspection = engineerRequestCompletionInspection;
+window.engineerOpenCompletionDecision = engineerOpenCompletionDecision;
 window.showProfileSettings = showProfileSettings;
 window.showChangePassword = showChangePassword;
 

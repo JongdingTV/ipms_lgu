@@ -31,7 +31,12 @@ $actorId = (int) ($user['user_id'] ?? 0);
 
 const BAC_DOC_MAX_SIZE = 10 * 1024 * 1024;
 const BAC_DOC_EXTENSIONS = ['pdf', 'doc', 'docx', 'xls', 'xlsx', 'png', 'jpg', 'jpeg'];
-const BAC_DOC_OWNER_TYPES = ['project', 'bac_bid'];
+// owner_type='contractor' -> owner_id = contractors.id (post-approval
+// accreditation renewals, e.g. an updated business permit). Distinct from
+// portal.php's list_contractor_applications, which is scoped to brand-new
+// applicants only (application_status='pending') — this queue is for
+// already-accredited contractors' subsequent document updates.
+const BAC_DOC_OWNER_TYPES = ['project', 'bac_bid', 'contractor'];
 
 /** Reused verbatim from superadmin/api/accounts.php's document-row convention. */
 function bacCollectDocumentRows(array $textRows, array $filesField): array
@@ -86,7 +91,7 @@ function bacCleanupFiles(array $relativePaths): void
 
 function bacListDocuments(PDO $db, int $page, int $perPage, string $ownerType, int $ownerId, string $status): array
 {
-    $where = ["d.owner_type IN ('project', 'bac_bid')"];
+    $where = ["d.owner_type IN ('" . implode("', '", BAC_DOC_OWNER_TYPES) . "')"];
     $params = [];
     if ($ownerType !== '') {
         $where[] = 'd.owner_type = ?';
@@ -100,15 +105,23 @@ function bacListDocuments(PDO $db, int $page, int $perPage, string $ownerType, i
         $where[] = 'd.status = ?';
         $params[] = $status;
     }
+    // owner_type='contractor' rows are post-approval updates only — a
+    // brand-new application (application_status='pending') is still reviewed
+    // through the dedicated list_contractor_applications/
+    // review_contractor_application flow in portal.php, not here.
+    $where[] = "(d.owner_type != 'contractor' OR EXISTS (
+        SELECT 1 FROM contractors c WHERE c.id = d.owner_id AND c.application_status = 'approved'
+    ))";
     $whereSql = implode(' AND ', $where);
 
     $select = "SELECT d.id, d.owner_type, d.owner_id, d.document_type, d.title, d.original_name, d.file_path,
                       d.file_size, d.mime_type, d.status, d.remarks, d.created_at, u.full_name AS uploaded_by_name,
-                      p.project_code, p.name AS project_name
+                      p.project_code, p.name AS project_name, ct.name AS contractor_name
                FROM supporting_documents d
                LEFT JOIN users u ON u.id = d.uploaded_by
                LEFT JOIN projects p ON (d.owner_type = 'project' AND p.id = d.owner_id)
                    OR (d.owner_type = 'bac_bid' AND p.id = (SELECT project_id FROM bac_bid_submissions WHERE id = d.owner_id))
+               LEFT JOIN contractors ct ON (d.owner_type = 'contractor' AND ct.id = d.owner_id)
                WHERE $whereSql ORDER BY d.created_at DESC, d.id DESC";
     $count = "SELECT COUNT(*) FROM supporting_documents d WHERE $whereSql";
 
@@ -227,7 +240,7 @@ if ($action === 'review') {
     $decision = (string) $validated['decision'];
     $remarks = trim((string) ($validated['remarks'] ?? ''));
 
-    $stmt = $db->prepare("SELECT id, title, owner_type, owner_id, uploaded_by FROM supporting_documents WHERE id = ? AND owner_type IN ('project', 'bac_bid')");
+    $stmt = $db->prepare("SELECT id, title, owner_type, owner_id, uploaded_by FROM supporting_documents WHERE id = ? AND owner_type IN ('" . implode("', '", BAC_DOC_OWNER_TYPES) . "')");
     $stmt->execute([$documentId]);
     $document = $stmt->fetch();
     if (!$document) {

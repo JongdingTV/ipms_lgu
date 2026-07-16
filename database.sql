@@ -4,7 +4,7 @@ CREATE TABLE users (
     email VARCHAR(100) UNIQUE NOT NULL,
     password_hash VARCHAR(255) NOT NULL,
     full_name VARCHAR(120) NOT NULL,
-    role ENUM('super_admin', 'admin', 'bac', 'engineer', 'contractor', 'citizen') NOT NULL DEFAULT 'citizen',
+    role ENUM('super_admin', 'admin', 'bac', 'engineer', 'contractor', 'citizen', 'hope') NOT NULL DEFAULT 'citizen',
     status ENUM('active', 'inactive') NOT NULL DEFAULT 'active',
     last_login DATETIME NULL,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
@@ -404,14 +404,15 @@ CREATE INDEX idx_feedback_priority ON feedback(priority);
 CREATE INDEX idx_feedback_status ON feedback(status);
 CREATE INDEX idx_feedback_citizen ON feedback(citizen_id);
 
--- Demo passwords: superadmin/admin/citizen = admin123, bac = bac123, engineer = engineer123, contractor = contractor123
+-- Demo passwords: superadmin/admin/citizen/hope = admin123, bac = bac123, engineer = engineer123, contractor = contractor123
 INSERT INTO users (username, email, password_hash, full_name, role, status) VALUES
 ('superadmin', 'superadmin@ipms.local', '$2y$10$2TKc4G0kzPoHoaxpuxtiLuxJexEHos62W5/98pjMxEXaAyrxZ8PWS', 'System Super Admin', 'super_admin', 'active'),
 ('admin', 'admin@ipms.local', '$2y$10$2TKc4G0kzPoHoaxpuxtiLuxJexEHos62W5/98pjMxEXaAyrxZ8PWS', 'Infrastructure Admin', 'admin', 'active'),
 ('bac', 'bac@ipms.local', '$2y$10$7zGMOurLkrd1k9Kkj4w4NeL5402YVTeYO4c.L1zve6aCHG.G4FVjm', 'BAC Secretariat', 'bac', 'active'),
 ('engineer', 'engineer@ipms.local', '$2y$10$VdpOg0pCQbBgBvy/a9JEnepahLOkR7Oy//W6nGfrZKR0XbHNIsAEW', 'Municipal Engineer', 'engineer', 'active'),
 ('contractor', 'contractor@ipms.local', '$2y$10$j1aSpoztS.H6zIHCag.J4O7oQFBh/I3FWa1JysczZaoSWqqz1cwDu', 'Accredited Contractor', 'contractor', 'active'),
-('citizen', 'citizen@ipms.local', '$2y$10$2TKc4G0kzPoHoaxpuxtiLuxJexEHos62W5/98pjMxEXaAyrxZ8PWS', 'Citizen Viewer', 'citizen', 'active');
+('citizen', 'citizen@ipms.local', '$2y$10$2TKc4G0kzPoHoaxpuxtiLuxJexEHos62W5/98pjMxEXaAyrxZ8PWS', 'Citizen Viewer', 'citizen', 'active'),
+('hope', 'hope@ipms.local', '$2y$10$2TKc4G0kzPoHoaxpuxtiLuxJexEHos62W5/98pjMxEXaAyrxZ8PWS', 'Head of Procuring Entity', 'hope', 'active');
 
 INSERT INTO contractors (user_id, name, contact_person, email, phone, performance_score, status) VALUES
 ((SELECT id FROM users WHERE username = 'contractor'), 'JKL Builders', 'Contractor Account', 'contractor@ipms.local', '09171234567', 92, 'active'),

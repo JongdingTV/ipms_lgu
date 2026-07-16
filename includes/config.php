@@ -71,7 +71,7 @@ define('MAIL_USERNAME', envValue('MAIL_USERNAME', 'ipms.systemlgu@gmail.com'));
 define('MAIL_PASSWORD', envValue('MAIL_PASSWORD', '')); // Set your app password in .env
 define('MAIL_ENCRYPTION', envValue('MAIL_ENCRYPTION', 'tls'));
 
-const APP_ROLES = ['super_admin', 'admin', 'bac', 'engineer', 'contractor', 'citizen'];
+const APP_ROLES = ['super_admin', 'admin', 'bac', 'engineer', 'contractor', 'citizen', 'hope'];
 
 const ROLE_LABELS = [
     'super_admin' => 'Super Admin',
@@ -80,6 +80,7 @@ const ROLE_LABELS = [
     'engineer' => 'Engineer',
     'contractor' => 'Contractor',
     'citizen' => 'Citizen / Public User',
+    'hope' => 'HOPE (Head of Procuring Entity)',
 ];
 
 const ROLE_DASHBOARD_PATHS = [
@@ -89,6 +90,7 @@ const ROLE_DASHBOARD_PATHS = [
     'engineer' => '/engineer/dashboard.php',
     'contractor' => '/contractor/dashboard.php',
     'citizen' => '/citizen/dashboard.php',
+    'hope' => '/hope/dashboard.php',
 ];
 
 function appUrl(string $path = ''): string

@@ -2,10 +2,13 @@
 require_once __DIR__ . '/session.php';
 require_once __DIR__ . '/../includes/Settings.php';
 require_once __DIR__ . '/../includes/OTPManager.php';
+require_once __DIR__ . '/../includes/workflow.php';
 
 if (isLoggedIn()) {
     redirectToRoleDashboard();
 }
+
+usersEnsureLifecycleRoles(getDB());
 
 $error = '';
 $status = '';
@@ -31,6 +34,10 @@ $portalRoles = [
         'label' => 'Contractor',
         'description' => 'Delivery partner',
     ],
+    'hope' => [
+        'label' => 'HOPE',
+        'description' => 'Project approval authority',
+    ],
 ];
 
 if (isset($_GET['timeout'])) {
@@ -55,7 +62,7 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
 
         if ($result['success']) {
             $authedUser = $result['user'];
-            $staff2faRoles = ['super_admin', 'admin', 'bac'];
+            $staff2faRoles = ['super_admin', 'admin', 'bac', 'hope'];
 
             if (in_array($authedUser['role'], $staff2faRoles, true) && getSetting('require_staff_2fa', false)) {
                 // authenticateUser() already fully established the session (auth_user +

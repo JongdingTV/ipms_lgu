@@ -19,7 +19,7 @@ require_once __DIR__ . '/sidebar.php';
           <h1 class="page-title">Contractor Dashboard</h1>
           <p class="contractor-scope-note">Assigned project access only.</p>
         </div>
-        <button class="btn-primary" type="button" onclick="contractorGoToReport()">Submit Report</button>
+        <button class="btn-primary" type="button" id="contractorSubmitReportBtn" onclick="contractorGoToReport()">Submit Report</button>
       </div>
 
       <section class="kpi-grid">
@@ -91,34 +91,32 @@ require_once __DIR__ . '/sidebar.php';
         </article>
       </section>
 
-      <section class="contractor-dashboard-grid reveal">
-        <article class="contractor-panel contractor-panel-wide">
-          <div class="contractor-panel-head">
-            <h2>Assigned Projects</h2>
-            <button class="btn-secondary btn-compact" type="button" onclick="contractorShowPage('assigned-projects')">View All</button>
-          </div>
-          <div id="contractorProjectPreview" class="contractor-project-list">
-            <div class="skeleton-group"><div class="skeleton-row"></div><div class="skeleton-row"></div></div>
-          </div>
-        </article>
-
-        <article class="contractor-panel">
-          <div class="contractor-panel-head">
-            <h2>Payment Status</h2>
-            <button class="btn-secondary btn-compact" type="button" onclick="contractorShowPage('payment-status')">Review</button>
-          </div>
-          <div id="contractorPaymentPreview" class="contractor-mini-list">
-            <div class="skeleton-group"><div class="skeleton-row"></div><div class="skeleton-row"></div></div>
-          </div>
-        </article>
-      </section>
+      <!-- Populated entirely by contractorRenderStageWidgets() — the panel set
+           shown here depends on whether summary.has_awarded_projects is true,
+           so no single fixed markup fits both states. -->
+      <section class="contractor-dashboard-grid reveal" id="contractorStageWidgets"></section>
     </section>
 
+    <section id="page-company-profile" class="page-section" style="display:none;"></section>
+    <section id="page-accreditation-status" class="page-section" style="display:none;"></section>
+    <section id="page-accreditation-documents" class="page-section" style="display:none;"></section>
+    <section id="page-open-biddings" class="page-section" style="display:none;"></section>
+    <section id="page-my-bids" class="page-section" style="display:none;"></section>
+    <section id="page-bid-results" class="page-section" style="display:none;"></section>
     <section id="page-assigned-projects" class="page-section" style="display:none;"></section>
-    <section id="page-accomplishment-report" class="page-section" style="display:none;"></section>
-    <section id="page-supporting-documents" class="page-section" style="display:none;"></section>
+    <section id="page-project-timeline" class="page-section" style="display:none;"></section>
     <section id="page-contract-details" class="page-section" style="display:none;"></section>
+    <section id="page-progress-updates" class="page-section" style="display:none;"></section>
+    <section id="page-accomplishment-report" class="page-section" style="display:none;"></section>
+    <section id="page-site-photos" class="page-section" style="display:none;"></section>
+    <section id="page-supporting-documents" class="page-section" style="display:none;"></section>
+    <section id="page-payment-requests" class="page-section" style="display:none;"></section>
     <section id="page-payment-status" class="page-section" style="display:none;"></section>
+    <section id="page-payment-history" class="page-section" style="display:none;"></section>
+    <section id="page-performance-rating" class="page-section" style="display:none;"></section>
+    <section id="page-compliance-records" class="page-section" style="display:none;"></section>
+    <section id="page-notifications" class="page-section" style="display:none;"></section>
+    <section id="page-profile" class="page-section" style="display:none;"></section>
   </main>
 </div>
 

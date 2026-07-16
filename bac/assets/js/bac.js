@@ -528,18 +528,20 @@ async function bacLoadBidsTable() {
 
     table.innerHTML = result.data.length ? `
       <table class="data-table">
-        <thead><tr><th>Project</th><th>Contractor</th><th>Bid Amount</th><th>Variance</th><th>Technical</th><th>Delivery</th><th>Status</th><th>Action</th></tr></thead>
+        <thead><tr><th>Project</th><th>Contractor</th><th>Source</th><th>Bid Amount</th><th>Variance</th><th>Technical</th><th>Delivery</th><th>Status</th><th>Action</th></tr></thead>
         <tbody>
           ${result.data.map(item => `
             <tr>
               <td><strong>${bacEscape(item.project)}</strong><br><small>${bacEscape(item.project_code || '')}</small></td>
               <td>${bacEscape(item.contractor)}</td>
+              <td><span class="badge bac-source-${bacEscape(item.source || 'bac_recorded')}">${item.source === 'contractor' ? 'Contractor-submitted' : 'BAC-recorded'}</span></td>
               <td>${bacMoney(item.bid)}</td>
               <td>${item.variance > 0 ? '+' : ''}${item.variance}%</td>
               <td><strong class="bac-score">${item.technical}</strong></td>
               <td>${item.deliveryDays || '-'} days</td>
               <td>${bacBadge(item.status)}</td>
               <td>
+                <button class="btn-secondary btn-compact" type="button" onclick="bacOpenScoreForm(${item.id})" ${item.status === 'recommended' || item.status === 'rejected' ? 'disabled' : ''}>Score</button>
                 <button class="btn-primary btn-compact" type="button" onclick="bacOpenRecommendationForm(${item.id})" ${item.status === 'recommended' ? 'disabled' : ''}>Recommend</button>
               </td>
             </tr>
@@ -565,7 +567,7 @@ async function bacRenderRecommendation() {
     <div class="page-header">
       <div>
         <h2 class="page-title">Award Recommendation</h2>
-        <p class="bac-scope-note">Recommended awardees are sent back to LGU Admin for official contractor assignment.</p>
+        <p class="bac-scope-note">Recommended awardees are sent to HOPE for the official contract award decision.</p>
       </div>
       <div class="bac-action-strip">
         <button class="btn-secondary" type="button" onclick="bacOpenResolutionPacket()">Resolution Packet</button>
@@ -1125,6 +1127,64 @@ async function bacOpenBidForm() {
   });
 }
 
+/**
+ * Sets a bid's technical score after the fact. Needed because contractor-
+ * submitted bids (source='contractor') arrive with no technical evaluation —
+ * unlike BAC's own manual "Record Bid" form, which asks for one up front —
+ * so BAC needs a way to score them before recommending.
+ */
+function bacOpenScoreForm(bidId) {
+  const bid = bacBidsById[bidId];
+  if (!bid) {
+    bacToast('Bid not found.', 'error');
+    return;
+  }
+
+  bacOpenModal('Set Technical Score', `
+    <form id="bacScoreForm">
+      <div class="bac-decision-list">
+        <div class="bac-decision-item"><span>Project</span><strong>${bacEscape(bid.project)}</strong></div>
+        <div class="bac-decision-item"><span>Contractor</span><strong>${bacEscape(bid.contractor)}</strong></div>
+        <div class="bac-decision-item"><span>Bid Amount</span><strong>${bacMoney(bid.bid)}</strong></div>
+      </div>
+      <div class="form-group" style="margin-top:12px;">
+        <label>Technical Score (0-100)</label>
+        <input class="form-input" type="number" name="technical_score" min="0" max="100" value="${bid.technical || 0}" required>
+      </div>
+      <div class="form-group">
+        <label>Remarks (optional)</label>
+        <textarea class="form-input" name="remarks" rows="2"></textarea>
+      </div>
+      <div class="form-actions">
+        <button class="btn-secondary" type="button" onclick="bacCloseModal()">Cancel</button>
+        <button class="btn-primary" type="submit">Save Score</button>
+      </div>
+    </form>
+  `);
+
+  document.getElementById('bacScoreForm').addEventListener('submit', async event => {
+    event.preventDefault();
+    const form = event.target;
+    bacClearFieldErrors(form);
+    const data = new FormData(form);
+
+    try {
+      await bacPost('score_bid', {
+        bid_id: bidId,
+        technical_score: data.get('technical_score'),
+        remarks: data.get('remarks'),
+      });
+
+      bacCloseModal();
+      bacToast('Technical score saved.');
+      await bacLoadBidsTable();
+    } catch (error) {
+      bacShowFieldErrors(form, error.fieldErrors);
+      bacToast(error.message, 'error');
+    }
+  });
+}
+
 function bacOpenRecommendationForm(bidId) {
   const bid = bacBidsById[bidId];
   if (!bid) {
@@ -1147,7 +1207,7 @@ function bacOpenRecommendationForm(bidId) {
       ${bacDocSectionHtml('Attach award documents (Abstract of Bids, Notice of Award, Board Resolution) — optional, can be added later too')}
       <div class="form-actions">
         <button class="btn-secondary" type="button" onclick="bacCloseModal()">Cancel</button>
-        <button class="btn-primary" type="submit">Send to Admin</button>
+        <button class="btn-primary" type="submit">Send to HOPE</button>
       </div>
     </form>
   `);
@@ -1175,7 +1235,7 @@ function bacOpenRecommendationForm(bidId) {
       }
 
       bacCloseModal();
-      bacToast('Award recommendation sent to LGU Admin.');
+      bacToast('Award recommendation sent to HOPE for approval.');
       await bacRefresh('award-recommendation');
     } catch (error) {
       bacShowFieldErrors(form, error.fieldErrors);
@@ -1365,6 +1425,7 @@ window.bacRefresh = bacRefresh;
 window.bacOpenPublishForm = bacOpenPublishForm;
 window.bacOpenBidForm = bacOpenBidForm;
 window.bacOpenRecommendationForm = bacOpenRecommendationForm;
+window.bacOpenScoreForm = bacOpenScoreForm;
 window.bacOpenResolutionPacket = bacOpenResolutionPacket;
 window.bacOpenDocumentReview = bacOpenDocumentReview;
 window.bacToast = bacToast;

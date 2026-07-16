@@ -3,13 +3,19 @@
  * Shared project workflow helpers.
  *
  * These functions keep the portal handoffs on the same database states:
- * draft -> approved -> bidding -> awarded -> assigned -> active/delayed/completed.
+ * draft -> endorsed -> approved -> bidding -> awarded -> assigned -> active
+ * -> completion_inspection -> completed -> turnover, with returned/cancelled
+ * as exits back to Admin or out of the pipeline entirely at each review
+ * gate. Fund availability is tracked as part of Admin's own Budget &
+ * Resources module, not as a separate approval gate — there is no standalone
+ * Budget Office in this system.
  */
 
 function projectWorkflowStatuses(): array
 {
     return [
         'draft',
+        'endorsed',
         'returned',
         'planning',
         'approved',
@@ -19,7 +25,9 @@ function projectWorkflowStatuses(): array
         'active',
         'delayed',
         'on_hold',
+        'completion_inspection',
         'completed',
+        'turnover',
         'cancelled',
     ];
 }
@@ -41,7 +49,7 @@ function projectWorkflowEnsureProjectStatusSchema(PDO $db): void
             LIMIT 1
         ");
         $type = (string) ($stmt->fetchColumn() ?: '');
-        if ($type !== '' && strpos($type, "'approved'") === false) {
+        if ($type !== '' && strpos($type, "'endorsed'") === false) {
             $db->exec('ALTER TABLE projects MODIFY status ' . projectWorkflowStatusEnumSql() . " DEFAULT 'draft'");
         }
 
@@ -54,7 +62,7 @@ function projectWorkflowEnsureProjectStatusSchema(PDO $db): void
             LIMIT 1
         ");
         $engineerType = (string) ($stmt->fetchColumn() ?: '');
-        if ($engineerType !== '' && strpos($engineerType, "'assigned'") === false) {
+        if ($engineerType !== '' && strpos($engineerType, "'endorsed'") === false) {
             $db->exec('ALTER TABLE engineer_status_updates MODIFY status ' . projectWorkflowStatusEnumSql() . " NOT NULL DEFAULT 'active'");
         }
     } catch (Throwable $e) {
@@ -68,8 +76,102 @@ function projectWorkflowEnsureProjectStatusSchema(PDO $db): void
         $db->exec("ALTER TABLE projects ADD COLUMN IF NOT EXISTS approved_by INT NULL AFTER created_by");
         $db->exec("ALTER TABLE projects ADD COLUMN IF NOT EXISTS approved_at DATETIME NULL AFTER approved_by");
         $db->exec("ALTER TABLE projects ADD COLUMN IF NOT EXISTS rejection_reason TEXT NULL AFTER approved_at");
+
+        // Phase 1 lifecycle expansion: Engineering Review, Notice to Proceed,
+        // Completion Inspection, Turnover — each stamped with who/when/why so
+        // the same audit-trail convention as approval covers these too.
+        $db->exec("ALTER TABLE projects ADD COLUMN IF NOT EXISTS engineering_reviewed_by INT NULL AFTER rejection_reason");
+        $db->exec("ALTER TABLE projects ADD COLUMN IF NOT EXISTS engineering_reviewed_at DATETIME NULL AFTER engineering_reviewed_by");
+        $db->exec("ALTER TABLE projects ADD COLUMN IF NOT EXISTS engineering_remarks TEXT NULL AFTER engineering_reviewed_at");
+        $db->exec("ALTER TABLE projects ADD COLUMN IF NOT EXISTS ntp_issued_by INT NULL AFTER engineering_remarks");
+        $db->exec("ALTER TABLE projects ADD COLUMN IF NOT EXISTS ntp_issued_at DATETIME NULL AFTER ntp_issued_by");
+        $db->exec("ALTER TABLE projects ADD COLUMN IF NOT EXISTS ntp_notes TEXT NULL AFTER ntp_issued_at");
+        $db->exec("ALTER TABLE projects ADD COLUMN IF NOT EXISTS completion_inspected_by INT NULL AFTER ntp_notes");
+        $db->exec("ALTER TABLE projects ADD COLUMN IF NOT EXISTS completion_inspected_at DATETIME NULL AFTER completion_inspected_by");
+        $db->exec("ALTER TABLE projects ADD COLUMN IF NOT EXISTS completion_remarks TEXT NULL AFTER completion_inspected_at");
+        $db->exec("ALTER TABLE projects ADD COLUMN IF NOT EXISTS turnover_by INT NULL AFTER completion_remarks");
+        $db->exec("ALTER TABLE projects ADD COLUMN IF NOT EXISTS turnover_at DATETIME NULL AFTER turnover_by");
+        $db->exec("ALTER TABLE projects ADD COLUMN IF NOT EXISTS turnover_office VARCHAR(180) NULL AFTER turnover_at");
+        $db->exec("ALTER TABLE projects ADD COLUMN IF NOT EXISTS turnover_notes TEXT NULL AFTER turnover_office");
+
+        // A standalone Budget Office approval gate was tried and then folded
+        // back into Admin's own Budget & Resources module — drop the columns
+        // that only that removed gate ever wrote to, so nothing dead lingers.
+        $db->exec("ALTER TABLE projects DROP COLUMN IF EXISTS budget_verified_by");
+        $db->exec("ALTER TABLE projects DROP COLUMN IF EXISTS budget_verified_at");
+        $db->exec("ALTER TABLE projects DROP COLUMN IF EXISTS budget_verification_remarks");
+        $db->exec("ALTER TABLE projects DROP COLUMN IF EXISTS fund_source");
+        $db->exec("ALTER TABLE projects DROP COLUMN IF EXISTS certificate_number");
+
+        // GIS map coordinates — same DECIMAL(10,7) precision feedback already
+        // uses for its own optional map pin.
+        $db->exec("ALTER TABLE projects ADD COLUMN IF NOT EXISTS latitude DECIMAL(10,7) NULL AFTER turnover_notes");
+        $db->exec("ALTER TABLE projects ADD COLUMN IF NOT EXISTS longitude DECIMAL(10,7) NULL AFTER latitude");
     } catch (Throwable $e) {
     }
+}
+
+/**
+ * Self-healing version-history columns for supporting_documents. A re-upload
+ * against an existing document creates a new row (version = old + 1,
+ * root_document_id shared across the whole chain, is_current flips to the
+ * newest row) rather than overwriting the file in place, so every prior
+ * version stays on disk and queryable.
+ */
+function documentsEnsureVersioningSchema(PDO $db): void
+{
+    try {
+        $db->exec("ALTER TABLE supporting_documents ADD COLUMN IF NOT EXISTS version INT UNSIGNED NOT NULL DEFAULT 1 AFTER mime_type");
+        $db->exec("ALTER TABLE supporting_documents ADD COLUMN IF NOT EXISTS root_document_id INT NULL AFTER version");
+        $db->exec("ALTER TABLE supporting_documents ADD COLUMN IF NOT EXISTS is_current TINYINT(1) NOT NULL DEFAULT 1 AFTER root_document_id");
+        $db->exec("ALTER TABLE supporting_documents ADD COLUMN IF NOT EXISTS superseded_at DATETIME NULL AFTER is_current");
+        $db->exec("UPDATE supporting_documents SET root_document_id = id WHERE root_document_id IS NULL");
+    } catch (Throwable $e) {
+    }
+}
+
+/**
+ * Uploads a new version of an existing supporting_documents row: inserts a
+ * new row carrying the same owner/type/title with the incremented version
+ * number, marks the prior row superseded, and returns the new row's id.
+ * Throws on any failure — caller is expected to already be inside its own
+ * try/transaction (matches how project document uploads already work).
+ */
+function documentsCreateNewVersion(PDO $db, int $existingDocId, array $storedFile, int $uploadedBy): int
+{
+    $stmt = $db->prepare("SELECT * FROM supporting_documents WHERE id = ? AND is_current = 1");
+    $stmt->execute([$existingDocId]);
+    $current = $stmt->fetch();
+    if (!$current) {
+        throw new RuntimeException('Document not found or not the current version.');
+    }
+
+    $rootId = (int) ($current['root_document_id'] ?: $current['id']);
+    $nextVersion = (int) $current['version'] + 1;
+
+    $db->prepare("
+        INSERT INTO supporting_documents
+            (owner_type, owner_id, document_type, title, original_name, file_path, file_size, mime_type, version, root_document_id, is_current, uploaded_by, status)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, 'pending')
+    ")->execute([
+        $current['owner_type'],
+        $current['owner_id'],
+        $current['document_type'],
+        $current['title'],
+        $storedFile['original_name'],
+        $storedFile['stored_path'],
+        $storedFile['file_size'],
+        $storedFile['mime_type'],
+        $nextVersion,
+        $rootId,
+        $uploadedBy,
+    ]);
+    $newId = (int) $db->lastInsertId();
+
+    $db->prepare("UPDATE supporting_documents SET is_current = 0, superseded_at = NOW() WHERE id = ?")
+        ->execute([$existingDocId]);
+
+    return $newId;
 }
 
 /** Self-healing 'application_status' column so an unreviewed contractor application is distinct from an approved business record. */
@@ -102,6 +204,57 @@ function contractorsEnsureApplicationSchema(PDO $db): void
         // this was buried inside an unstructured uploaded file, unqueryable.
         $db->exec("ALTER TABLE contractors ADD COLUMN IF NOT EXISTS pcab_license_no VARCHAR(50) NULL AFTER address");
         $db->exec("ALTER TABLE contractors ADD COLUMN IF NOT EXISTS pcab_classification ENUM('Small B','Small A','Medium B','Medium A','Large B','Large A') NULL AFTER pcab_license_no");
+
+        // These four also exist in database/migrations/implement_panelist_requirements.sql,
+        // but that file isn't guaranteed to have been run against every
+        // deployment of this database — self-heal them here too, the same way
+        // every other schema addition in this file works, rather than relying
+        // on a standalone migration script having been executed by hand.
+        $db->exec("ALTER TABLE contractors ADD COLUMN IF NOT EXISTS credibility_score DECIMAL(3,2) NOT NULL DEFAULT 5.00 AFTER performance_score");
+        $db->exec("ALTER TABLE contractors ADD COLUMN IF NOT EXISTS is_blacklisted TINYINT(1) NOT NULL DEFAULT 0 AFTER status");
+        $db->exec("ALTER TABLE contractors ADD COLUMN IF NOT EXISTS blacklist_reason TEXT NULL AFTER is_blacklisted");
+        $db->exec("ALTER TABLE contractors ADD COLUMN IF NOT EXISTS blacklist_date DATETIME NULL AFTER blacklist_reason");
+    } catch (Throwable $e) {
+    }
+}
+
+/**
+ * Self-healing schema + seed for the 'hope' role (Head of Procuring Entity),
+ * the one lifecycle role added beyond the original six. Widens the
+ * users.role ENUM the first time it's missing 'hope', then seeds one demo
+ * account the same way database.sql seeds the other portal roles (shared
+ * "admin123" hash). A standalone Budget Office role was tried and then
+ * folded back into Admin's own Budget & Resources module — see git history
+ * if that path is ever revisited.
+ */
+function usersEnsureLifecycleRoles(PDO $db): void
+{
+    try {
+        $stmt = $db->query("
+            SELECT COLUMN_TYPE FROM INFORMATION_SCHEMA.COLUMNS
+            WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'users' AND COLUMN_NAME = 'role'
+        ");
+        $columnType = (string) $stmt->fetchColumn();
+
+        if (strpos($columnType, "'hope'") === false) {
+            $db->exec("ALTER TABLE users MODIFY COLUMN role ENUM('super_admin','admin','bac','engineer','contractor','citizen','hope') NOT NULL DEFAULT 'citizen'");
+        }
+
+        $seedHash = '$2y$10$2TKc4G0kzPoHoaxpuxtiLuxJexEHos62W5/98pjMxEXaAyrxZ8PWS';
+        $seedAccounts = [
+            'hope' => ['hope', 'hope@ipms.local', 'Head of Procuring Entity'],
+        ];
+        foreach ($seedAccounts as $role => [$username, $email, $fullName]) {
+            $countStmt = $db->prepare("SELECT COUNT(*) FROM users WHERE role = ?");
+            $countStmt->execute([$role]);
+            $exists = (int) $countStmt->fetchColumn();
+            if ($exists === 0) {
+                $db->prepare("
+                    INSERT INTO users (username, email, password_hash, full_name, role, status)
+                    VALUES (?, ?, ?, ?, ?, 'active')
+                ")->execute([$username, $email, $seedHash, $fullName, $role]);
+            }
+        }
     } catch (Throwable $e) {
     }
 }
@@ -150,6 +303,19 @@ function projectWorkflowEnsureBacTables(PDO $db): void
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
     ");
 
+    // Lets a contractor submit their own bid (source='contractor') instead of
+    // only BAC ever recording one on their behalf (source='bac_recorded').
+    // Wrapped separately from the CREATE TABLEs above: this ALTER can fail on
+    // dirty pre-existing duplicate (project_id, contractor_id) rows, and this
+    // function runs on every contractor/BAC request, so a failure here must
+    // degrade to "constraint didn't attach" rather than a site-wide 500.
+    try {
+        $db->exec("ALTER TABLE bac_bid_submissions ADD COLUMN IF NOT EXISTS source ENUM('bac_recorded','contractor') NOT NULL DEFAULT 'bac_recorded'");
+        $db->exec("ALTER TABLE bac_bid_submissions ADD COLUMN IF NOT EXISTS submitted_by INT NULL");
+        $db->exec("ALTER TABLE bac_bid_submissions ADD UNIQUE INDEX IF NOT EXISTS idx_bac_bid_unique (project_id, contractor_id)");
+    } catch (Throwable $e) {
+    }
+
     $db->exec("
         CREATE TABLE IF NOT EXISTS bac_award_recommendations (
           id INT AUTO_INCREMENT PRIMARY KEY,
@@ -171,6 +337,26 @@ function projectWorkflowEnsureBacTables(PDO $db): void
           CONSTRAINT fk_bac_award_user FOREIGN KEY (recommended_by) REFERENCES users(id) ON DELETE SET NULL
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
     ");
+
+    // HOPE's Contract Award Approval needs a 'rejected' outcome distinct from
+    // 'returned' (send back for reconsideration vs. this bid is out), plus a
+    // place to record HOPE's own required comment and who/when decided —
+    // same self-healing widen pattern usersEnsureLifecycleRoles() uses for
+    // users.role.
+    try {
+        $stmt = $db->query("
+            SELECT COLUMN_TYPE FROM INFORMATION_SCHEMA.COLUMNS
+            WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'bac_award_recommendations' AND COLUMN_NAME = 'status'
+        ");
+        $columnType = (string) $stmt->fetchColumn();
+        if (strpos($columnType, "'rejected'") === false) {
+            $db->exec("ALTER TABLE bac_award_recommendations MODIFY COLUMN status ENUM('recommended','sent_to_admin','approved','returned','rejected') NOT NULL DEFAULT 'sent_to_admin'");
+        }
+        $db->exec("ALTER TABLE bac_award_recommendations ADD COLUMN IF NOT EXISTS hope_remarks TEXT NULL");
+        $db->exec("ALTER TABLE bac_award_recommendations ADD COLUMN IF NOT EXISTS decided_by INT NULL");
+        $db->exec("ALTER TABLE bac_award_recommendations ADD COLUMN IF NOT EXISTS decided_at DATETIME NULL");
+    } catch (Throwable $e) {
+    }
 
     $db->exec("
         CREATE TABLE IF NOT EXISTS bac_procurement_logs (
@@ -275,6 +461,13 @@ function projectWorkflowEnsureRoleConnectionTables(PDO $db): void
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
     ");
 
+    // Only backfill a contract once HOPE has actually approved the award
+    // (bac_award_recommendations.status = 'approved') — this used to also
+    // match 'sent_to_admin'/'recommended', which silently auto-activated a
+    // contract for a recommendation still awaiting HOPE's decision, on
+    // nearly every page load in the system. That's the exact single-signature
+    // gap the HOPE Contract Award Approval flow exists to close, so this
+    // WHERE clause must stay this narrow.
     $db->exec("
         INSERT INTO contracts
             (project_id, bid_submission_id, contractor_id, contract_no, contract_amount, contract_start_date, contract_end_date, status, approved_by)
@@ -289,7 +482,7 @@ function projectWorkflowEnsureRoleConnectionTables(PDO $db): void
                r.recommended_by
         FROM bac_award_recommendations r
         INNER JOIN projects p ON p.id = r.project_id
-        WHERE r.status IN ('sent_to_admin','approved','recommended')
+        WHERE r.status = 'approved'
         ON DUPLICATE KEY UPDATE
             bid_submission_id = VALUES(bid_submission_id),
             contractor_id = VALUES(contractor_id),

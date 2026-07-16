@@ -77,6 +77,7 @@ function bacPortalMapBidRow(array $row): array
         'status' => $row['status'],
         'submitted_at' => $row['submitted_at'],
         'remarks' => $row['remarks'],
+        'source' => $row['source'] ?? 'bac_recorded',
     ];
 }
 
@@ -291,12 +292,15 @@ function bacListActiveContractors(PDO $db): array
 /** Bids not yet recommended — feeds the Award Recommendation queue panel. */
 function bacListCandidateBids(PDO $db): array
 {
+    // Excludes both 'recommended' (already in front of HOPE) and 'rejected'
+    // (HOPE already turned this one down) — only a live, undecided bid
+    // belongs in the recommendation queue.
     return $db->query("
         SELECT b.*, p.project_code, p.name AS project_name, p.budget, c.name AS contractor_name
         FROM bac_bid_submissions b
         INNER JOIN projects p ON p.id = b.project_id
         INNER JOIN contractors c ON c.id = b.contractor_id
-        WHERE b.status != 'recommended'
+        WHERE b.status IN ('submitted', 'for_review')
         ORDER BY b.updated_at DESC, b.id DESC
         LIMIT 10
     ")->fetchAll();
@@ -463,17 +467,20 @@ if ($action === 'bid') {
         respond(['error' => 'Publish a bidding notice before recording bids.'], 422);
     }
 
-    $contractor = $db->prepare("SELECT id, name FROM contractors WHERE id = ? AND status = 'active'");
+    $contractor = $db->prepare("SELECT id, name, is_blacklisted FROM contractors WHERE id = ? AND status = 'active'");
     $contractor->execute([$contractorId]);
     $contractorRow = $contractor->fetch();
     if (!$contractorRow) {
         respond(['error' => 'Active contractor not found.'], 404);
     }
+    if ((int) ($contractorRow['is_blacklisted'] ?? 0) === 1) {
+        respond(['error' => 'This contractor is blacklisted and is not eligible for bidding.'], 422);
+    }
 
     $stmt = $db->prepare("
         INSERT INTO bac_bid_submissions
-            (project_id, contractor_id, bid_amount, technical_score, delivery_days, status, submitted_at, remarks)
-        VALUES (?, ?, ?, ?, ?, 'submitted', ?, ?)
+            (project_id, contractor_id, bid_amount, technical_score, delivery_days, status, submitted_at, remarks, source)
+        VALUES (?, ?, ?, ?, ?, 'submitted', ?, ?, 'bac_recorded')
     ");
     $stmt->execute([
         $projectId,
@@ -488,6 +495,48 @@ if ($action === 'bid') {
 
     projectWorkflowLog($db, 'Contractor bid recorded', $projectId, $contractorRow['name'] . ' submitted a BAC bid.', $actorId ?: null);
     respond(['success' => true, 'id' => $newBidId], 201);
+}
+
+if ($action === 'score_bid') {
+    $validated = Validator::make($body, [
+        'bid_id' => 'required|integer',
+        'technical_score' => 'required|integer|min:0|max:100',
+        'remarks' => 'nullable|string|max:1000',
+    ])->stopOnFailure();
+
+    $bidId = (int) $validated['bid_id'];
+    $technicalScore = max(0, min(100, (int) $validated['technical_score']));
+    $remarks = trim((string) ($validated['remarks'] ?? ''));
+
+    // Scoped to submitted/for_review only — once a bid has been recommended
+    // or rejected, the technical evaluation that fed that decision shouldn't
+    // be editable after the fact (same cutoff bacListCandidateBids already
+    // uses: status != 'recommended').
+    $bidStmt = $db->prepare("
+        SELECT b.id, b.project_id, b.status, p.name AS project_name, c.name AS contractor_name
+        FROM bac_bid_submissions b
+        INNER JOIN projects p ON p.id = b.project_id
+        INNER JOIN contractors c ON c.id = b.contractor_id
+        WHERE b.id = ? AND b.status IN ('submitted', 'for_review')
+    ");
+    $bidStmt->execute([$bidId]);
+    $bid = $bidStmt->fetch();
+    if (!$bid) {
+        respond(['error' => 'Bid not found or already decided.'], 404);
+    }
+
+    $db->prepare("UPDATE bac_bid_submissions SET technical_score = ?, remarks = COALESCE(?, remarks) WHERE id = ?")
+        ->execute([$technicalScore, $remarks !== '' ? $remarks : null, $bidId]);
+
+    projectWorkflowLog(
+        $db,
+        'Bid technical score set',
+        (int) $bid['project_id'],
+        $bid['contractor_name'] . '\'s bid for ' . $bid['project_name'] . ' was scored ' . $technicalScore . '/100.',
+        $actorId ?: null
+    );
+
+    respond(['success' => true]);
 }
 
 if ($action === 'recommend') {
@@ -513,20 +562,36 @@ if ($action === 'recommend') {
         respond(['error' => 'Bid not found.'], 404);
     }
 
+    // Only a live, undecided bid can be recommended — this is what stops BAC
+    // from re-recommending a bid HOPE has already rejected (or re-triggering
+    // a bid that's already sitting in front of HOPE as 'recommended').
+    if (in_array($bid['status'], ['recommended', 'rejected'], true)) {
+        respond(['error' => 'This bid has already been decided and cannot be recommended again.'], 422);
+    }
+
     $projectId = (int) $bid['project_id'];
     $contractorId = (int) $bid['contractor_id'];
 
+    // This only records BAC's recommendation and sends it to HOPE for the
+    // real approval decision (hope/api/portal.php's decide_award action) —
+    // it deliberately does NOT touch projects.status or contracts anymore.
+    // That finalization used to happen right here, single-handedly; moving
+    // it to HOPE's decision is the whole point of the Contract Award
+    // Approval workflow.
     $db->beginTransaction();
     try {
-        $db->prepare("UPDATE bac_bid_submissions SET status = 'for_review' WHERE project_id = ?")
+        // Only revert the bid that was previously recommended for this
+        // project — a bid HOPE has already rejected must stay rejected even
+        // when BAC recommends a different candidate for the same project.
+        $db->prepare("UPDATE bac_bid_submissions SET status = 'for_review' WHERE project_id = ? AND status = 'recommended'")
             ->execute([$projectId]);
         $db->prepare("UPDATE bac_bid_submissions SET status = 'recommended' WHERE id = ?")
             ->execute([$bidId]);
 
         $stmt = $db->prepare("
             INSERT INTO bac_award_recommendations
-                (project_id, bid_submission_id, contractor_id, award_amount, basis, status, recommended_by)
-            VALUES (?, ?, ?, ?, ?, 'sent_to_admin', ?)
+                (project_id, bid_submission_id, contractor_id, award_amount, basis, status, recommended_by, hope_remarks, decided_by, decided_at)
+            VALUES (?, ?, ?, ?, ?, 'sent_to_admin', ?, NULL, NULL, NULL)
             ON DUPLICATE KEY UPDATE
                 bid_submission_id = VALUES(bid_submission_id),
                 contractor_id = VALUES(contractor_id),
@@ -534,6 +599,9 @@ if ($action === 'recommend') {
                 basis = VALUES(basis),
                 status = 'sent_to_admin',
                 recommended_by = VALUES(recommended_by),
+                hope_remarks = NULL,
+                decided_by = NULL,
+                decided_at = NULL,
                 updated_at = CURRENT_TIMESTAMP
         ");
         $stmt->execute([
@@ -545,34 +613,12 @@ if ($action === 'recommend') {
             $actorId ?: null,
         ]);
 
-        $db->prepare("UPDATE projects SET contractor_id = ?, status = 'awarded' WHERE id = ?")
-            ->execute([$contractorId, $projectId]);
-
-        $contractNo = projectWorkflowContractNo($bid);
-        $contract = $db->prepare("
-            INSERT INTO contracts
-                (project_id, bid_submission_id, contractor_id, contract_no, contract_amount, contract_start_date, contract_end_date, status, approved_by)
-            VALUES (?, ?, ?, ?, ?, ?, ?, 'active', ?)
-            ON DUPLICATE KEY UPDATE
-                bid_submission_id = VALUES(bid_submission_id),
-                contractor_id = VALUES(contractor_id),
-                contract_amount = VALUES(contract_amount),
-                contract_start_date = VALUES(contract_start_date),
-                contract_end_date = VALUES(contract_end_date),
-                status = 'active',
-                approved_by = VALUES(approved_by),
-                updated_at = CURRENT_TIMESTAMP
-        ");
-        $contract->execute([
-            $projectId,
-            $bidId,
-            $contractorId,
-            $contractNo,
-            (float) $bid['bid_amount'],
-            $bid['start_date'] ?? null,
-            $bid['end_date'] ?? null,
-            $actorId ?: null,
-        ]);
+        // Bidding is effectively closed the moment BAC recommends — HOPE's
+        // decision works from this fixed candidate, not a moving pool. Both
+        // contractor/api/portal.php's list_open_biddings and submit_bid check
+        // this same column, which is why this line matters beyond hygiene.
+        $db->prepare("UPDATE bac_bid_announcements SET status = 'closed' WHERE project_id = ?")
+            ->execute([$projectId]);
 
         $db->commit();
     } catch (Throwable $e) {
@@ -580,16 +626,7 @@ if ($action === 'recommend') {
         respond(['error' => 'Unable to send award recommendation.'], 500);
     }
 
-    projectWorkflowLog($db, 'Award recommendation sent', $projectId, $bid['contractor_name'] . ' was recommended for contractor assignment.', $actorId ?: null);
-
-    $cu = $db->prepare("SELECT user_id FROM contractors WHERE id = ?");
-    $cu->execute([$contractorId]);
-    notifyUser(
-        (int) ($cu->fetchColumn() ?: 0),
-        'info',
-        'Bid awarded',
-        'Your bid for ' . $bid['project_name'] . ' has been recommended for award.'
-    );
+    projectWorkflowLog($db, 'Award recommendation sent', $projectId, $bid['contractor_name'] . ' was recommended for contractor assignment, pending HOPE approval.', $actorId ?: null);
 
     respond(['success' => true], 201);
 }

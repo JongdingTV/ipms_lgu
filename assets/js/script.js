@@ -225,6 +225,7 @@ function navigate(page) {
     'workflow-management': loadWorkflowManagementPage,
     'budget-monitoring': () => loadBudgetPage('page-budget-monitoring', 'Budget Monitoring'),
     'milestone-overview': loadMilestoneOverviewPage,
+    'gis-map': loadGisMapPage,
     reports: loadReportsPage,
     'ai-risk-insights': loadAIRiskInsightsPage,
     'citizen-feedback': () => loadFeedbackPage('page-citizen-feedback', 'Citizen Feedback Review', false),
@@ -697,10 +698,78 @@ async function openProjectModal(id) {
             `).join('')}
           </div>
         </div>` : ''}
+        <div>
+          <p class="modal-label">SUPPORTING DOCUMENTS</p>
+          <div id="projectDocList" style="display:flex;flex-direction:column;gap:6px;margin-top:6px;">
+            ${p.documents?.length ? p.documents.map(d => `
+              <div style="display:flex;align-items:center;gap:8px;font-size:.8rem;padding:8px 10px;background:#f8fafc;border-radius:6px;">
+                <a href="${window.BASE_PATH || ''}${d.file_path}" target="_blank" rel="noopener" style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${escapeHtml(d.title)}</a>
+                <span style="color:#94a3b8;">${escapeHtml(d.document_type)}</span>
+                <span style="font-family:monospace;color:#64748b;">v${d.version}</span>
+                <button type="button" class="btn-secondary btn-compact" onclick="openDocumentVersions(${d.id}, '${escapeHtml(d.title)}')">History</button>
+                <button type="button" class="btn-secondary btn-compact" onclick="openUploadDocumentVersion(${d.id}, '${escapeHtml(d.title)}')">Upload New Version</button>
+              </div>
+            `).join('') : '<p class="empty-state">No documents attached.</p>'}
+          </div>
+        </div>
       </div>
     `);
   } catch (e) {
     toast('Failed to load project details', 'error');
+  }
+}
+
+async function openDocumentVersions(documentId, title) {
+  try {
+    const res = await get(API.projects, { action: 'document_versions', document_id: documentId });
+    const rows = res.data || [];
+    openModal(`Version History — ${title}`, `
+      <div style="display:flex;flex-direction:column;gap:6px;">
+        ${rows.map(v => `
+          <div style="display:flex;align-items:center;gap:10px;font-size:.82rem;padding:8px 10px;background:#f8fafc;border-radius:6px;">
+            <span style="font-family:monospace;font-weight:700;color:${v.is_current ? '#16a34a' : '#64748b'};">v${v.version}${v.is_current ? ' (current)' : ''}</span>
+            <a href="${window.BASE_PATH || ''}${v.file_path}" target="_blank" rel="noopener" style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${escapeHtml(v.original_name)}</a>
+            <span style="color:#94a3b8;">${formatDate(v.created_at)}</span>
+          </div>
+        `).join('') || '<p class="empty-state">No version history.</p>'}
+      </div>
+    `);
+  } catch (e) {
+    toast('Failed to load version history', 'error');
+  }
+}
+
+function openUploadDocumentVersion(documentId, title) {
+  openModal(`Upload New Version — ${title}`, `
+    <form id="docVersionForm" onsubmit="submitDocumentVersion(event, ${documentId})">
+      <div class="form-group">
+        <label>New File *</label>
+        <input class="form-input" type="file" name="file" required>
+      </div>
+      <div class="form-actions">
+        <button type="button" class="btn-secondary" onclick="closeModal()">Cancel</button>
+        <button type="submit" class="btn-primary">Upload</button>
+      </div>
+    </form>
+  `);
+}
+
+async function submitDocumentVersion(e, documentId) {
+  e.preventDefault();
+  const formData = new FormData(e.target);
+  formData.set('document_id', documentId);
+  try {
+    const res = await fetch(`${API.projects}?action=upload_document_version`, {
+      method: 'POST',
+      headers: { ...CSRF_HEADERS },
+      body: formData,
+    });
+    const data = await res.json();
+    if (data.error) { toast(data.error, 'error'); return; }
+    toast('New version uploaded.');
+    closeModal();
+  } catch {
+    toast('Failed to upload new version', 'error');
   }
 }
 
@@ -850,6 +919,14 @@ async function showProjectForm(id = null) {
           <input name="location" class="form-input" required value="${p?.location||''}" />
         </div>
         <div class="form-group">
+          <label>Latitude <small>(for GIS map, optional)</small></label>
+          <input name="latitude" type="number" step="0.0000001" min="-90" max="90" class="form-input" placeholder="e.g. 14.6760" value="${p?.latitude ?? ''}" />
+        </div>
+        <div class="form-group">
+          <label>Longitude <small>(for GIS map, optional)</small></label>
+          <input name="longitude" type="number" step="0.0000001" min="-180" max="180" class="form-input" placeholder="e.g. 121.0437" value="${p?.longitude ?? ''}" />
+        </div>
+        <div class="form-group">
           <label>Budget (₱) *</label>
           <input name="budget" type="number" step="0.01" class="form-input" required value="${p?.budget||''}" />
         </div>
@@ -907,7 +984,7 @@ async function submitProjectForm(e, id) {
       res = await postForm(API.projects, new FormData(e.target));
     }
     if (res.error) { toast(res.error, 'error'); return; }
-    toast(id ? 'Project updated!' : 'Project registered — awaiting Super Admin approval.');
+    toast(id ? 'Project updated!' : 'Project registered — awaiting Engineering Review.');
     closeModal();
     fetchProjects();
   } catch { toast('Something went wrong', 'error'); }
@@ -941,15 +1018,18 @@ async function loadProjectApprovalPage() {
         oninput="approvalState.search=this.value;approvalState.page=1;fetchApprovalProjects()" />
       <select class="filter-select" onchange="approvalState.status=this.value;approvalState.page=1;fetchApprovalProjects()">
         <option value="">All Projects</option>
-        <option value="draft">Draft / Pending Review</option>
+        <option value="draft">Draft / Awaiting Engineering Review</option>
+        <option value="endorsed">Endorsed / Awaiting HOPE Review</option>
         <option value="returned">Returned for Revision</option>
         <option value="approved">Approved</option>
         <option value="bidding">In BAC Bidding</option>
         <option value="awarded">Awarded</option>
-        <option value="assigned">Assigned</option>
+        <option value="assigned">Assigned / Awaiting Notice to Proceed</option>
         <option value="active">Active Implementation</option>
         <option value="delayed">Delayed</option>
-        <option value="completed">Completed</option>
+        <option value="completion_inspection">Awaiting Completion Inspection</option>
+        <option value="completed">Completed / Awaiting Turnover</option>
+        <option value="turnover">Turned Over</option>
         <option value="cancelled">Rejected / Cancelled</option>
       </select>
     </div>
@@ -988,8 +1068,6 @@ function renderApprovalTable(rows) {
     return;
   }
 
-  const isSuperAdmin = window.CURRENT_USER_ROLE === 'super_admin';
-
   wrap.innerHTML = `
     <table class="data-table">
       <thead>
@@ -1006,11 +1084,11 @@ function renderApprovalTable(rows) {
             <td>${statusBadge(p.status)}</td>
             <td>
               <div class="inline-actions">
-                ${isSuperAdmin ? `
-                  <button class="btn-primary btn-compact" onclick="openProjectDecisionModal(${p.id}, 'approve')" ${p.status === 'approved' ? 'disabled' : ''}>Approve</button>
-                  <button class="btn-secondary btn-compact" onclick="openProjectDecisionModal(${p.id}, 'return')" ${p.status === 'returned' ? 'disabled' : ''}>Return</button>
-                  <button class="btn-secondary btn-compact" onclick="openProjectDecisionModal(${p.id}, 'reject')" ${p.status === 'cancelled' ? 'disabled' : ''}>Reject</button>
-                ` : '<small>Awaiting Super Admin review</small>'}
+                ${p.status === 'draft' ? '<small>Awaiting Engineering Review</small>' : ''}
+                ${p.status === 'endorsed' ? '<small>Awaiting HOPE review</small>' : ''}
+                ${p.status === 'assigned' ? '<small>Awaiting Notice to Proceed</small>' : ''}
+                ${p.status === 'completion_inspection' ? '<small>Awaiting completion inspection</small>' : ''}
+                ${p.status === 'completed' ? `<button class="btn-primary btn-compact" onclick="openTurnoverModal(${p.id}, '${escapeHtml(p.name)}')">Record Turnover</button>` : ''}
                 <button class="btn-secondary btn-compact" onclick="openProjectModal(${p.id})">View</button>
               </div>
             </td>
@@ -1021,36 +1099,41 @@ function renderApprovalTable(rows) {
   `;
 }
 
-function openProjectDecisionModal(id, decision) {
-  const labels = { approve: 'Approve', return: 'Return for Revision', reject: 'Reject' };
-  const reasonRequired = decision !== 'approve';
-
-  openModal(`${labels[decision]} Project`, `
-    <form id="projectDecisionForm" onsubmit="submitProjectDecision(event, ${id}, '${decision}')">
+function openTurnoverModal(id, projectName) {
+  openModal('Record Turnover', `
+    <form id="turnoverForm" onsubmit="submitTurnover(event, ${id})">
+      <p style="font-size:.85rem; color:#64748b; margin-bottom:12px;">Turning over <strong>${projectName}</strong> to the receiving office closes out the project record.</p>
       <div class="form-group">
-        <label>Reason${reasonRequired ? ' *' : ' (optional)'}</label>
-        <textarea name="reason" class="form-input" rows="4" placeholder="Explain the decision" ${reasonRequired ? 'required' : ''}></textarea>
+        <label>Receiving Office / Barangay *</label>
+        <input class="form-input" name="turnover_office" required placeholder="e.g. Barangay 7 / DPWH District Office">
+      </div>
+      <div class="form-group">
+        <label>Notes (optional)</label>
+        <textarea class="form-input" name="notes" rows="3" placeholder="Turnover remarks"></textarea>
       </div>
       <div class="form-actions">
         <button type="button" class="btn-secondary" onclick="closeModal()">Cancel</button>
-        <button type="submit" class="btn-primary">Confirm ${labels[decision]}</button>
+        <button type="submit" class="btn-primary">Confirm Turnover</button>
       </div>
     </form>
   `);
 }
 
-async function submitProjectDecision(e, id, decision) {
+async function submitTurnover(e, id) {
   e.preventDefault();
-  const reason = new FormData(e.target).get('reason') || '';
+  const form = new FormData(e.target);
   try {
-    const res = await postAction(API.projects, 'decide', { project_id: id, decision, reason });
+    const res = await postAction(API.projects, 'turnover', {
+      project_id: id,
+      turnover_office: form.get('turnover_office'),
+      notes: form.get('notes'),
+    });
     if (res.error) { toast(res.error, 'error'); return; }
-    toast(`Project ${res.status}.`);
+    toast('Turnover recorded.');
     closeModal();
     fetchApprovalProjects();
-    loadDashboard();
   } catch {
-    toast('Failed to record decision', 'error');
+    toast('Failed to record turnover', 'error');
   }
 }
 
@@ -1314,6 +1397,130 @@ function renderMilestoneCards(projects) {
       </article>
     `;
   }).join('');
+}
+
+/* ============================================================
+   GIS MAP
+   ============================================================ */
+const GIS_STATUS_COLORS = {
+  completed: '#22c55e',
+  delayed: '#ef4444',
+  cancelled: '#94a3b8',
+  turnover: '#16a34a',
+};
+const GIS_DEFAULT_COLOR = '#3b82f6'; // everything still in progress (active, assigned, bidding, etc.)
+let gisMapInstance = null;
+let gisMarkers = [];
+let gisFilterState = { status: '', contractor_id: '', search: '', min_budget: '', max_budget: '' };
+
+async function loadGisMapPage() {
+  const container = document.getElementById('page-gis-map');
+  if (!container) return;
+
+  let contractors = [];
+  try {
+    const c = await get(API.contractors, { _limit: 100 });
+    contractors = c.data || [];
+  } catch { /* filter dropdown just stays empty */ }
+
+  container.innerHTML = `
+    <div class="page-header">
+      <h2 class="page-title">GIS Map</h2>
+    </div>
+    <div class="filter-bar" style="flex-wrap:wrap;">
+      <input class="filter-input" id="gisSearchInput" placeholder="Search location or project name...">
+      <select class="filter-select" id="gisStatusInput">
+        <option value="">All Statuses</option>
+        <option value="active">Active</option>
+        <option value="delayed">Delayed</option>
+        <option value="completed">Completed</option>
+        <option value="turnover">Turned Over</option>
+        <option value="cancelled">Cancelled</option>
+      </select>
+      <select class="filter-select" id="gisContractorInput">
+        <option value="">All Contractors</option>
+        ${contractors.map(c => `<option value="${c.id}">${escapeHtml(c.name)}</option>`).join('')}
+      </select>
+      <input class="filter-input" id="gisMinBudget" type="number" placeholder="Min budget (₱)" style="max-width:150px;">
+      <input class="filter-input" id="gisMaxBudget" type="number" placeholder="Max budget (₱)" style="max-width:150px;">
+      <button class="btn-secondary btn-compact" id="gisApplyFilters" type="button">Apply</button>
+    </div>
+    <div class="gis-legend" style="display:flex;gap:16px;margin:12px 0;font-size:.78rem;color:var(--text-muted);">
+      <span><span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:${GIS_DEFAULT_COLOR};margin-right:5px;"></span>Active / In Progress</span>
+      <span><span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:${GIS_STATUS_COLORS.delayed};margin-right:5px;"></span>Delayed</span>
+      <span><span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:${GIS_STATUS_COLORS.completed};margin-right:5px;"></span>Completed / Turned Over</span>
+      <span><span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:${GIS_STATUS_COLORS.cancelled};margin-right:5px;"></span>Cancelled</span>
+    </div>
+    <div id="gisMapContainer" style="height:520px;border-radius:var(--radius);overflow:hidden;border:1px solid var(--border);"></div>
+    <p id="gisEmptyState" class="empty-state" style="display:none;">No projects with map coordinates match this filter. Add latitude/longitude when registering or editing a project to place it here.</p>
+  `;
+
+  document.getElementById('gisApplyFilters').addEventListener('click', () => {
+    gisFilterState = {
+      status: document.getElementById('gisStatusInput').value,
+      contractor_id: document.getElementById('gisContractorInput').value,
+      search: document.getElementById('gisSearchInput').value,
+      min_budget: document.getElementById('gisMinBudget').value,
+      max_budget: document.getElementById('gisMaxBudget').value,
+    };
+    fetchGisProjects();
+  });
+
+  await fetchGisProjects();
+}
+
+async function fetchGisProjects() {
+  const emptyState = document.getElementById('gisEmptyState');
+  try {
+    const result = await get(API.projects, { ...gisFilterState, has_coordinates: 1, _limit: 100 });
+    renderGisMap(result.data || []);
+    emptyState.style.display = (result.data || []).length ? 'none' : 'block';
+  } catch {
+    toast('Failed to load projects for the map', 'error');
+  }
+}
+
+function renderGisMap(projects) {
+  if (!gisMapInstance) {
+    gisMapInstance = L.map('gisMapContainer').setView([14.6760, 121.0437], 12); // Quezon City
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      attribution: '&copy; OpenStreetMap contributors',
+      maxZoom: 19,
+    }).addTo(gisMapInstance);
+  }
+
+  gisMarkers.forEach(m => gisMapInstance.removeLayer(m));
+  gisMarkers = [];
+
+  projects.forEach(p => {
+    if (p.latitude === null || p.longitude === null || p.latitude === undefined || p.longitude === undefined) return;
+    const color = GIS_STATUS_COLORS[p.status] || GIS_DEFAULT_COLOR;
+    const marker = L.circleMarker([Number(p.latitude), Number(p.longitude)], {
+      radius: 9,
+      color: '#fff',
+      weight: 2,
+      fillColor: color,
+      fillOpacity: 0.9,
+    }).addTo(gisMapInstance);
+
+    marker.bindPopup(`
+      <strong>${escapeHtml(p.name)}</strong><br>
+      <small>${escapeHtml(p.project_code)} — ${escapeHtml(p.location || '')}</small><br>
+      <small>${formatMoney(p.budget)} · ${formatStatus(p.status)}</small><br>
+      <button style="margin-top:6px;padding:4px 10px;border:none;border-radius:6px;background:#2563eb;color:#fff;cursor:pointer;" onclick="openProjectModal(${p.id})">View Details</button>
+    `);
+    gisMarkers.push(marker);
+  });
+
+  if (gisMarkers.length) {
+    const group = L.featureGroup(gisMarkers);
+    gisMapInstance.fitBounds(group.getBounds().pad(0.2));
+  }
+
+  // Leaflet paints into a container that was just made visible; without this
+  // its internal size calculation runs while the pane is still display:none
+  // and the tiles render into a collapsed 0x0 box.
+  setTimeout(() => gisMapInstance.invalidateSize(), 100);
 }
 
 /* ============================================================
@@ -2048,6 +2255,7 @@ document.addEventListener('DOMContentLoaded', () => {
     <div id="page-workflow-management" class="page-section" style="display:none;"></div>
     <div id="page-budget-monitoring" class="page-section" style="display:none;"></div>
     <div id="page-milestone-overview" class="page-section" style="display:none;"></div>
+    <div id="page-gis-map" class="page-section" style="display:none;"></div>
     <div id="page-reports" class="page-section" style="display:none;"></div>
     <div id="page-ai-risk-insights" class="page-section" style="display:none;"></div>
     <div id="page-citizen-feedback" class="page-section" style="display:none;"></div>

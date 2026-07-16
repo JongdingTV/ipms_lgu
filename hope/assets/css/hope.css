@@ -1,0 +1,209 @@
+/* HOPE (Head of Procuring Entity) portal */
+.hope-risk-box {
+  border-left: 3px solid var(--border);
+  background: var(--bg-muted, #f8fafc);
+  border-radius: 0 8px 8px 0;
+  padding: 10px 14px;
+}
+.hope-risk-high { border-left-color: #ef4444; }
+.hope-risk-medium { border-left-color: #f97316; }
+.hope-risk-low { border-left-color: #22c55e; }
+
+.hope-stat-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: 12px;
+}
+.hope-stat-box {
+  background: var(--card-bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--card-shadow);
+  padding: 14px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.hope-stat-box span {
+  font-size: .72rem;
+  text-transform: uppercase;
+  letter-spacing: .04em;
+  color: var(--text-muted);
+}
+.hope-stat-box strong {
+  font-size: 1.15rem;
+}
+
+.hope-two-col {
+  display: grid;
+  grid-template-columns: minmax(320px, 1fr) minmax(320px, 1fr);
+  gap: 18px;
+}
+@media (max-width: 900px) {
+  .hope-two-col { grid-template-columns: 1fr; }
+}
+
+.hope-content .page-header {
+  align-items: flex-start;
+  gap: 14px;
+}
+
+.hope-scope-note {
+  margin-top: 6px;
+  color: var(--text-muted);
+  font-size: .82rem;
+  line-height: 1.55;
+}
+
+.hope-hero {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 24px;
+  margin-bottom: 18px;
+  padding: 22px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background:
+    linear-gradient(135deg, rgba(30, 58, 138, .1), rgba(246, 184, 63, .12)),
+    var(--card-bg);
+  box-shadow: var(--card-shadow);
+}
+
+.hope-hero-copy {
+  min-width: 0;
+}
+
+.hope-eyebrow {
+  display: inline-flex;
+  margin-bottom: 8px;
+  padding: 5px 8px;
+  border-radius: 8px;
+  background: #eef2ff;
+  color: #3730a3;
+  font-size: .72rem;
+  font-weight: 800;
+}
+
+.hope-hero-mark {
+  width: 112px;
+  height: 112px;
+  object-fit: contain;
+  flex: 0 0 auto;
+  border-radius: 8px;
+  background: #fff;
+  border: 1px solid var(--border);
+  padding: 10px;
+}
+
+.hope-panel-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 14px;
+}
+
+.hope-list,
+.hope-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.hope-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--border);
+  font-size: .82rem;
+  transition: background-color .15s ease;
+}
+
+.hope-row:last-child {
+  border-bottom: 0;
+}
+
+.hope-row:hover {
+  background-color: rgba(37,99,235,.04);
+  border-radius: var(--radius-sm);
+}
+
+.hope-row-main {
+  min-width: 0;
+}
+
+.hope-row-main strong,
+.hope-row-main span {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.hope-row-main span {
+  margin-top: 3px;
+  color: var(--text-muted);
+  font-size: .74rem;
+}
+
+.hope-money {
+  font-family: var(--mono);
+  white-space: nowrap;
+}
+
+.hope-decision-note {
+  font-size: .82rem;
+  color: var(--text-muted);
+  line-height: 1.6;
+  margin-bottom: 14px;
+}
+
+.hope-filters {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.hope-filters input,
+.hope-filters select {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 7px 10px;
+  font-size: .8rem;
+  font-family: var(--font);
+  outline: none;
+  background: var(--card-bg);
+  transition: border-color .2s, box-shadow .2s;
+}
+.hope-filters input:focus,
+.hope-filters select:focus {
+  border-color: var(--primary);
+  box-shadow: 0 0 0 3px rgba(37,99,235,.12);
+}
+
+@media (max-width:640px) {
+  .hope-hero {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .hope-hero-mark {
+    width: 92px;
+    height: 92px;
+  }
+}
+
+@media (max-width:480px) {
+  .hope-row {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+}
+
+/* Motion polish, matching the other portals' hover-lift convention */
+.hope-hero {
+  transition: box-shadow .25s ease;
+}

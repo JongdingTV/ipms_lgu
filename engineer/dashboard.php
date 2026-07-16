@@ -128,6 +128,7 @@ require_once __DIR__ . '/sidebar.php';
     </section>
 
     <section id="page-assigned-projects" class="page-section" style="display:none;"></section>
+    <section id="page-engineering-review" class="page-section" style="display:none;"></section>
     <section id="page-milestone-update" class="page-section" style="display:none;"></section>
     <section id="page-inspection-review" class="page-section" style="display:none;"></section>
     <section id="page-payment-review" class="page-section" style="display:none;"></section>

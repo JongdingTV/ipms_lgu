@@ -236,120 +236,288 @@ $statusChip = [
     </section>
 
     <!-- Submit Feedback Page -->
-    <section id="page-submit-feedback" class="page-section" style="display: none;">
+    <section id="page-submit-feedback" class="page-section fb-page" style="display: none;">
       <div class="page-header">
         <div>
           <h1 class="page-title">Submit Feedback or Complaint</h1>
-          <p class="citizen-scope-note">Pick your district and barangay on the form — or tap them directly on the map.</p>
+          <p class="citizen-scope-note">Tell us what's going on — we'll route it to the right office.</p>
         </div>
       </div>
 
-      <div class="feedback-layout">
-        <div class="form-container feedback-form-card">
-          <?php if ($verificationStatus !== 'verified'): ?>
-            <!-- Feedback is verified-citizens-only; api/submit-feedback.php enforces the same rule server-side. -->
-            <div class="verify-banner" style="margin-bottom: 0;">
-              <div class="verify-banner-icon">
-                <svg width="20" height="20" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M5 9V7a5 5 0 0110 0v2a2 2 0 012 2v5a2 2 0 01-2 2H5a2 2 0 01-2-2v-5a2 2 0 012-2zm8-2v2H7V7a3 3 0 016 0z" clip-rule="evenodd"/></svg>
-              </div>
-              <div class="verify-banner-text">
-                <strong>Verified citizens only</strong>
-                <?php if ($hasIdPhoto): ?>
-                  <p>Your submitted ID is still awaiting review by LGU staff. You'll be able to submit feedback as soon as your account is verified. You can view your submitted ID in your <a href="#" onclick="changePage('profile'); return false;">Profile</a>.</p>
-                <?php else: ?>
-                  <p>Submitting feedback requires a verified account. Upload a photo of a valid government ID in your <a href="#" onclick="changePage('profile'); return false;">Profile</a> to get verified.</p>
-                <?php endif; ?>
-              </div>
-            </div>
-          <?php else: ?>
-          <form id="feedbackForm" method="POST">
-            <div class="location-fieldset">
-              <div class="location-fieldset-head">
-                <svg width="16" height="16" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M5.05 4.05a7 7 0 119.9 9.9L10 18.9l-4.95-4.95a7 7 0 010-9.9zM10 11a2 2 0 100-4 2 2 0 000 4z" clip-rule="evenodd"/></svg>
-                <span>Location in Quezon City</span>
-              </div>
-
-              <div class="form-group">
-                <label for="feedbackDistrict">Step 1 — District *</label>
-                <select id="feedbackDistrict" name="district" required>
-                  <option value="">Select your district</option>
-                  <?php foreach (array_keys(qcDistricts()) as $districtName): ?>
-                    <option value="<?= htmlspecialchars($districtName) ?>"><?= htmlspecialchars($districtName) ?></option>
-                  <?php endforeach; ?>
-                </select>
-              </div>
-
-              <div class="form-group">
-                <label for="feedbackBarangay">Step 2 — Barangay *</label>
-                <select id="feedbackBarangay" name="barangay" required disabled>
-                  <option value="">Select a district first</option>
-                </select>
-                <div class="barangay-alt-hint" id="barangayAltHint"></div>
-              </div>
-
-              <div class="form-group">
-                <label>Step 3 — Exact spot <span style="color: var(--text-muted, #64748b); font-weight: 500;">(optional, recommended)</span></label>
-                <p class="pin-hint">Tap the exact spot on the map to drop a pin — you can drag it to fine-tune. This helps responders find the precise location.</p>
-                <input type="hidden" name="latitude" id="feedbackLat">
-                <input type="hidden" name="longitude" id="feedbackLng">
-              </div>
-
-              <div class="location-pill" id="locationPill" style="display: none;">
-                <svg width="14" height="14" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M5.05 4.05a7 7 0 119.9 9.9L10 18.9l-4.95-4.95a7 7 0 010-9.9zM10 11a2 2 0 100-4 2 2 0 000 4z" clip-rule="evenodd"/></svg>
-                <span id="locationPillText"></span>
-              </div>
-            </div>
-
-            <div class="form-group">
-              <label for="feedbackCategory">Category *</label>
-              <select id="feedbackCategory" name="category" required>
-                <option value="">Select category</option>
-                <?php foreach (feedbackCategories() as $catValue => $catLabel): ?>
-                  <option value="<?= htmlspecialchars($catValue) ?>"><?= htmlspecialchars($catLabel) ?></option>
-                <?php endforeach; ?>
-              </select>
-            </div>
-            <div class="form-group">
-              <label for="feedbackPriority">Priority *</label>
-              <select id="feedbackPriority" name="priority" required>
-                <option value="low">Low</option>
-                <option value="medium" selected>Medium</option>
-                <option value="high">High</option>
-                <option value="urgent">Urgent</option>
-              </select>
-            </div>
-            <div class="form-group">
-              <label for="feedbackMessage">Message *</label>
-              <textarea id="feedbackMessage" name="message" rows="6" placeholder="Describe your concern, report, or complaint about your area..." required></textarea>
-            </div>
-
-            <div class="form-group">
-              <label for="feedbackPhotos">Photos (proof) <span style="color: var(--text-muted, #64748b); font-weight: 500;">— optional, up to 3 images, 3MB each</span></label>
-              <label for="feedbackPhotos" class="id-upload-box feedback-upload-box">
-                <input type="file" id="feedbackPhotos" name="photos[]" accept="image/jpeg,image/png,image/gif,image/webp" multiple>
-                <svg width="26" height="26" viewBox="0 0 20 20" fill="currentColor" class="id-upload-icon"><path fill-rule="evenodd" d="M4 3a2 2 0 00-2 2v10a2 2 0 002 2h12a2 2 0 002-2V5a2 2 0 00-2-2H4zm12 12H4l4-8 3 6 2-4 3 6z" clip-rule="evenodd"/></svg>
-                <p class="id-upload-text">Click to add photos of the issue</p>
-                <p class="id-upload-hint">JPG, PNG, GIF, or WEBP — maximum of 3 photos, 3MB each</p>
-              </label>
-              <div class="feedback-photo-previews" id="feedbackPhotoPreviews"></div>
-              <div class="id-upload-status" id="feedbackPhotoStatus" style="display: none;"></div>
-            </div>
-
-            <button type="submit" class="btn-primary">Submit Feedback</button>
-          </form>
-          <?php endif; ?>
+      <?php if ($verificationStatus !== 'verified'): ?>
+        <!-- Feedback is verified-citizens-only; api/submit-feedback.php enforces the same rule server-side. -->
+        <div class="verify-banner" style="margin-bottom: 0;">
+          <div class="verify-banner-icon">
+            <svg width="20" height="20" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M5 9V7a5 5 0 0110 0v2a2 2 0 012 2v5a2 2 0 01-2 2H5a2 2 0 01-2-2v-5a2 2 0 012-2zm8-2v2H7V7a3 3 0 016 0z" clip-rule="evenodd"/></svg>
+          </div>
+          <div class="verify-banner-text">
+            <strong>Verified citizens only</strong>
+            <?php if ($hasIdPhoto): ?>
+              <p>Your submitted ID is still awaiting review by LGU staff. You'll be able to submit feedback as soon as your account is verified. You can view your submitted ID in your <a href="#" onclick="changePage('profile'); return false;">Profile</a>.</p>
+            <?php else: ?>
+              <p>Submitting feedback requires a verified account. Upload a photo of a valid government ID in your <a href="#" onclick="changePage('profile'); return false;">Profile</a> to get verified.</p>
+            <?php endif; ?>
+          </div>
         </div>
+      <?php else: ?>
 
-        <div class="feedback-map-card">
-          <div class="feedback-map-head">
-            <h3>Quezon City Map</h3>
-            <p>Districts are color-coded. Hover a barangay to see its name; click to choose it — your click also drops a pin on the exact spot.</p>
+      <!-- Top progress indicator -->
+      <div class="fb-progress-top">
+        <span class="fb-progress-label" id="fbProgressLabel">Step 1 of 4</span>
+        <div class="fb-progress-track"><div class="fb-progress-fill" id="fbProgressFill"></div></div>
+      </div>
+
+      <div class="fb-wizard-shell">
+        <!-- LEFT: vertical stepper -->
+        <aside class="fb-stepper" id="fbStepper" aria-label="Feedback submission steps">
+          <div class="fb-step active" data-step="1">
+            <span class="fb-step-dot">1</span>
+            <div class="fb-step-text"><strong>Choose Concern Type</strong><span>What kind of issue is this?</span></div>
           </div>
-          <div id="qcMap" class="qc-map">
-            <div class="qc-map-loading">Loading map…</div>
+          <div class="fb-step" data-step="2">
+            <span class="fb-step-dot">2</span>
+            <div class="fb-step-text"><strong>Fill Information</strong><span>Details, location, photos</span></div>
           </div>
+          <div class="fb-step" data-step="3">
+            <span class="fb-step-dot">3</span>
+            <div class="fb-step-text"><strong>Review</strong><span>Confirm before sending</span></div>
+          </div>
+          <div class="fb-step" data-step="4">
+            <span class="fb-step-dot">4</span>
+            <div class="fb-step-text"><strong>Submit</strong><span>We'll take it from here</span></div>
+          </div>
+        </aside>
+
+        <!-- CENTER + RIGHT -->
+        <div class="fb-body">
+
+          <!-- ============ STEP 1: Concern type ============ -->
+          <div class="fb-panel active" data-panel="1">
+            <div class="fb-panel-main">
+              <h2 class="fb-panel-title">What would you like to report?</h2>
+              <p class="fb-panel-sub">Choose the type of concern so we can route your report to the correct government office.</p>
+
+              <div class="fb-concern-cards">
+                <button type="button" class="fb-concern-card" data-concern="project">
+                  <span class="fb-concern-icon fb-icon-project" aria-hidden="true">🏗️</span>
+                  <span class="fb-concern-name">Infrastructure Project Concern</span>
+                  <span class="fb-concern-desc">Issues related to ongoing or completed government infrastructure projects.</span>
+                  <ul class="fb-concern-examples">
+                    <li>Project delay</li>
+                    <li>Poor workmanship</li>
+                    <li>Contractor complaint</li>
+                    <li>Construction issue</li>
+                    <li>Project transparency</li>
+                    <li>Budget concern</li>
+                  </ul>
+                  <span class="fb-concern-footer fb-footer-ipms">Managed by IPMS</span>
+                </button>
+
+                <button type="button" class="fb-concern-card" data-concern="maintenance">
+                  <span class="fb-concern-icon fb-icon-maintenance" aria-hidden="true">🛠️</span>
+                  <span class="fb-concern-name">Infrastructure Maintenance Issue</span>
+                  <span class="fb-concern-desc">Problems involving public facilities that require maintenance.</span>
+                  <ul class="fb-concern-examples">
+                    <li>Broken streetlight</li>
+                    <li>Damaged road</li>
+                    <li>Drainage</li>
+                    <li>Sidewalk damage</li>
+                    <li>Flooding</li>
+                    <li>Fallen trees</li>
+                    <li>Public facility repair</li>
+                  </ul>
+                  <span class="fb-concern-footer fb-footer-cimms">Connected with Community Infrastructure Maintenance Management System (CIMMS)</span>
+                </button>
+              </div>
+            </div>
+
+            <aside class="fb-illustration" id="fbIllustration1" data-state="empty">
+              <div class="fb-illu-empty">
+                <span class="fb-illu-empty-icon">👆</span>
+                <p>Pick a card to see what happens next.</p>
+              </div>
+            </aside>
+          </div>
+
+          <!-- ============ STEP 2: Form ============ -->
+          <div class="fb-panel" data-panel="2">
+            <div class="fb-panel-main">
+              <div class="fb-panel-headrow">
+                <div>
+                  <h2 class="fb-panel-title" id="fbStep2Title">Tell us more</h2>
+                  <p class="fb-panel-sub" id="fbStep2Sub">A few details help the right office respond faster.</p>
+                </div>
+                <span class="fb-time-badge">⏱ Approximately 2–3 minutes</span>
+              </div>
+
+              <div class="fb-cimms-banner" id="fbCimmsBanner" style="display:none;">
+                <svg width="18" height="18" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M18 10A8 8 0 112 10a8 8 0 0116 0zm-7-4a1 1 0 10-2 0v4a1 1 0 00.293.707l2.828 2.829a1 1 0 101.415-1.415L11 9.586V6z" clip-rule="evenodd"/></svg>
+                <span>This maintenance concern will be coordinated with the Community Infrastructure Maintenance Management System (CIMMS) for proper handling.</span>
+              </div>
+
+              <div class="fb-form-tips-layout">
+                <form id="feedbackForm" method="POST">
+                  <input type="hidden" name="concern_type" id="feedbackConcernType" value="project">
+
+                  <div class="form-group">
+                    <label for="feedbackProjectName" id="fbProjectNameLabel">Project Name <span class="fb-optional">(optional)</span></label>
+                    <input type="text" id="feedbackProjectName" name="project_name" placeholder="e.g. Barangay Culiat Road Widening">
+                  </div>
+
+                  <div class="location-fieldset">
+                    <div class="location-fieldset-head">
+                      <svg width="16" height="16" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M5.05 4.05a7 7 0 119.9 9.9L10 18.9l-4.95-4.95a7 7 0 010-9.9zM10 11a2 2 0 100-4 2 2 0 000 4z" clip-rule="evenodd"/></svg>
+                      <span>Location in Quezon City</span>
+                    </div>
+
+                    <div class="form-group">
+                      <label for="feedbackDistrict">District *</label>
+                      <select id="feedbackDistrict" name="district" required>
+                        <option value="">Select your district</option>
+                        <?php foreach (array_keys(qcDistricts()) as $districtName): ?>
+                          <option value="<?= htmlspecialchars($districtName) ?>"><?= htmlspecialchars($districtName) ?></option>
+                        <?php endforeach; ?>
+                      </select>
+                    </div>
+
+                    <div class="form-group">
+                      <label for="feedbackBarangay">Barangay *</label>
+                      <select id="feedbackBarangay" name="barangay" required disabled>
+                        <option value="">Select a district first</option>
+                      </select>
+                      <div class="barangay-alt-hint" id="barangayAltHint"></div>
+                    </div>
+
+                    <div class="form-group">
+                      <label>Exact spot on the map <span class="fb-optional">(optional, recommended)</span></label>
+                      <p class="pin-hint">Tap the exact spot on the interactive map to drop a pin — you can drag it to fine-tune. This helps responders find the precise location.</p>
+                      <input type="hidden" name="latitude" id="feedbackLat">
+                      <input type="hidden" name="longitude" id="feedbackLng">
+                    </div>
+
+                    <div class="location-pill" id="locationPill" style="display: none;">
+                      <svg width="14" height="14" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M5.05 4.05a7 7 0 119.9 9.9L10 18.9l-4.95-4.95a7 7 0 010-9.9zM10 11a2 2 0 100-4 2 2 0 000 4z" clip-rule="evenodd"/></svg>
+                      <span id="locationPillText"></span>
+                    </div>
+
+                    <div class="qc-map-inline">
+                      <div id="qcMap" class="qc-map">
+                        <div class="qc-map-loading">Loading map…</div>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div class="form-group">
+                    <label for="feedbackCategory" id="fbCategoryLabel">Category *</label>
+                    <select id="feedbackCategory" name="category" required>
+                      <option value="">Select category</option>
+                      <?php foreach (feedbackCategories() as $catValue => $catLabel): ?>
+                        <option value="<?= htmlspecialchars($catValue) ?>" data-concern="<?= htmlspecialchars(in_array($catValue, ['project_delay'], true) ? 'project' : (in_array($catValue, ['road_damage', 'drainage_flooding', 'streetlight', 'sidewalk_accessibility', 'safety_hazard'], true) ? 'maintenance' : 'both')) ?>">
+                          <?= htmlspecialchars($catLabel) ?>
+                        </option>
+                      <?php endforeach; ?>
+                    </select>
+                  </div>
+
+                  <div class="form-group">
+                    <label for="feedbackPriority">Priority *</label>
+                    <select id="feedbackPriority" name="priority" required>
+                      <option value="low">Low</option>
+                      <option value="medium" selected>Medium</option>
+                      <option value="high">High</option>
+                      <option value="urgent">Urgent</option>
+                    </select>
+                  </div>
+
+                  <div class="form-group">
+                    <label for="feedbackMessage">Description *</label>
+                    <textarea id="feedbackMessage" name="message" rows="6" placeholder="Describe your concern, report, or complaint about your area..." required></textarea>
+                  </div>
+
+                  <div class="form-group">
+                    <label for="feedbackPhotos">Photos (proof) <span class="fb-optional">— optional, up to 3 images, 3MB each</span></label>
+                    <label for="feedbackPhotos" class="id-upload-box feedback-upload-box">
+                      <input type="file" id="feedbackPhotos" name="photos[]" accept="image/jpeg,image/png,image/gif,image/webp" multiple>
+                      <svg width="26" height="26" viewBox="0 0 20 20" fill="currentColor" class="id-upload-icon"><path fill-rule="evenodd" d="M4 3a2 2 0 00-2 2v10a2 2 0 002 2h12a2 2 0 002-2V5a2 2 0 00-2-2H4zm12 12H4l4-8 3 6 2-4 3 6z" clip-rule="evenodd"/></svg>
+                      <p class="id-upload-text">Click or drag photos here</p>
+                      <p class="id-upload-hint">JPG, PNG, GIF, or WEBP — maximum of 3 photos, 3MB each</p>
+                    </label>
+                    <div class="feedback-photo-previews" id="feedbackPhotoPreviews"></div>
+                    <div class="id-upload-status" id="feedbackPhotoStatus" style="display: none;"></div>
+                  </div>
+
+                  <div class="fb-anon-row">
+                    <label class="fb-toggle">
+                      <input type="checkbox" id="feedbackAnonymous" name="anonymous" value="1">
+                      <span class="fb-toggle-track"><span class="fb-toggle-thumb"></span></span>
+                      <span class="fb-toggle-label">Submit this report anonymously</span>
+                    </label>
+                    <p class="fb-toggle-hint">We won't attach your name to this report. You can still add contact details below if you want a callback.</p>
+                  </div>
+
+                  <div class="fb-contact-grid" id="fbContactGrid">
+                    <div class="form-group">
+                      <label for="feedbackContactName">Contact Name <span class="fb-optional">(optional)</span></label>
+                      <input type="text" id="feedbackContactName" name="contact_name" placeholder="Your name">
+                    </div>
+                    <div class="form-group">
+                      <label for="feedbackContactPhone">Contact Number / Email <span class="fb-optional">(optional)</span></label>
+                      <input type="text" id="feedbackContactPhone" name="contact_info" placeholder="09xx xxx xxxx or email">
+                    </div>
+                  </div>
+                </form>
+              </div>
+            </div>
+
+            <aside class="fb-illustration" id="fbIllustration2" data-state="project"></aside>
+          </div>
+
+          <!-- ============ STEP 3: Review ============ -->
+          <div class="fb-panel" data-panel="3">
+            <div class="fb-panel-main">
+              <h2 class="fb-panel-title">Review your report</h2>
+              <p class="fb-panel-sub">Make sure everything looks right before you send it.</p>
+
+              <div class="fb-review-card" id="fbReviewCard"></div>
+
+              <div class="fb-submit-error" id="fbSubmitError" style="display:none;"></div>
+            </div>
+
+            <aside class="fb-illustration" id="fbIllustration3" data-state="project"></aside>
+          </div>
+
+          <!-- ============ STEP 4: Success ============ -->
+          <div class="fb-panel fb-panel-success" data-panel="4">
+            <div class="fb-success-wrap">
+              <div class="fb-success-mark" aria-hidden="true">
+                <svg width="64" height="64" viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="11" fill="var(--success, #27ae60)" opacity=".12"/><path d="M7 12.5l3 3 7-7.5" stroke="var(--success, #27ae60)" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+              </div>
+              <h2 class="fb-panel-title">Your report has been received.</h2>
+              <p class="fb-panel-sub">Your concern will be routed to the appropriate government office. A tracking number has been generated below.</p>
+              <div class="fb-tracking-chip" id="fbTrackingChip">#FB-000000</div>
+              <div class="fb-success-actions">
+                <button type="button" class="btn-outline" id="fbBtnDashboard">Return to Dashboard</button>
+                <button type="button" class="btn-outline" id="fbBtnTrack">Track Report</button>
+                <button type="button" class="btn-primary" id="fbBtnAnother">Submit Another Report</button>
+              </div>
+            </div>
+          </div>
+
         </div>
       </div>
+
+      <!-- Bottom step navigation (hidden on step 1 — the cards themselves advance it; hidden on step 4 — success screen has its own actions) -->
+      <div class="fb-nav-row" id="fbNavRow">
+        <button type="button" class="btn-outline" id="fbBackBtn" style="visibility:hidden;">Back</button>
+        <div class="fb-tips" id="fbTips">
+          <span>✔ Include photos for faster verification.</span>
+          <span>✔ Pin the exact location.</span>
+          <span>✔ Provide clear descriptions.</span>
+        </div>
+        <button type="button" class="btn-primary" id="fbNextBtn">Continue</button>
+      </div>
+
+      <?php endif; ?>
     </section>
 
     <!-- Track Feedback Page -->

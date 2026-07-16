@@ -5,6 +5,7 @@ require_once __DIR__ . '/../includes/scope.php';
 require_once __DIR__ . '/../../includes/workflow.php';
 require_once __DIR__ . '/../../includes/Validator.php';
 require_once __DIR__ . '/../../includes/Pagination.php';
+require_once __DIR__ . '/../../includes/Notifications.php';
 
 apiHeaders();
 requireAnyRole(['engineer']);
@@ -514,6 +515,18 @@ if ($method === 'POST') {
 
         $db->prepare("UPDATE projects SET status = 'delayed' WHERE id = ? AND status NOT IN ('completed','cancelled')")
             ->execute([$projectId]);
+
+        $projectRow = $db->prepare("SELECT name, created_by FROM projects WHERE id = ?");
+        $projectRow->execute([$projectId]);
+        $projectInfo = $projectRow->fetch();
+        if ($projectInfo && !empty($projectInfo['created_by'])) {
+            notifyUser(
+                (int) $projectInfo['created_by'],
+                'warning',
+                'Project delayed',
+                $projectInfo['name'] . ' was flagged as delayed (' . $severity . ', ' . $impactDays . ' day(s) impact) — ' . $cause
+            );
+        }
 
         respond(['success' => true, 'id' => $newDelayId], 201);
     }

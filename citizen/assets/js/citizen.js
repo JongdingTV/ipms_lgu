@@ -54,6 +54,7 @@ function setupEventListeners() {
     setupUserMenu();
     setupLocationPicker();
     setupFeedbackPhotos();
+    setupFeedbackWizard();
     setupChangePassword();
     setupProjectDetailModal();
     setupSidebarToggle();
@@ -858,6 +859,7 @@ function changePage(pageName) {
         loadTransparencyDashboard();
     } else if (pageName === 'submit-feedback') {
         initQcMap();
+        if (document.getElementById('fbStepper')) fbGoToStep(1);
     }
 
     // Keep the URL hash in sync so pages are deep-linkable and the browser
@@ -1238,30 +1240,264 @@ function displayExpenses(expenses) {
 
 function handleFeedbackSubmit(e) {
     e.preventDefault();
+    submitFeedbackWizard();
+}
 
-    const formData = new FormData(e.target);
+// ===== Submit Feedback wizard (Step 1 concern type -> Step 2 form -> Step 3 review -> Step 4 success) =====
+// Pure front-end flow: still posts to the same real citizen/api/submit-feedback.php
+// endpoint with the same fields it has always understood. The new fields this
+// wizard collects (project_name, anonymous, contact_name, contact_info,
+// concern_type) travel along in the same request for future use, but nothing
+// server-side reads them yet — see the "UI only" scope for this redesign.
+let fbCurrentStep = 1;
+let fbConcernType = 'project';
+
+const FB_STEP_LABELS = {
+    1: 'Choose Concern Type',
+    2: 'Fill Information',
+    3: 'Review',
+    4: 'Submit',
+};
+
+function fbGoToStep(step) {
+    fbCurrentStep = step;
+
+    document.querySelectorAll('.fb-panel').forEach(panel => {
+        panel.classList.toggle('active', Number(panel.dataset.panel) === step);
+    });
+    document.querySelectorAll('.fb-step').forEach(stepEl => {
+        const n = Number(stepEl.dataset.step);
+        stepEl.classList.toggle('active', n === step);
+        stepEl.classList.toggle('done', n < step);
+    });
+
+    const label = document.getElementById('fbProgressLabel');
+    const fill = document.getElementById('fbProgressFill');
+    if (label) label.textContent = `Step ${step} of 4 — ${FB_STEP_LABELS[step]}`;
+    if (fill) fill.style.width = (step / 4 * 100) + '%';
+
+    const navRow = document.getElementById('fbNavRow');
+    const backBtn = document.getElementById('fbBackBtn');
+    const nextBtn = document.getElementById('fbNextBtn');
+    if (navRow) navRow.style.display = (step === 1 || step === 4) ? 'none' : 'flex';
+    if (backBtn) backBtn.style.visibility = step <= 1 ? 'hidden' : 'visible';
+    if (nextBtn) nextBtn.textContent = step === 3 ? 'Confirm & Submit' : 'Continue';
+
+    if (step === 2) {
+        fbApplyConcernType(fbConcernType);
+        // The map only ever renders correctly once its container is visible.
+        setTimeout(() => { if (typeof qcMap !== 'undefined' && qcMap) qcMap.invalidateSize(); }, 60);
+    }
+    if (step === 3) fbRenderReview();
+
+    document.querySelector('.content')?.scrollTo({ top: 0, behavior: 'smooth' });
+}
+
+function fbSelectConcern(concern) {
+    fbConcernType = concern;
+    const hidden = document.getElementById('feedbackConcernType');
+    if (hidden) hidden.value = concern;
+
+    document.querySelectorAll('.fb-concern-card').forEach(card => {
+        card.classList.toggle('selected', card.dataset.concern === concern);
+    });
+    fbRenderIllustration('fbIllustration1', concern);
+
+    // Smooth transition: let the selection state render for a beat before advancing.
+    setTimeout(() => fbGoToStep(2), 420);
+}
+
+function fbApplyConcernType(concern) {
+    const banner = document.getElementById('fbCimmsBanner');
+    const title = document.getElementById('fbStep2Title');
+    const sub = document.getElementById('fbStep2Sub');
+    const catLabel = document.getElementById('fbCategoryLabel');
+    const projectNameGroup = document.getElementById('feedbackProjectName')?.closest('.form-group');
+
+    if (concern === 'maintenance') {
+        if (banner) banner.style.display = 'flex';
+        if (title) title.textContent = 'Tell us about the maintenance issue';
+        if (sub) sub.textContent = 'This helps route your report to the right maintenance crew.';
+        if (catLabel) catLabel.textContent = 'Maintenance Category *';
+        if (projectNameGroup) projectNameGroup.style.display = 'none';
+    } else {
+        if (banner) banner.style.display = 'none';
+        if (title) title.textContent = 'Tell us about the project concern';
+        if (sub) sub.textContent = 'A few details help IPMS route this to the right office.';
+        if (catLabel) catLabel.textContent = 'Project Category *';
+        if (projectNameGroup) projectNameGroup.style.display = '';
+    }
+
+    // Filter the (unchanged) category options so each path only shows its
+    // own + general-purpose categories — same underlying <select>, same
+    // values the backend already validates.
+    const categorySelect = document.getElementById('feedbackCategory');
+    if (categorySelect) {
+        let currentStillValid = false;
+        Array.from(categorySelect.options).forEach(opt => {
+            if (!opt.value) return;
+            const optConcern = opt.dataset.concern || 'both';
+            const show = optConcern === 'both' || optConcern === concern;
+            opt.hidden = !show;
+            if (show && opt.selected) currentStillValid = true;
+        });
+        if (!currentStillValid) categorySelect.value = '';
+    }
+
+    fbRenderIllustration('fbIllustration2', concern);
+    fbRenderIllustration('fbIllustration3', concern);
+}
+
+function fbToggleAnonymous() {
+    const checkbox = document.getElementById('feedbackAnonymous');
+    const grid = document.getElementById('fbContactGrid');
+    if (!checkbox || !grid) return;
+    grid.classList.toggle('fb-contact-disabled', checkbox.checked);
+    grid.querySelectorAll('input').forEach(input => { input.disabled = checkbox.checked; });
+}
+
+const FB_ILLUSTRATIONS = {
+    project: {
+        emoji: ['🏗️', '🌉', '👷'],
+        title: 'Infrastructure Project Concern',
+        note: 'Reviewed by the project’s assigned Engineer and, where needed, the Bids &amp; Awards Committee.',
+    },
+    maintenance: {
+        emoji: ['💡', '🚧', '🔧'],
+        title: 'Infrastructure Maintenance Issue',
+        note: 'Coordinated with the Community Infrastructure Maintenance Management System (CIMMS).',
+    },
+};
+
+function fbRenderIllustration(containerId, concern) {
+    const el = document.getElementById(containerId);
+    if (!el) return;
+    const data = FB_ILLUSTRATIONS[concern] || FB_ILLUSTRATIONS.project;
+    el.dataset.state = concern;
+    el.innerHTML = `
+        <div class="fb-illu-card fb-illu-${escapeHtml(concern)}">
+            <div class="fb-illu-icons">${data.emoji.map(e => `<span>${e}</span>`).join('')}</div>
+            <p class="fb-illu-title">${escapeHtml(data.title)}</p>
+            <p class="fb-illu-note">${data.note}</p>
+        </div>
+    `;
+}
+
+function fbRenderReview() {
+    const card = document.getElementById('fbReviewCard');
+    if (!card) return;
+
+    const form = document.getElementById('feedbackForm');
+    const districtSel = document.getElementById('feedbackDistrict');
+    const barangaySel = document.getElementById('feedbackBarangay');
+    const category = document.getElementById('feedbackCategory');
+    const priority = document.getElementById('feedbackPriority');
+    const message = document.getElementById('feedbackMessage');
+    const projectName = document.getElementById('feedbackProjectName');
+    const isAnonymous = document.getElementById('feedbackAnonymous')?.checked;
+    const contactName = document.getElementById('feedbackContactName')?.value.trim();
+    const contactInfo = document.getElementById('feedbackContactPhone')?.value.trim();
+    const photoInput = document.getElementById('feedbackPhotos');
+    const lat = document.getElementById('feedbackLat')?.value;
+
+    const concernLabel = fbConcernType === 'maintenance' ? 'Infrastructure Maintenance Issue' : 'Infrastructure Project Concern';
+    const locationText = (districtSel?.value && barangaySel?.value)
+        ? `${barangaySel.value}, ${districtSel.value}${lat ? ' — exact spot pinned' : ''}`
+        : 'Not specified';
+    const photoCount = photoInput ? photoInput.files.length : 0;
+    const contactText = isAnonymous
+        ? 'Anonymous submission'
+        : ([contactName, contactInfo].filter(Boolean).join(' · ') || 'Not provided');
+
+    card.innerHTML = `
+        <div class="fb-review-row"><span>Concern Type</span><strong>${escapeHtml(concernLabel)}</strong></div>
+        ${projectName?.value ? `<div class="fb-review-row"><span>Project Name</span><strong>${escapeHtml(projectName.value)}</strong></div>` : ''}
+        <div class="fb-review-row"><span>Location</span><strong>${escapeHtml(locationText)}</strong></div>
+        <div class="fb-review-row"><span>Category</span><strong>${escapeHtml(category?.selectedOptions[0]?.textContent.trim() || 'Not specified')}</strong></div>
+        <div class="fb-review-row"><span>Priority</span><strong>${escapeHtml(capitalizeFirst(priority?.value || ''))}</strong></div>
+        <div class="fb-review-row fb-review-row-block"><span>Description</span><p>${escapeHtml(message?.value || '')}</p></div>
+        <div class="fb-review-row"><span>Attachments</span><strong>${photoCount} photo${photoCount === 1 ? '' : 's'}</strong></div>
+        <div class="fb-review-row"><span>Contact Information</span><strong>${escapeHtml(contactText)}</strong></div>
+    `;
+}
+
+function submitFeedbackWizard() {
+    const form = document.getElementById('feedbackForm');
+    if (!form) return;
+
+    const nextBtn = document.getElementById('fbNextBtn');
+    const errorBox = document.getElementById('fbSubmitError');
+    if (errorBox) errorBox.style.display = 'none';
+    if (nextBtn) { nextBtn.disabled = true; nextBtn.textContent = 'Submitting…'; }
+
+    const formData = new FormData(form);
 
     fetch(citizenUrl('citizen/api/submit-feedback.php'), {
         method: 'POST',
         body: formData
     })
-    .then(res => res.json())
-    .then(data => {
-        if (data.success) {
-            alert('Thank you! Your feedback has been submitted successfully.');
-            e.target.reset();
-            resetLocationPicker();
-            renderFeedbackPhotoPreviews();
-            changePage('dashboard');
-            loadDashboardData();
-        } else {
-            alert('Error: ' + (data.message || 'Failed to submit feedback'));
-        }
-    })
-    .catch(err => {
-        console.error('Error:', err);
-        alert('Error submitting feedback');
+        .then(res => res.json())
+        .then(data => {
+            if (data.success) {
+                const chip = document.getElementById('fbTrackingChip');
+                if (chip) chip.textContent = '#FB-' + String(data.id || 0).padStart(6, '0');
+                fbGoToStep(4);
+            } else if (errorBox) {
+                errorBox.textContent = data.message || 'Failed to submit feedback. Please try again.';
+                errorBox.style.display = 'block';
+            }
+        })
+        .catch(err => {
+            console.error('Error:', err);
+            if (errorBox) {
+                errorBox.textContent = 'Something went wrong sending your report. Please check your connection and try again.';
+                errorBox.style.display = 'block';
+            }
+        })
+        .finally(() => {
+            if (nextBtn) { nextBtn.disabled = false; nextBtn.textContent = 'Confirm & Submit'; }
+        });
+}
+
+function resetFeedbackWizard() {
+    const form = document.getElementById('feedbackForm');
+    if (form) form.reset();
+    resetLocationPicker();
+    renderFeedbackPhotoPreviews();
+    fbToggleAnonymous();
+    document.querySelectorAll('.fb-concern-card').forEach(card => card.classList.remove('selected'));
+    const illu1 = document.getElementById('fbIllustration1');
+    if (illu1) illu1.innerHTML = '<div class="fb-illu-empty"><span class="fb-illu-empty-icon">👆</span><p>Pick a card to see what happens next.</p></div>';
+    fbConcernType = 'project';
+    fbGoToStep(1);
+}
+
+function setupFeedbackWizard() {
+    if (!document.getElementById('fbStepper')) return; // unverified citizens see the verify-banner instead
+
+    document.querySelectorAll('.fb-concern-card').forEach(card => {
+        card.addEventListener('click', () => fbSelectConcern(card.dataset.concern));
     });
+
+    document.getElementById('feedbackAnonymous')?.addEventListener('change', fbToggleAnonymous);
+
+    document.getElementById('fbBackBtn')?.addEventListener('click', () => {
+        if (fbCurrentStep > 1) fbGoToStep(fbCurrentStep - 1);
+    });
+
+    document.getElementById('fbNextBtn')?.addEventListener('click', () => {
+        if (fbCurrentStep === 2) {
+            const form = document.getElementById('feedbackForm');
+            if (form && !form.reportValidity()) return;
+            fbGoToStep(3);
+        } else if (fbCurrentStep === 3) {
+            submitFeedbackWizard();
+        }
+    });
+
+    document.getElementById('fbBtnDashboard')?.addEventListener('click', () => changePage('dashboard'));
+    document.getElementById('fbBtnTrack')?.addEventListener('click', () => changePage('track-feedback'));
+    document.getElementById('fbBtnAnother')?.addEventListener('click', () => resetFeedbackWizard());
 }
 
 // Utility Functions

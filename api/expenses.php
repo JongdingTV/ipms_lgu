@@ -5,6 +5,7 @@
 require_once __DIR__ . '/../includes/db.php';
 require_once __DIR__ . '/../includes/auth.php';
 require_once __DIR__ . '/../includes/workflow.php';
+require_once __DIR__ . '/../includes/Notifications.php';
 apiHeaders();
 
 $method = $_SERVER['REQUEST_METHOD'];
@@ -105,9 +106,10 @@ if ($method === 'POST') {
     }
 
     // Auto-flag if this pushes project over budget
-    $budgetStmt = $db->prepare("SELECT budget FROM projects WHERE id = ?");
-    $budgetStmt->execute([(int) $b['project_id']]);
-    $budget = (float) ($budgetStmt->fetchColumn() ?: 0);
+    $projectStmt = $db->prepare("SELECT name, budget, created_by FROM projects WHERE id = ?");
+    $projectStmt->execute([(int) $b['project_id']]);
+    $project = $projectStmt->fetch();
+    $budget = (float) ($project['budget'] ?? 0);
 
     $spentStmt = $db->prepare("SELECT COALESCE(SUM(amount),0) FROM expenses WHERE project_id = ?");
     $spentStmt->execute([(int) $b['project_id']]);
@@ -127,6 +129,15 @@ if ($method === 'POST') {
                 $b['expense_date'],
         (int)   ($b['flagged'] ?? $autoFlag),
     ]);
+
+    if ($autoFlag && $project && !empty($project['created_by'])) {
+        notifyUser(
+            (int) $project['created_by'],
+            'warning',
+            'Budget exceeded',
+            $project['name'] . ' has exceeded its approved budget of ' . number_format($budget, 2) . ' with this expense entry.'
+        );
+    }
 
     respond(['id' => (int) $db->lastInsertId()], 201);
 }
