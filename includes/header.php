@@ -22,6 +22,12 @@ $extraStylesheets = $extraStylesheets ?? [];
       } catch (e) {}
     })();
   </script>
+  <!-- style.css declares --font: 'Plus Jakarta Sans' and --mono: 'DM Mono';
+       without this link they silently fall back to plain system fonts.
+       Sora is the citizen portal's display face for headings. -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Sora:wght@600;700;800&family=DM+Mono:wght@400;500&display=swap">
   <link rel="icon" href="<?= htmlspecialchars($BASE_PATH) ?>assets/img/ipms-icon.png" type="image/png">
   <link rel="apple-touch-icon" href="<?= htmlspecialchars($BASE_PATH) ?>assets/img/ipms-icon.png">
   <link rel="stylesheet" href="<?= htmlspecialchars(assetUrl('/assets/css/style.css')) ?>">

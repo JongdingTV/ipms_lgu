@@ -9,7 +9,7 @@ $pdo = getDB();
 projectWorkflowEnsureProjectStatusSchema($pdo);
 
 // Statuses citizens are allowed to see (same list as citizen/api/projects.php)
-const CITIZEN_VISIBLE_STATUSES = ['approved', 'bidding', 'awarded', 'assigned', 'active', 'delayed', 'on_hold', 'completed'];
+const CITIZEN_VISIBLE_STATUSES = ['approved', 'bidding', 'awarded', 'assigned', 'active', 'delayed', 'on_hold', 'completion_inspection', 'completed', 'turnover'];
 
 $projectId = (int) ($_GET['id'] ?? 0);
 if ($projectId <= 0) {

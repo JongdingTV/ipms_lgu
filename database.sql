@@ -366,6 +366,7 @@ CREATE TABLE feedback (
   citizen_name VARCHAR(120),
   message TEXT NOT NULL,
   category ENUM('complaint','road_damage','drainage_flooding','streetlight','sidewalk_accessibility','safety_hazard','project_delay','suggestion','inquiry','commendation') DEFAULT 'complaint' COMMENT 'Keep in sync with citizen/includes/feedback-categories.php',
+  infrastructure_type VARCHAR(100) NULL COMMENT 'CIMMS maintenance reports: affected infrastructure (Roads, Street Lights, ...)',
   priority ENUM('low','medium','high','urgent') DEFAULT 'medium',
   district VARCHAR(20) NULL COMMENT 'QC congressional district, e.g. District 1',
   barangay VARCHAR(100) NULL COMMENT 'QC barangay within the district',

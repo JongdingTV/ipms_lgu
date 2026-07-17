@@ -37,12 +37,7 @@ function setupEventListeners() {
         });
     });
 
-    // Filters
-    const projectSearch = document.getElementById('projectSearch');
-    const statusFilter = document.getElementById('statusFilter');
-
-    if (projectSearch) projectSearch.addEventListener('input', debounce(loadProjects, 300));
-    if (statusFilter) statusFilter.addEventListener('change', loadProjects);
+    setupListControls();
 
     // Forms
     const feedbackForm = document.getElementById('feedbackForm');
@@ -58,6 +53,91 @@ function setupEventListeners() {
     setupChangePassword();
     setupProjectDetailModal();
     setupSidebarToggle();
+    setupLogoutConfirm();
+    setupIdleLogout();
+}
+
+// ===== Logout confirmation =====
+// Every logout link opens a confirm modal first so a stray click on the
+// sidebar footer doesn't silently end the session.
+function setupLogoutConfirm() {
+    const modal = document.getElementById('logoutConfirmModal');
+    if (!modal) return;
+
+    document.querySelectorAll('.btn-logout, .user-menu-logout').forEach(link => {
+        link.addEventListener('click', (e) => {
+            e.preventDefault();
+            modal.style.display = 'flex';
+        });
+    });
+
+    const closeModal = () => { modal.style.display = 'none'; };
+    document.getElementById('logoutConfirmClose').addEventListener('click', closeModal);
+    document.getElementById('logoutCancelBtn').addEventListener('click', closeModal);
+    modal.addEventListener('click', (e) => {
+        if (e.target === modal) closeModal();
+    });
+    document.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape' && modal.style.display !== 'none') closeModal();
+    });
+}
+
+// ===== Inactivity auto-logout =====
+// After IDLE_LOGOUT_MS with no activity the session ends. The final
+// IDLE_WARNING_MS is spent on a countdown modal that only "Stay Logged In"
+// can dismiss — background mouse noise won't cancel it by accident.
+const IDLE_LOGOUT_MS = 5 * 60 * 1000;
+const IDLE_WARNING_MS = 60 * 1000;
+
+function setupIdleLogout() {
+    const modal = document.getElementById('idleWarningModal');
+    if (!modal) return;
+
+    const countdownEl = document.getElementById('idleCountdown');
+    const logoutUrl = citizenUrl('auth/logout.php') + '?timeout=1';
+
+    let warnTimer = null;
+    let countdownTimer = null;
+    let warningShown = false;
+    let lastReset = 0;
+
+    const startCountdown = () => {
+        warningShown = true;
+        let secondsLeft = Math.round(IDLE_WARNING_MS / 1000);
+        countdownEl.textContent = secondsLeft;
+        modal.style.display = 'flex';
+        countdownTimer = setInterval(() => {
+            secondsLeft--;
+            countdownEl.textContent = Math.max(secondsLeft, 0);
+            if (secondsLeft <= 0) {
+                clearInterval(countdownTimer);
+                window.location.href = logoutUrl;
+            }
+        }, 1000);
+    };
+
+    const resetIdleTimer = () => {
+        if (warningShown) return;
+        // Activity events fire constantly; only re-arm the timer once a second.
+        const now = Date.now();
+        if (now - lastReset < 1000) return;
+        lastReset = now;
+        clearTimeout(warnTimer);
+        warnTimer = setTimeout(startCountdown, IDLE_LOGOUT_MS - IDLE_WARNING_MS);
+    };
+
+    document.getElementById('idleStayBtn').addEventListener('click', () => {
+        clearInterval(countdownTimer);
+        modal.style.display = 'none';
+        warningShown = false;
+        lastReset = 0;
+        resetIdleTimer();
+    });
+
+    ['mousemove', 'mousedown', 'keydown', 'scroll', 'touchstart'].forEach(evt => {
+        document.addEventListener(evt, resetIdleTimer, { passive: true });
+    });
+    resetIdleTimer();
 }
 
 // Off-canvas sidebar for small screens. On desktop the sidebar is always
@@ -81,6 +161,12 @@ function setupSidebarToggle() {
     };
 
     toggle.addEventListener('click', () => {
+        // Desktop: collapse/expand the fixed sidebar so the content gets the
+        // full width. Mobile keeps the off-canvas drawer behavior below.
+        if (window.matchMedia('(min-width: 769px)').matches) {
+            document.body.classList.toggle('sidebar-collapsed');
+            return;
+        }
         const isOpen = sidebar.classList.toggle('open');
         backdrop.classList.toggle('show', isOpen);
     });
@@ -94,8 +180,8 @@ function setupSidebarToggle() {
     });
 }
 
-// ===== Feedback proof photos (max 3, 3MB each) =====
-const FEEDBACK_MAX_PHOTOS = 3;
+// ===== Feedback proof photos (max 4 like the CIMMS request form, 3MB each) =====
+const FEEDBACK_MAX_PHOTOS = 4;
 const FEEDBACK_MAX_PHOTO_BYTES = 3 * 1024 * 1024; // must match citizen/api/submit-feedback.php
 
 function setupFeedbackPhotos() {
@@ -667,7 +753,7 @@ function renderProjectDetail(data) {
 
     return `
         <div class="detail-header">
-            <span class="project-badge badge-${escapeHtml(p.status)}">${capitalizeFirst(p.status)}</span>
+            <span class="project-badge badge-${escapeHtml(p.status)}">${projectStatusLabel(p.status)}</span>
             <h4 class="detail-name">${escapeHtml(p.name)}</h4>
             <p class="detail-code">${escapeHtml(p.project_code || '')}${p.location ? ' · ' + escapeHtml(p.location) : ''}</p>
             ${p.description ? `<p class="detail-desc">${escapeHtml(p.description)}</p>` : ''}
@@ -716,7 +802,7 @@ function renderProjectDetail(data) {
                         <div class="update-dot update-dot-${escapeHtml(u.status)}"></div>
                         <div class="update-body">
                             <div class="update-head">
-                                <span class="update-progress">${Number(u.progress_percent)}% · ${capitalizeFirst(u.status)}</span>
+                                <span class="update-progress">${Number(u.progress_percent)}% · ${projectStatusLabel(u.status)}</span>
                                 <span class="update-date">${formatDate(u.created_at)}</span>
                             </div>
                             ${u.notes ? `<p class="update-notes">${escapeHtml(u.notes)}</p>` : ''}
@@ -890,28 +976,90 @@ window.GLOBAL_SEARCH_SOURCES = [
     },
 ];
 
-let citizenStatusChartInst = null;
+// ===== Charts =====
+// Every renderer below reads its colors through chartTheme() so light and
+// dark mode each get their own palette (dark's greens are darker steps —
+// picked with the palette validator, not eyeballed). The raw API payloads
+// are cached in chartDataCache so a theme toggle can re-render in place.
+const chartInstances = {};
+const chartDataCache = {};
+
+function chartTheme() {
+    const dark = document.documentElement.getAttribute('data-theme') === 'dark';
+    return dark ? {
+        dark: true,
+        surface: '#1e293b',
+        text: '#e2e8f0',
+        muted: '#94a3b8',
+        grid: 'rgba(148, 163, 184, .18)',
+        status: { active: '#059669', completed: '#3b82f6', delayed: '#ef4444' },
+        money: '#3b82f6',          // spent / actual
+        moneyFill: 'rgba(59, 130, 246, .18)',
+        envelope: '#64748b',       // budget / planned reference (neutral by design)
+        remaining: '#475569',
+        tooltipBg: '#0f172a',
+    } : {
+        dark: false,
+        surface: '#ffffff',
+        text: '#1e293b',
+        muted: '#64748b',
+        grid: 'rgba(100, 116, 139, .15)',
+        status: { active: '#22c55e', completed: '#3b82f6', delayed: '#ef4444' },
+        money: '#2563eb',
+        moneyFill: 'rgba(37, 99, 235, .12)',
+        envelope: '#94a3b8',
+        remaining: '#cbd5e1',
+        tooltipBg: '#1e2a3b',
+    };
+}
+
+function mountChart(key, canvasId, config) {
+    const ctx = document.getElementById(canvasId)?.getContext('2d');
+    if (!ctx || typeof Chart === 'undefined') return null;
+    if (chartInstances[key]) chartInstances[key].destroy();
+    chartInstances[key] = new Chart(ctx, config);
+    return chartInstances[key];
+}
+
+// Compact peso figures for axis ticks: ₱1.2M, ₱350K
+function pesoShort(value) {
+    const n = Number(value) || 0;
+    const abs = Math.abs(n);
+    if (abs >= 1e9) return '₱' + (n / 1e9).toFixed(1).replace(/\.0$/, '') + 'B';
+    if (abs >= 1e6) return '₱' + (n / 1e6).toFixed(1).replace(/\.0$/, '') + 'M';
+    if (abs >= 1e3) return '₱' + (n / 1e3).toFixed(0) + 'K';
+    return '₱' + n;
+}
+
+// Re-render every mounted chart when the topbar theme toggle flips
+// data-theme, so chart colors follow the page instead of going stale.
+new MutationObserver(muts => {
+    if (!muts.some(m => m.attributeName === 'data-theme')) return;
+    if (chartDataCache.dashboardStats) renderCitizenStatusChart(chartDataCache.dashboardStats);
+    if (chartDataCache.progressChart) renderProgressChart(chartDataCache.progressChart);
+    if (chartDataCache.dashboardExtras) renderDashboardExtraCharts(chartDataCache.dashboardExtras);
+    if (chartDataCache.transparency) renderTransparencyCharts(chartDataCache.transparency);
+}).observe(document.documentElement, { attributes: true });
 
 function renderCitizenStatusChart(stats) {
-    const ctx = document.getElementById('citizenStatusChart')?.getContext('2d');
-    if (!ctx || typeof Chart === 'undefined') return;
-    if (citizenStatusChartInst) citizenStatusChartInst.destroy();
+    chartDataCache.dashboardStats = stats;
+    const t = chartTheme();
 
     const segments = [
-        { label: 'Active', value: Number(stats.active_projects || 0), color: '#22c55e' },
-        { label: 'Completed', value: Number(stats.completed_projects || 0), color: '#3b82f6' },
-        { label: 'Delayed', value: Number(stats.delayed_projects || 0), color: '#ef4444' },
+        { label: 'Active', value: Number(stats.active_projects || 0), color: t.status.active },
+        { label: 'Completed', value: Number(stats.completed_projects || 0), color: t.status.completed },
+        { label: 'Delayed', value: Number(stats.delayed_projects || 0), color: t.status.delayed },
     ];
     const total = segments.reduce((sum, s) => sum + s.value, 0);
 
-    citizenStatusChartInst = new Chart(ctx, {
+    mountChart('status', 'citizenStatusChart', {
         type: 'doughnut',
         data: {
             labels: segments.map(s => s.label),
             datasets: [{
                 data: segments.map(s => s.value),
                 backgroundColor: segments.map(s => s.color),
-                borderColor: segments.map(() => '#fff'), borderWidth: 3, hoverOffset: 6,
+                borderColor: segments.map(() => t.surface), borderWidth: 3, hoverOffset: 6,
             }],
         },
         options: {
@@ -919,7 +1067,7 @@ function renderCitizenStatusChart(stats) {
             animation: { duration: 900 },
             plugins: {
                 legend: { display: false },
-                tooltip: { backgroundColor: '#1e2a3b', callbacks: { label: c => ` ${c.label}: ${c.raw}` } },
+                tooltip: { backgroundColor: t.tooltipBg, callbacks: { label: c => ` ${c.label}: ${c.raw}` } },
             },
         },
     });
@@ -938,6 +1086,253 @@ function renderCitizenStatusChart(stats) {
     }
 }
 
+// Planned vs actual monthly progress (same series the staff dashboard plots).
+// Planned is the neutral dashed reference; actual carries the accent color.
+function renderProgressChart(rows) {
+    chartDataCache.progressChart = rows;
+    if (!Array.isArray(rows) || !rows.length) return;
+    const t = chartTheme();
+
+    mountChart('progress', 'citizenProgressChart', {
+        type: 'line',
+        data: {
+            labels: rows.map(r => r.month),
+            datasets: [
+                {
+                    label: 'Planned',
+                    data: rows.map(r => r.planned),
+                    borderColor: t.envelope, borderDash: [6, 5], borderWidth: 2,
+                    pointRadius: 0, pointHoverRadius: 5, fill: false, tension: .35,
+                },
+                {
+                    label: 'Actual',
+                    data: rows.map(r => r.actual),
+                    borderColor: t.money, backgroundColor: t.moneyFill, borderWidth: 2,
+                    pointRadius: 0, pointHoverRadius: 5, fill: true, tension: .35,
+                },
+            ],
+        },
+        options: {
+            responsive: true, maintainAspectRatio: false,
+            interaction: { mode: 'index', intersect: false },
+            plugins: {
+                legend: { position: 'top', align: 'end', labels: { color: t.text, boxWidth: 18, boxHeight: 3, usePointStyle: false } },
+                tooltip: { backgroundColor: t.tooltipBg, callbacks: { label: c => ` ${c.dataset.label}: ${c.raw}%` } },
+            },
+            scales: {
+                x: { ticks: { color: t.muted }, grid: { display: false } },
+                y: { min: 0, max: 100, ticks: { color: t.muted, callback: v => v + '%' }, grid: { color: t.grid } },
+            },
+        },
+    });
+}
+
+// Second dashboard charts row: budget by stage, project starts, feedback mix.
+function renderDashboardExtraCharts(data) {
+    chartDataCache.dashboardExtras = data;
+    const t = chartTheme();
+
+    // Budget by workflow stage — one peso measure across stages, single hue.
+    const stages = data.budget_by_stage || [];
+    mountChart('budgetByStage', 'budgetByStageChart', {
+        type: 'bar',
+        data: {
+            labels: stages.map(s => s.stage),
+            datasets: [{
+                data: stages.map(s => Number(s.total) || 0),
+                backgroundColor: t.money, borderRadius: 4, maxBarThickness: 22,
+            }],
+        },
+        options: {
+            indexAxis: 'y',
+            responsive: true, maintainAspectRatio: false,
+            plugins: {
+                legend: { display: false },
+                tooltip: { backgroundColor: t.tooltipBg, callbacks: { label: c => ' ' + formatCurrency(c.raw) } },
+            },
+            scales: {
+                x: { ticks: { color: t.muted, callback: v => pesoShort(v), maxTicksLimit: 5 }, grid: { color: t.grid } },
+                y: { ticks: { color: t.text }, grid: { display: false } },
+            },
+        },
+    });
+
+    // New projects per month — counts, so whole-number ticks.
+    const started = data.projects_started || [];
+    mountChart('projectsStarted', 'projectsStartedChart', {
+        type: 'bar',
+        data: {
+            labels: started.map(m => m.month),
+            datasets: [{
+                data: started.map(m => Number(m.count) || 0),
+                backgroundColor: t.money, borderRadius: 4, maxBarThickness: 18,
+            }],
+        },
+        options: {
+            responsive: true, maintainAspectRatio: false,
+            plugins: {
+                legend: { display: false },
+                tooltip: { backgroundColor: t.tooltipBg, callbacks: { label: c => ` ${c.raw} project${c.raw === 1 ? '' : 's'} started` } },
+            },
+            scales: {
+                x: { ticks: { color: t.muted, maxRotation: 0, autoSkipPadding: 8 }, grid: { display: false } },
+                y: { beginAtZero: true, ticks: { color: t.muted, precision: 0 }, grid: { color: t.grid } },
+            },
+        },
+    });
+
+    // Community feedback by category — aggregate counts, readable labels.
+    const cats = (data.feedback_by_category || []).slice(0, 6);
+    mountChart('feedbackCategory', 'feedbackCategoryChart', {
+        type: 'bar',
+        data: {
+            labels: cats.map(c => feedbackCategoryLabel(c.category)),
+            datasets: [{
+                data: cats.map(c => Number(c.total) || 0),
+                backgroundColor: t.money, borderRadius: 4, maxBarThickness: 22,
+            }],
+        },
+        options: {
+            indexAxis: 'y',
+            responsive: true, maintainAspectRatio: false,
+            plugins: {
+                legend: { display: false },
+                tooltip: { backgroundColor: t.tooltipBg, callbacks: { label: c => ` ${c.raw} report${c.raw === 1 ? '' : 's'}` } },
+            },
+            scales: {
+                x: { beginAtZero: true, ticks: { color: t.muted, precision: 0 }, grid: { color: t.grid } },
+                y: { ticks: { color: t.text }, grid: { display: false } },
+            },
+        },
+    });
+}
+
+// ===== Transparency charts (budget donut, category bars, monthly line, budget-vs-spent bars) =====
+function renderTransparencyCharts(data) {
+    chartDataCache.transparency = data;
+    const t = chartTheme();
+
+    // Budget utilization donut: spent carries the accent, remaining is a
+    // deliberate neutral — identity lives in the HTML legend beside it.
+    const donut = data.budget_donut || { spent: 0, remaining: 0 };
+    const spent = Number(donut.spent) || 0;
+    const remaining = Number(donut.remaining) || 0;
+    const totalBudget = spent + remaining;
+    const pct = totalBudget > 0 ? Math.round((spent / totalBudget) * 100) : 0;
+
+    mountChart('budgetDonut', 'budgetDonutChart', {
+        type: 'doughnut',
+        data: {
+            labels: ['Spent', 'Remaining'],
+            datasets: [{
+                data: [spent, remaining],
+                backgroundColor: [t.money, t.remaining],
+                borderColor: [t.surface, t.surface], borderWidth: 3, hoverOffset: 6,
+            }],
+        },
+        options: {
+            responsive: false, cutout: '70%',
+            plugins: {
+                legend: { display: false },
+                tooltip: { backgroundColor: t.tooltipBg, callbacks: { label: c => ` ${c.label}: ${formatCurrency(c.raw)}` } },
+            },
+        },
+    });
+
+    const pctEl = document.getElementById('budgetDonutPct');
+    if (pctEl) pctEl.textContent = pct + '%';
+    const legendEl = document.getElementById('budgetDonutLegend');
+    if (legendEl) {
+        legendEl.innerHTML = [
+            { label: 'Spent', value: spent, color: t.money },
+            { label: 'Remaining', value: remaining, color: t.remaining },
+        ].map(s => `
+            <div class="budget-legend-item">
+                <span class="legend-dot" style="background:${s.color};"></span>
+                <span>${s.label} <strong>${pesoShort(s.value)}</strong></span>
+            </div>
+        `).join('');
+    }
+
+    // Spending by category: one measure across categories → single hue.
+    const cats = (data.by_category || []).slice(0, 8);
+    mountChart('categorySpend', 'categorySpendChart', {
+        type: 'bar',
+        data: {
+            labels: cats.map(c => c.category),
+            datasets: [{
+                data: cats.map(c => Number(c.total) || 0),
+                backgroundColor: t.money, borderRadius: 4, maxBarThickness: 26,
+            }],
+        },
+        options: {
+            indexAxis: 'y',
+            responsive: true, maintainAspectRatio: false,
+            plugins: {
+                legend: { display: false },
+                tooltip: { backgroundColor: t.tooltipBg, callbacks: { label: c => ' ' + formatCurrency(c.raw) } },
+            },
+            scales: {
+                x: { ticks: { color: t.muted, callback: v => pesoShort(v) }, grid: { color: t.grid } },
+                y: { ticks: { color: t.text }, grid: { display: false } },
+            },
+        },
+    });
+
+    // Monthly spending over the last 12 months.
+    const months = data.monthly_spending || [];
+    mountChart('monthlySpend', 'monthlySpendChart', {
+        type: 'line',
+        data: {
+            labels: months.map(m => m.month),
+            datasets: [{
+                label: 'Spending',
+                data: months.map(m => Number(m.total) || 0),
+                borderColor: t.money, backgroundColor: t.moneyFill, borderWidth: 2,
+                pointRadius: 0, pointHoverRadius: 5, fill: true, tension: .35,
+            }],
+        },
+        options: {
+            responsive: true, maintainAspectRatio: false,
+            interaction: { mode: 'index', intersect: false },
+            plugins: {
+                legend: { display: false },
+                tooltip: { backgroundColor: t.tooltipBg, callbacks: { label: c => ' ' + formatCurrency(c.raw) } },
+            },
+            scales: {
+                x: { ticks: { color: t.muted, maxRotation: 0, autoSkipPadding: 12 }, grid: { display: false } },
+                y: { beginAtZero: true, ticks: { color: t.muted, callback: v => pesoShort(v) }, grid: { color: t.grid } },
+            },
+        },
+    });
+
+    // Budget vs spent for the biggest projects: the allocation is the neutral
+    // reference bar, actual spending carries the accent.
+    const projects = data.project_budgets || [];
+    mountChart('projectBudget', 'projectBudgetChart', {
+        type: 'bar',
+        data: {
+            labels: projects.map(p => p.name.length > 38 ? p.name.slice(0, 36) + '…' : p.name),
+            datasets: [
+                { label: 'Budget', data: projects.map(p => Number(p.budget) || 0), backgroundColor: t.envelope, borderRadius: 4, maxBarThickness: 18 },
+                { label: 'Spent', data: projects.map(p => Number(p.spent) || 0), backgroundColor: t.money, borderRadius: 4, maxBarThickness: 18 },
+            ],
+        },
+        options: {
+            indexAxis: 'y',
+            responsive: true, maintainAspectRatio: false,
+            plugins: {
+                legend: { position: 'top', align: 'end', labels: { color: t.text, boxWidth: 14, boxHeight: 14 } },
+                tooltip: { backgroundColor: t.tooltipBg, callbacks: { label: c => ` ${c.dataset.label}: ${formatCurrency(c.raw)}` } },
+            },
+            scales: {
+                x: { ticks: { color: t.muted, callback: v => pesoShort(v) }, grid: { color: t.grid } },
+                y: { ticks: { color: t.text }, grid: { display: false } },
+            },
+        },
+    });
+}
+
 function loadDashboardData() {
     fetch(citizenUrl('citizen/api/dashboard.php'))
         .then(res => res.json())
@@ -952,8 +1347,10 @@ function loadDashboardData() {
 
             try {
                 renderCitizenStatusChart(data.stats);
+                renderProgressChart(data.progress_chart || []);
+                renderDashboardExtraCharts(data);
             } catch (error) {
-                console.error('Failed to render status chart:', error);
+                console.error('Failed to render dashboard charts:', error);
             }
 
             displayRecentProjects(data.recent_projects || []);
@@ -991,7 +1388,7 @@ function displayLatestUpdates(updates) {
                     <span class="update-date">${formatDate(u.created_at)}</span>
                 </div>
                 <div class="update-meta">
-                    <span class="project-badge badge-${escapeHtml(u.status)}">${capitalizeFirst(u.status)}</span>
+                    <span class="project-badge badge-${escapeHtml(u.status)}">${projectStatusLabel(u.status)}</span>
                     <span class="update-progress">${Number(u.progress_percent)}% complete</span>
                 </div>
                 ${u.notes ? `<p class="update-notes">${escapeHtml(u.notes)}</p>` : ''}
@@ -1000,18 +1397,224 @@ function displayLatestUpdates(updates) {
     `).join('');
 }
 
+// ===== Paginated module lists (Gmail-style: search + top pager, 10 rows/page) =====
+// Each module table shares one controller: data is fetched once, then
+// searched/filtered/paged client-side so flipping pages is instant.
+const LIST_PAGE_SIZE = 10;
+const listStates = {};
+
+function initListControl(key, cfg) {
+    listStates[key] = { cfg, data: [], page: 1 };
+
+    const search = document.getElementById(cfg.searchId);
+    if (search) search.addEventListener('input', debounce(() => {
+        listStates[key].page = 1;
+        renderListControl(key);
+    }, 200));
+
+    if (cfg.filterId) {
+        const filter = document.getElementById(cfg.filterId);
+        if (filter) filter.addEventListener('change', () => {
+            listStates[key].page = 1;
+            renderListControl(key);
+        });
+    }
+
+    document.getElementById(cfg.prevId)?.addEventListener('click', () => {
+        listStates[key].page--;
+        renderListControl(key);
+    });
+    document.getElementById(cfg.nextId)?.addEventListener('click', () => {
+        listStates[key].page++;
+        renderListControl(key);
+    });
+}
+
+function setListData(key, data) {
+    const state = listStates[key];
+    if (!state) return;
+    state.data = Array.isArray(data) ? data : [];
+    state.page = 1;
+    renderListControl(key);
+}
+
+function renderListControl(key) {
+    const state = listStates[key];
+    if (!state) return;
+    const { cfg } = state;
+    const body = document.getElementById(cfg.bodyId);
+    if (!body) return;
+
+    const query = (document.getElementById(cfg.searchId)?.value || '').trim().toLowerCase();
+    const filterVal = cfg.filterId ? (document.getElementById(cfg.filterId)?.value || '') : '';
+
+    const filtered = state.data.filter(item => {
+        if (filterVal && cfg.matchesFilter && !cfg.matchesFilter(item, filterVal)) return false;
+        if (query && !cfg.searchText(item).toLowerCase().includes(query)) return false;
+        return true;
+    });
+
+    const pageSize = cfg.pageSize || LIST_PAGE_SIZE;
+    const total = filtered.length;
+    const lastPage = Math.max(1, Math.ceil(total / pageSize));
+    state.page = Math.min(Math.max(1, state.page), lastPage);
+    const start = (state.page - 1) * pageSize;
+    const end = Math.min(start + pageSize, total);
+    const pageItems = filtered.slice(start, end);
+
+    // cfg.columns marks a <tbody> target; without it the control renders
+    // into a plain list container (e.g. the Project Status tracker cards).
+    const emptyMsg = state.data.length ? 'No results match your search.' : cfg.emptyText;
+    body.innerHTML = pageItems.length
+        ? pageItems.map(cfg.rowHtml).join('')
+        : (cfg.columns
+            ? `<tr><td colspan="${cfg.columns}" class="table-empty">${emptyMsg}</td></tr>`
+            : `<p class="empty-state">${emptyMsg}</p>`);
+
+    const info = document.getElementById(cfg.infoId);
+    if (info) info.textContent = total ? `${start + 1}–${end} of ${total}` : '0 of 0';
+    const prev = document.getElementById(cfg.prevId);
+    if (prev) prev.disabled = state.page <= 1;
+    const next = document.getElementById(cfg.nextId);
+    if (next) next.disabled = end >= total;
+}
+
+function setupListControls() {
+    initListControl('projects', {
+        bodyId: 'projectsTableBody', searchId: 'projectSearch', filterId: 'statusFilter',
+        infoId: 'projectsPagerInfo', prevId: 'projectsPagerPrev', nextId: 'projectsPagerNext',
+        columns: 5, emptyText: 'No projects found',
+        searchText: p => `${p.name} ${p.location || ''} ${p.description || ''}`,
+        matchesFilter: (p, status) => p.status === status,
+        rowHtml: p => `
+            <tr class="row-click" onclick="openProjectDetail(${Number(p.id)})" title="View project details">
+                <td>
+                    <div class="cell-title">${escapeHtml(p.name)}</div>
+                    <div class="cell-sub">${escapeHtml(p.location || 'Location N/A')}</div>
+                </td>
+                <td class="cell-money">₱${formatNumber(p.budget)}</td>
+                <td class="cell-nowrap">${formatDate(p.start_date)} – ${formatDate(p.end_date)}</td>
+                <td>
+                    <div class="cell-progress">
+                        <div class="mini-progress"><div style="width:${Number(p.progress) || 0}%"></div></div>
+                        <span>${Number(p.progress) || 0}%</span>
+                    </div>
+                </td>
+                <td><span class="project-badge badge-${escapeHtml(p.status)}">${projectStatusLabel(p.status)}</span></td>
+            </tr>`,
+    });
+
+    initListControl('projectStatus', {
+        bodyId: 'projectStatusBody', searchId: 'psSearch',
+        infoId: 'psPagerInfo', prevId: 'psPagerPrev', nextId: 'psPagerNext',
+        pageSize: 5, emptyText: 'No projects to display',
+        searchText: p => `${p.name} ${p.location || ''} ${p.description || ''}`,
+        rowHtml: createTrackerCard,
+    });
+
+    initListControl('trackedFeedback', {
+        bodyId: 'trackedFeedbackBody', searchId: 'tfSearch',
+        infoId: 'tfPagerInfo', prevId: 'tfPagerPrev', nextId: 'tfPagerNext',
+        columns: 6, emptyText: 'No feedback submissions yet',
+        searchText: f => `${f.project_name || ''} ${f.message || ''} ${feedbackCategoryLabel(f.category)} ${f.barangay || ''} ${f.district || ''}`,
+        rowHtml: f => `
+            <tr>
+                <td>
+                    <div class="cell-title">${escapeHtml(f.project_name || 'Community Concern')}</div>
+                    <div class="cell-sub cell-clamp" title="${escapeHtml(f.message || '')}">${escapeHtml(f.message || '')}</div>
+                </td>
+                <td class="cell-nowrap">${feedbackCategoryLabel(f.category)}</td>
+                <td class="cell-nowrap"><span class="priority-dot priority-${escapeHtml(f.priority)}"></span>${capitalizeFirst(f.priority)}</td>
+                <td class="cell-nowrap">${f.barangay ? 'Brgy. ' + escapeHtml(f.barangay) : '—'}</td>
+                <td class="cell-nowrap">${formatDate(f.created_at)}</td>
+                <td><span class="feedback-status status-${escapeHtml(f.status)}">${capitalizeFirst(f.status)}</span></td>
+            </tr>`,
+    });
+
+    initListControl('expenses', {
+        bodyId: 'expensesBody', searchId: 'expSearch',
+        infoId: 'expPagerInfo', prevId: 'expPagerPrev', nextId: 'expPagerNext',
+        columns: 4, emptyText: 'No expense data available',
+        searchText: e => `${e.project_name} ${e.category || ''}`,
+        rowHtml: e => `
+            <tr>
+                <td><div class="cell-title">${escapeHtml(e.project_name)}</div></td>
+                <td class="cell-nowrap">${escapeHtml(e.category || 'Uncategorized')}</td>
+                <td class="cell-nowrap">${formatDate(e.expense_date)}</td>
+                <td class="cell-num cell-money">₱${formatNumber(e.amount)}</td>
+            </tr>`,
+    });
+}
+
+// ===== Project Status tracker cards =====
+// Where Public Projects is a directory table, this view answers "how far
+// along is it?": a workflow stage stepper plus execution facts per project.
+const TRACKER_STAGES = ['Approved', 'Bidding', 'Construction', 'Inspection', 'Completed'];
+const TRACKER_STAGE_INDEX = {
+    approved: 0,
+    bidding: 1, awarded: 1,
+    assigned: 2, active: 2, delayed: 2, on_hold: 2,
+    completion_inspection: 3,
+    completed: 4, turnover: 4,
+};
+
+function createTrackerCard(p) {
+    const progress = Number(p.progress) || 0;
+    const stageIdx = TRACKER_STAGE_INDEX[p.status] ?? 0;
+    const finished = p.status === 'completed' || p.status === 'turnover';
+    const troubled = p.status === 'delayed' || p.status === 'on_hold';
+    const delays = Number(p.delay_reports) || 0;
+    const totalMs = Number(p.total_milestones) || 0;
+    const doneMs = Number(p.completed_milestones) || 0;
+
+    const stepper = TRACKER_STAGES.map((label, i) => {
+        const cls = i < stageIdx || (i === stageIdx && finished) ? 'done'
+            : i === stageIdx ? (troubled ? 'current trouble' : 'current')
+            : '';
+        return `
+            <div class="tk-stage ${cls}">
+                <span class="tk-dot">${i < stageIdx || (i === stageIdx && finished)
+                    ? '<svg viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd"/></svg>'
+                    : ''}</span>
+                <span class="tk-stage-label">${label}</span>
+            </div>`;
+    }).join('<span class="tk-stage-line"></span>');
+
+    return `
+        <div class="tracker-card row-click" onclick="openProjectDetail(${Number(p.id)})" title="View project details">
+            <div class="tracker-photo">
+                ${p.latest_photo_path
+                    ? `<img src="${citizenUrl(escapeHtml(p.latest_photo_path))}" alt="${escapeHtml(p.latest_photo_title || p.name)}" loading="lazy">`
+                    : '<svg viewBox="0 0 20 20" fill="currentColor"><path d="M2 6a2 2 0 012-2h5l2 2h5a2 2 0 012 2v6a2 2 0 01-2 2H4a2 2 0 01-2-2V6z"/></svg>'}
+            </div>
+            <div class="tracker-main">
+                <div class="tracker-head">
+                    <div>
+                        <div class="cell-title">${escapeHtml(p.name)}</div>
+                        <div class="cell-sub">${escapeHtml(p.location || '')}</div>
+                    </div>
+                    <span class="project-badge badge-${escapeHtml(p.status)}">${projectStatusLabel(p.status)}</span>
+                </div>
+                <div class="tk-stepper">${stepper}</div>
+                <div class="tracker-progress">
+                    <div class="mini-progress"><div style="width:${progress}%"></div></div>
+                    <span>${progress}% complete</span>
+                </div>
+                <div class="tracker-facts">
+                    ${totalMs ? `<span>${doneMs} of ${totalMs} milestones done</span>` : ''}
+                    <span>₱${formatNumber(p.total_expenses)} spent of ₱${formatNumber(p.budget)}</span>
+                    <span>${finished ? 'Finished' : 'Target'}: ${formatDate(p.end_date)}</span>
+                    ${delays ? `<span class="tk-delay">⚠ ${delays} delay report${delays === 1 ? '' : 's'}</span>` : ''}
+                </div>
+            </div>
+        </div>`;
+}
+
 function loadProjects() {
-    const searchTerm = document.getElementById('projectSearch')?.value || '';
-    const statusFilter = document.getElementById('statusFilter')?.value || '';
-
-    const params = new URLSearchParams();
-    if (searchTerm) params.append('search', searchTerm);
-    if (statusFilter) params.append('status', statusFilter);
-
-    fetch(citizenUrl('citizen/api/projects.php') + '?' + params)
+    fetch(citizenUrl('citizen/api/projects.php'))
         .then(res => res.json())
         .then(data => {
-            displayProjects(data.projects);
+            setListData('projects', data.projects);
         })
         .catch(err => console.error('Error loading projects:', err));
 }
@@ -1020,7 +1623,7 @@ function loadProjectStatus() {
     fetch(citizenUrl('citizen/api/project-status.php'))
         .then(res => res.json())
         .then(data => {
-            displayProjectStatus(data.projects);
+            setListData('projectStatus', data.projects);
         })
         .catch(err => console.error('Error loading project status:', err));
 }
@@ -1029,7 +1632,7 @@ function loadTrackedFeedback() {
     fetch(citizenUrl('citizen/api/my-feedback.php'))
         .then(res => res.json())
         .then(data => {
-            displayTrackedFeedback(data.feedback);
+            setListData('trackedFeedback', data.feedback);
         })
         .catch(err => console.error('Error loading feedback:', err));
 }
@@ -1043,7 +1646,13 @@ function loadTransparencyDashboard() {
             document.getElementById('budgetRemaining').textContent = formatCurrency(data.stats.budget_remaining);
             document.getElementById('onTimeProjects').textContent = data.stats.on_time_projects;
 
-            displayExpenses(data.expenses);
+            try {
+                renderTransparencyCharts(data);
+            } catch (error) {
+                console.error('Failed to render transparency charts:', error);
+            }
+
+            setListData('expenses', data.expenses);
         })
         .catch(err => console.error('Error loading transparency data:', err));
 }
@@ -1060,25 +1669,13 @@ function displayRecentProjects(projects) {
     container.innerHTML = projects.slice(0, 3).map(project => createProjectCard(project)).join('');
 }
 
-function displayProjects(projects) {
-    const container = document.getElementById('projectsGridContainer');
-    if (!container) return;
-
-    if (projects.length === 0) {
-        container.innerHTML = '<p class="empty-state">No projects found</p>';
-        return;
-    }
-
-    container.innerHTML = projects.map(project => createProjectCard(project)).join('');
-}
-
 function createProjectCard(project) {
     const progress = project.progress || 0;
     const statusClass = 'badge-' + project.status;
 
     return `
         <div class="project-card" onclick="openProjectDetail(${Number(project.id)})" title="View project details">
-            <span class="project-badge ${statusClass}">${capitalizeFirst(project.status)}</span>
+            <span class="project-badge ${statusClass}">${projectStatusLabel(project.status)}</span>
             <div class="project-name">${escapeHtml(project.name)}</div>
             <div class="project-location">
                 <svg width="14" height="14" viewBox="0 0 20 20" fill="currentColor" class="meta-icon"><path fill-rule="evenodd" d="M5.05 4.05a7 7 0 119.9 9.9L10 18.9l-4.95-4.95a7 7 0 010-9.9zM10 11a2 2 0 100-4 2 2 0 000 4z" clip-rule="evenodd"/></svg>
@@ -1098,50 +1695,6 @@ function createProjectCard(project) {
     `;
 }
 
-function displayProjectStatus(projects) {
-    const container = document.getElementById('projectStatusContainer');
-    if (!container) return;
-
-    if (projects.length === 0) {
-        container.innerHTML = '<p class="empty-state">No projects to display</p>';
-        return;
-    }
-
-    container.innerHTML = projects.map(project => `
-        <div class="status-item ${project.status}" onclick="openProjectDetail(${Number(project.id)})" title="View project details">
-            ${project.latest_photo_path ? `
-                <img class="status-photo" src="${citizenUrl(escapeHtml(project.latest_photo_path))}" alt="${escapeHtml(project.latest_photo_title || project.name)}">
-            ` : ''}
-            <div>
-                <div class="feedback-title">${escapeHtml(project.name)}</div>
-                <div class="feedback-message">${escapeHtml(project.description || 'No description')}</div>
-            </div>
-            <div class="status-meta">
-                <div class="meta-item">
-                    <span class="meta-label">Status</span>
-                    <span class="meta-value">${capitalizeFirst(project.status)}</span>
-                </div>
-                <div class="meta-item">
-                    <span class="meta-label">Progress</span>
-                    <span class="meta-value">${project.progress}%</span>
-                </div>
-                <div class="meta-item">
-                    <span class="meta-label">Budget</span>
-                    <span class="meta-value">₱${formatNumber(project.budget)}</span>
-                </div>
-                <div class="meta-item">
-                    <span class="meta-label">End Date</span>
-                    <span class="meta-value">${formatDate(project.end_date)}</span>
-                </div>
-                <div class="meta-item">
-                    <span class="meta-label">Delays</span>
-                    <span class="meta-value">${project.delay_reports || 0}</span>
-                </div>
-            </div>
-        </div>
-    `).join('');
-}
-
 function displayRecentFeedback(feedback) {
     const container = document.getElementById('recentFeedbackContainer');
     if (!container) return;
@@ -1152,18 +1705,6 @@ function displayRecentFeedback(feedback) {
     }
 
     container.innerHTML = feedback.slice(0, 3).map(item => createFeedbackItem(item)).join('');
-}
-
-function displayTrackedFeedback(feedback) {
-    const container = document.getElementById('trackedFeedbackContainer');
-    if (!container) return;
-
-    if (feedback.length === 0) {
-        container.innerHTML = '<p class="empty-state">No feedback submissions yet</p>';
-        return;
-    }
-
-    container.innerHTML = feedback.map(item => createFeedbackItem(item)).join('');
 }
 
 function createFeedbackItem(item) {
@@ -1216,26 +1757,6 @@ function createFeedbackItem(item) {
             </div>
         </div>
     `;
-}
-
-function displayExpenses(expenses) {
-    const container = document.getElementById('expensesContainer');
-    if (!container) return;
-
-    if (expenses.length === 0) {
-        container.innerHTML = '<p class="empty-state">No expense data available</p>';
-        return;
-    }
-
-    container.innerHTML = expenses.map(expense => `
-        <div class="expense-item">
-            <div class="expense-info">
-                <div class="expense-project">${escapeHtml(expense.project_name)}</div>
-                <div class="expense-category">${escapeHtml(expense.category)} • ${formatDate(expense.expense_date)}</div>
-            </div>
-            <div class="expense-amount">₱${formatNumber(expense.amount)}</div>
-        </div>
-    `).join('');
 }
 
 function handleFeedbackSubmit(e) {
@@ -1307,7 +1828,40 @@ function fbApplyConcernType(concern) {
     const catLabel = document.getElementById('fbCategoryLabel');
     const projectNameGroup = document.getElementById('feedbackProjectName')?.closest('.form-group');
 
-    if (concern === 'maintenance') {
+    // Maintenance mirrors the CIMMS public request form (LGU
+    // citizenrepform.php): Infrastructure Type is required, the description
+    // is the "Issue / Damage Description", and a contact number in
+    // 09XX-XXX-XXXX form is mandatory (CIMMS has no anonymous submissions,
+    // so the anonymous toggle only applies to the project path).
+    const maintenance = concern === 'maintenance';
+    const infraGroup = document.getElementById('fbInfraGroup');
+    const infraSelect = document.getElementById('feedbackInfraSelect');
+    const anonRow = document.getElementById('fbAnonRow');
+    const anonCheckbox = document.getElementById('feedbackAnonymous');
+    const msgLabel = document.getElementById('fbMessageLabel');
+    const msgInput = document.getElementById('feedbackMessage');
+    const phoneLabel = document.getElementById('fbPhoneLabel');
+    const phoneInput = document.getElementById('feedbackContactPhone');
+    const photosLabel = document.getElementById('fbPhotosLabel');
+
+    if (infraGroup) infraGroup.style.display = maintenance ? '' : 'none';
+    if (infraSelect) infraSelect.required = maintenance && document.getElementById('feedbackInfraOther')?.style.display === 'none';
+    if (anonRow) anonRow.style.display = maintenance ? 'none' : '';
+    if (maintenance && anonCheckbox?.checked) {
+        anonCheckbox.checked = false;
+        fbToggleAnonymous();
+    }
+    if (msgLabel) msgLabel.textContent = maintenance ? 'Issue / Damage Description *' : 'Description *';
+    if (msgInput) msgInput.placeholder = maintenance
+        ? 'Describe the problem in detail...'
+        : 'Describe your concern, report, or complaint about your area...';
+    if (phoneLabel) phoneLabel.textContent = maintenance ? 'Contact Number *' : 'Contact Number';
+    if (phoneInput) phoneInput.required = maintenance;
+    if (photosLabel) photosLabel.innerHTML = maintenance
+        ? 'Evidence — Upload Images <span class="fb-optional">(up to 4 images accepted, 3MB each)</span>'
+        : 'Photos (proof) <span class="fb-optional">— optional, up to 4 images, 3MB each</span>';
+
+    if (maintenance) {
         if (banner) banner.style.display = 'flex';
         if (title) title.textContent = 'Tell us about the maintenance issue';
         if (sub) sub.textContent = 'This helps route your report to the right maintenance crew.';
@@ -1339,6 +1893,76 @@ function fbApplyConcernType(concern) {
 
     fbRenderIllustration('fbIllustration2', concern);
     fbRenderIllustration('fbIllustration3', concern);
+}
+
+// The effective infrastructure value: the "specify" text wins over the
+// dropdown when it's in use — same hybrid rule as the CIMMS form.
+function fbCurrentInfrastructure() {
+    const other = document.getElementById('feedbackInfraOther');
+    if (other && other.style.display !== 'none' && other.value.trim() !== '') return other.value.trim();
+    return document.getElementById('feedbackInfraSelect')?.value || '';
+}
+
+// Hybrid infrastructure dropdown/input — behavior copied from the CIMMS
+// request form: picking "Other" swaps the select for a free-text input;
+// leaving it empty swaps back.
+function setupInfrastructureHybrid() {
+    const infraSelect = document.getElementById('feedbackInfraSelect');
+    const infraOther = document.getElementById('feedbackInfraOther');
+    if (!infraSelect || !infraOther) return;
+
+    const revertToDropdown = () => {
+        infraOther.style.display = 'none';
+        infraOther.required = false;
+        infraSelect.style.display = '';
+        infraSelect.value = '';
+        infraSelect.required = fbConcernType === 'maintenance';
+    };
+
+    infraSelect.addEventListener('change', () => {
+        if (infraSelect.value === 'Other') {
+            infraSelect.style.display = 'none';
+            infraSelect.required = false;
+            infraSelect.value = '';
+            infraOther.style.display = '';
+            infraOther.required = fbConcernType === 'maintenance';
+            infraOther.focus();
+        }
+    });
+
+    infraOther.addEventListener('input', () => {
+        if (infraOther.value.trim() === '') revertToDropdown();
+    });
+
+    document.addEventListener('focusin', (e) => {
+        if (infraOther.style.display !== 'none' && e.target !== infraOther && infraOther.value.trim() === '') {
+            revertToDropdown();
+        }
+    });
+}
+
+// Contact number in the CIMMS 09XX-XXX-XXXX shape: digits only, dashes
+// added while typing, must be 11 digits starting with 09 when required.
+function setupContactPhoneFormat() {
+    const phone = document.getElementById('feedbackContactPhone');
+    if (!phone) return;
+
+    phone.addEventListener('input', () => {
+        const digits = phone.value.replace(/\D/g, '').slice(0, 11);
+        let formatted = digits;
+        if (digits.length > 7) formatted = digits.slice(0, 4) + '-' + digits.slice(4, 7) + '-' + digits.slice(7);
+        else if (digits.length > 4) formatted = digits.slice(0, 4) + '-' + digits.slice(4);
+        phone.value = formatted;
+
+        const pure = digits;
+        if (pure === '' && !phone.required) {
+            phone.setCustomValidity('');
+        } else if (!/^09\d{9}$/.test(pure)) {
+            phone.setCustomValidity('Contact number must be 11 digits (09XX-XXX-XXXX) and start with 09.');
+        } else {
+            phone.setCustomValidity('');
+        }
+    });
 }
 
 function fbToggleAnonymous() {
@@ -1403,8 +2027,11 @@ function fbRenderReview() {
         ? 'Anonymous submission'
         : ([contactName, contactPhone, contactEmail].filter(Boolean).join(' · ') || 'Not provided');
 
+    const infrastructure = fbConcernType === 'maintenance' ? fbCurrentInfrastructure() : '';
+
     card.innerHTML = `
         <div class="fb-review-row"><span>Concern Type</span><strong>${escapeHtml(concernLabel)}</strong></div>
+        ${infrastructure ? `<div class="fb-review-row"><span>Infrastructure Type</span><strong>${escapeHtml(infrastructure)}</strong></div>` : ''}
         ${projectName?.value ? `<div class="fb-review-row"><span>Project Name</span><strong>${escapeHtml(projectName.value)}</strong></div>` : ''}
         <div class="fb-review-row"><span>Location</span><strong>${escapeHtml(locationText)}</strong></div>
         <div class="fb-review-row"><span>Category</span><strong>${escapeHtml(category?.selectedOptions[0]?.textContent.trim() || 'Not specified')}</strong></div>
@@ -1456,6 +2083,12 @@ function submitFeedbackWizard() {
 function resetFeedbackWizard() {
     const form = document.getElementById('feedbackForm');
     if (form) form.reset();
+    // Put the hybrid infrastructure field back in its dropdown state.
+    const infraOther = document.getElementById('feedbackInfraOther');
+    const infraSelect = document.getElementById('feedbackInfraSelect');
+    if (infraOther) { infraOther.style.display = 'none'; infraOther.required = false; }
+    if (infraSelect) infraSelect.style.display = '';
+    document.getElementById('feedbackContactPhone')?.setCustomValidity('');
     resetLocationPicker();
     renderFeedbackPhotoPreviews();
     fbToggleAnonymous();
@@ -1474,6 +2107,8 @@ function setupFeedbackWizard() {
     });
 
     document.getElementById('feedbackAnonymous')?.addEventListener('change', fbToggleAnonymous);
+    setupInfrastructureHybrid();
+    setupContactPhoneFormat();
 
     // Step 2 (Fill Information) in-panel actions
     document.getElementById('fbBackBtn2')?.addEventListener('click', () => fbGoToStep(1));
@@ -1511,6 +2146,17 @@ function formatDate(dateStr) {
 function capitalizeFirst(str) {
     if (!str) return '';
     return str.charAt(0).toUpperCase() + str.slice(1).replace(/_/g, ' ');
+}
+
+// Workflow statuses whose raw enum value reads poorly to the public.
+const PROJECT_STATUS_LABELS = {
+    on_hold: 'On Hold',
+    completion_inspection: 'Final Inspection',
+    turnover: 'Turned Over',
+};
+
+function projectStatusLabel(status) {
+    return PROJECT_STATUS_LABELS[status] || capitalizeFirst(status);
 }
 
 // Mirrors citizen/includes/feedback-categories.php (the server-side source of truth).

@@ -16,7 +16,7 @@ $query = "SELECT id, project_code, name, description, location, budget, start_da
 $params = [];
 
 if ($all !== '1') {
-    $query .= " AND status IN ('approved','bidding','awarded','assigned','active','delayed','on_hold','completed')";
+    $query .= " AND status IN ('approved','bidding','awarded','assigned','active','delayed','on_hold','completion_inspection','completed','turnover')";
 }
 
 if ($search) {

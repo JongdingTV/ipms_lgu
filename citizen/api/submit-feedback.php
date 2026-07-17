@@ -14,7 +14,7 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
 $user = requireLogin(['citizen']);
 $pdo = getDB();
 
-const FEEDBACK_MAX_PHOTOS = 3;
+const FEEDBACK_MAX_PHOTOS = 4; // matches the CIMMS request form's evidence limit
 const FEEDBACK_MAX_PHOTO_BYTES = 3 * 1024 * 1024; // 3MB, must match the client-side limit
 const FEEDBACK_ALLOWED_PHOTO_MIME = [
     'image/jpeg' => 'jpg',
@@ -54,8 +54,28 @@ $district = trim($_POST['district'] ?? '');
 $barangay = trim($_POST['barangay'] ?? '');
 $latitudeRaw = trim($_POST['latitude'] ?? '');
 $longitudeRaw = trim($_POST['longitude'] ?? '');
+$concernType = $_POST['concern_type'] ?? 'project';
 
 $errors = [];
+
+// Maintenance reports mirror the CIMMS request form: the affected
+// infrastructure is required ("specify" text wins over the dropdown), and
+// the contact number must be a valid 09XX-XXX-XXXX mobile number.
+$infrastructureType = null;
+if ($concernType === 'maintenance') {
+    $infraOther = trim($_POST['infrastructure_other'] ?? '');
+    $infrastructureType = $infraOther !== '' ? $infraOther : trim($_POST['infrastructure'] ?? '');
+    if ($infrastructureType === '') {
+        $errors[] = 'Please select the affected infrastructure type';
+    } elseif (mb_strlen($infrastructureType) > 100) {
+        $errors[] = 'Infrastructure type must be 100 characters or fewer';
+    }
+
+    $pureNumber = preg_replace('/\D/', '', $_POST['contact_phone'] ?? '');
+    if (!preg_match('/^09\d{9}$/', $pureNumber)) {
+        $errors[] = 'Contact number must be 11 digits (09XX-XXX-XXXX) and start with 09';
+    }
+}
 if (empty($category) || !array_key_exists($category, feedbackCategories())) {
     $errors[] = 'Invalid category';
 }
@@ -143,10 +163,10 @@ try {
     $pdo->beginTransaction();
 
     $stmt = $pdo->prepare("
-        INSERT INTO feedback (project_id, citizen_id, message, category, priority, district, barangay, latitude, longitude, status)
-        VALUES (NULL, ?, ?, ?, ?, ?, ?, ?, ?, 'open')
+        INSERT INTO feedback (project_id, citizen_id, message, category, infrastructure_type, priority, district, barangay, latitude, longitude, status)
+        VALUES (NULL, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'open')
     ");
-    $stmt->execute([$citizenId, $message, $category, $priority, $district, $barangay, $latitude, $longitude]);
+    $stmt->execute([$citizenId, $message, $category, $infrastructureType, $priority, $district, $barangay, $latitude, $longitude]);
     $feedbackId = (int) $pdo->lastInsertId();
 
     if ($photoFiles) {

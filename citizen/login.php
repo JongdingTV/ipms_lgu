@@ -26,7 +26,7 @@ if (isset($_GET['verified'])) {
 } elseif (isset($_GET['reset'])) {
     $status = 'Password reset! Please log in with your new password.';
 } elseif (isset($_GET['timeout'])) {
-    $status = 'Your session expired after 30 minutes of inactivity. Please sign in again.';
+    $status = 'You were logged out due to inactivity. Please sign in again.';
 } elseif (isset($_GET['error'])) {
     $status = trim((string) $_GET['error']);
 }
@@ -78,10 +78,10 @@ $brandStats = null;
 try {
     $brandStats = getDB()->query("
         SELECT COUNT(*) AS total,
-               COALESCE(SUM(status = 'completed'), 0) AS completed,
-               COALESCE(SUM(status IN ('active','delayed','on_hold')), 0) AS ongoing
+               COALESCE(SUM(status IN ('completed','turnover')), 0) AS completed,
+               COALESCE(SUM(status IN ('active','delayed','on_hold','completion_inspection')), 0) AS ongoing
         FROM projects
-        WHERE status IN ('approved','bidding','awarded','assigned','active','delayed','on_hold','completed')
+        WHERE status IN ('approved','bidding','awarded','assigned','active','delayed','on_hold','completion_inspection','completed','turnover')
     ")->fetch() ?: null;
 } catch (Throwable $e) {
     $brandStats = null;

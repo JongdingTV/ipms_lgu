@@ -7,12 +7,14 @@
       </svg>
     </button>
 
+    <?php if (($_SESSION['role'] ?? '') !== 'citizen'): // citizens use the global "Search everything" instead ?>
     <div class="search-bar">
       <svg width="16" height="16" viewBox="0 0 20 20" fill="currentColor" class="search-icon">
         <path fill-rule="evenodd" d="M8 4a4 4 0 100 8 4 4 0 000-8zM2 8a6 6 0 1110.89 3.476l4.817 4.817a1 1 0 01-1.414 1.414l-4.816-4.816A6 6 0 012 8z" clip-rule="evenodd"/>
       </svg>
       <input type="text" id="searchInput" placeholder="<?= htmlspecialchars($topbarSearchPlaceholder ?? 'Search projects, contractors...') ?>">
     </div>
+    <?php endif; ?>
 
     <button class="gsearch-trigger" id="globalSearchBtn" type="button" title="Search everything (Ctrl+K)">
       <svg viewBox="0 0 20 20" fill="currentColor">
@@ -80,6 +82,7 @@
             </svg>
             <span>Change Password</span>
           </a>
+          <?php if (($_SESSION['role'] ?? '') !== 'citizen'): // citizens log out via the sidebar footer ?>
           <div class="user-menu-divider"></div>
           <a href="<?= $BASE_PATH ?>auth/logout.php" class="user-menu-item user-menu-logout">
             <svg width="20" height="20" viewBox="0 0 20 20" fill="currentColor">
@@ -87,6 +90,7 @@
             </svg>
             <span>Logout</span>
           </a>
+          <?php endif; ?>
         </div>
       </div>
     </div>

@@ -174,6 +174,45 @@ $statusChip = [
         </article>
       </section>
 
+      <!-- Planned vs actual progress — same series the staff dashboard charts -->
+      <section class="chart-card chart-card-full reveal" style="transition-delay:.04s;">
+        <div class="chart-header">
+          <h2 class="chart-title">Project Progress Overview</h2>
+          <span class="chart-subnote">Average planned vs actual progress across public projects, by month</span>
+        </div>
+        <div class="chart-canvas-box chart-canvas-tall">
+          <canvas id="citizenProgressChart"></canvas>
+        </div>
+      </section>
+
+      <!-- Second charts row: money by stage, project starts, feedback mix -->
+      <section class="charts-grid-3 reveal" style="transition-delay:.06s;">
+        <article class="chart-card">
+          <div class="chart-header">
+            <h2 class="chart-title">Budget by Stage</h2>
+          </div>
+          <div class="chart-canvas-box">
+            <canvas id="budgetByStageChart"></canvas>
+          </div>
+        </article>
+        <article class="chart-card">
+          <div class="chart-header">
+            <h2 class="chart-title">New Projects per Month</h2>
+          </div>
+          <div class="chart-canvas-box">
+            <canvas id="projectsStartedChart"></canvas>
+          </div>
+        </article>
+        <article class="chart-card">
+          <div class="chart-header">
+            <h2 class="chart-title">Feedback by Category</h2>
+          </div>
+          <div class="chart-canvas-box">
+            <canvas id="feedbackCategoryChart"></canvas>
+          </div>
+        </article>
+      </section>
+
       <!-- Recent Projects Section -->
       <section class="dashboard-section reveal" style="transition-delay:.08s;">
         <div class="section-header">
@@ -206,8 +245,11 @@ $statusChip = [
       <div class="page-header">
         <h1 class="page-title">Public Projects</h1>
       </div>
-      <div class="filters">
-        <input type="text" id="projectSearch" placeholder="Search projects..." class="search-box">
+      <div class="list-toolbar">
+        <div class="list-search">
+          <svg viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M8 4a4 4 0 100 8 4 4 0 000-8zM2 8a6 6 0 1110.89 3.476l4.817 4.817a1 1 0 01-1.414 1.414l-4.816-4.816A6 6 0 012 8z" clip-rule="evenodd"/></svg>
+          <input type="text" id="projectSearch" placeholder="Search projects by name, location, or description">
+        </div>
         <select id="statusFilter" class="filter-select">
           <option value="">All Status</option>
           <option value="approved">Approved</option>
@@ -217,11 +259,31 @@ $statusChip = [
           <option value="active">Active</option>
           <option value="delayed">Delayed</option>
           <option value="on_hold">On Hold</option>
+          <option value="completion_inspection">Final Inspection</option>
           <option value="completed">Completed</option>
+          <option value="turnover">Turned Over</option>
         </select>
+        <div class="list-pager">
+          <span class="list-pager-info" id="projectsPagerInfo">0 of 0</span>
+          <button type="button" class="list-pager-btn" id="projectsPagerPrev" title="Previous page" aria-label="Previous page"><svg viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M12.707 5.293a1 1 0 010 1.414L9.414 10l3.293 3.293a1 1 0 01-1.414 1.414l-4-4a1 1 0 010-1.414l4-4a1 1 0 011.414 0z" clip-rule="evenodd"/></svg></button>
+          <button type="button" class="list-pager-btn" id="projectsPagerNext" title="Next page" aria-label="Next page"><svg viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M7.293 14.707a1 1 0 010-1.414L10.586 10 7.293 6.707a1 1 0 011.414-1.414l4 4a1 1 0 010 1.414l-4 4a1 1 0 01-1.414 0z" clip-rule="evenodd"/></svg></button>
+        </div>
       </div>
-      <div id="projectsGridContainer" class="projects-grid">
-        <p class="empty-state">Loading projects...</p>
+      <div class="table-card">
+        <table class="data-table">
+          <thead>
+            <tr>
+              <th>Project</th>
+              <th>Budget</th>
+              <th>Timeline</th>
+              <th>Progress</th>
+              <th>Status</th>
+            </tr>
+          </thead>
+          <tbody id="projectsTableBody">
+            <tr><td colspan="5" class="table-empty">Loading projects…</td></tr>
+          </tbody>
+        </table>
       </div>
     </section>
 
@@ -230,8 +292,21 @@ $statusChip = [
       <div class="page-header">
         <h1 class="page-title">Project Status Tracking</h1>
       </div>
-      <div id="projectStatusContainer" class="status-list">
-        <p class="empty-state">Loading project details...</p>
+      <div class="list-toolbar">
+        <div class="list-search">
+          <svg viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M8 4a4 4 0 100 8 4 4 0 000-8zM2 8a6 6 0 1110.89 3.476l4.817 4.817a1 1 0 01-1.414 1.414l-4.816-4.816A6 6 0 012 8z" clip-rule="evenodd"/></svg>
+          <input type="text" id="psSearch" placeholder="Search projects">
+        </div>
+        <div class="list-pager">
+          <span class="list-pager-info" id="psPagerInfo">0 of 0</span>
+          <button type="button" class="list-pager-btn" id="psPagerPrev" title="Previous page" aria-label="Previous page"><svg viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M12.707 5.293a1 1 0 010 1.414L9.414 10l3.293 3.293a1 1 0 01-1.414 1.414l-4-4a1 1 0 010-1.414l4-4a1 1 0 011.414 0z" clip-rule="evenodd"/></svg></button>
+          <button type="button" class="list-pager-btn" id="psPagerNext" title="Next page" aria-label="Next page"><svg viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M7.293 14.707a1 1 0 010-1.414L10.586 10 7.293 6.707a1 1 0 011.414-1.414l4 4a1 1 0 010 1.414l-4 4a1 1 0 01-1.414 0z" clip-rule="evenodd"/></svg></button>
+        </div>
+      </div>
+      <!-- Tracker cards, deliberately distinct from the Public Projects
+           directory table: each card walks the project's workflow stages. -->
+      <div id="projectStatusBody" class="tracker-list">
+        <p class="empty-state">Loading project details…</p>
       </div>
     </section>
 
@@ -359,7 +434,25 @@ $statusChip = [
                 <form id="feedbackForm" method="POST">
                   <input type="hidden" name="concern_type" id="feedbackConcernType" value="project">
 
-                  <div class="fb-anon-row">
+                  <!-- Maintenance path only — mirrors the CIMMS public request
+                       form (LGU citizenrepform.php): same options, same hybrid
+                       "Other → specify" behavior. -->
+                  <div class="form-group" id="fbInfraGroup" style="display: none;">
+                    <label for="feedbackInfraSelect">Infrastructure Type *</label>
+                    <select id="feedbackInfraSelect" name="infrastructure">
+                      <option value="">Select infrastructure</option>
+                      <option value="Roads">Roads</option>
+                      <option value="Street Lights">Street Lights</option>
+                      <option value="Drainage">Drainage</option>
+                      <option value="Public Facilities">Public Facilities</option>
+                      <option value="Water Supply">Water Supply</option>
+                      <option value="Electrical">Electrical</option>
+                      <option value="Other">Other</option>
+                    </select>
+                    <input type="text" id="feedbackInfraOther" name="infrastructure_other" placeholder="Specify infrastructure" style="display: none;" autocomplete="off">
+                  </div>
+
+                  <div class="fb-anon-row" id="fbAnonRow">
                     <label class="fb-toggle">
                       <input type="checkbox" id="feedbackAnonymous" name="anonymous" value="1">
                       <span class="fb-toggle-track"><span class="fb-toggle-thumb"></span></span>
@@ -376,8 +469,8 @@ $statusChip = [
                         <input type="text" id="feedbackContactName" name="contact_name" placeholder="Your name">
                       </div>
                       <div class="form-group">
-                        <label for="feedbackContactPhone">Contact Number</label>
-                        <input type="text" id="feedbackContactPhone" name="contact_phone" placeholder="09xx xxx xxxx">
+                        <label for="feedbackContactPhone" id="fbPhoneLabel">Contact Number</label>
+                        <input type="tel" id="feedbackContactPhone" name="contact_phone" placeholder="09XX-XXX-XXXX" maxlength="13">
                       </div>
                       <div class="form-group">
                         <label for="feedbackContactEmail">Email</label>
@@ -457,17 +550,17 @@ $statusChip = [
                   </div>
 
                   <div class="form-group">
-                    <label for="feedbackMessage">Description *</label>
+                    <label for="feedbackMessage" id="fbMessageLabel">Description *</label>
                     <textarea id="feedbackMessage" name="message" rows="6" placeholder="Describe your concern, report, or complaint about your area..." required></textarea>
                   </div>
 
                   <div class="form-group">
-                    <label for="feedbackPhotos">Photos (proof) <span class="fb-optional">— optional, up to 3 images, 3MB each</span></label>
+                    <label for="feedbackPhotos" id="fbPhotosLabel">Photos (proof) <span class="fb-optional">— optional, up to 4 images, 3MB each</span></label>
                     <label for="feedbackPhotos" class="id-upload-box feedback-upload-box">
                       <input type="file" id="feedbackPhotos" name="photos[]" accept="image/jpeg,image/png,image/gif,image/webp" multiple>
                       <svg width="26" height="26" viewBox="0 0 20 20" fill="currentColor" class="id-upload-icon"><path fill-rule="evenodd" d="M4 3a2 2 0 00-2 2v10a2 2 0 002 2h12a2 2 0 002-2V5a2 2 0 00-2-2H4zm12 12H4l4-8 3 6 2-4 3 6z" clip-rule="evenodd"/></svg>
                       <p class="id-upload-text">Click or drag photos here</p>
-                      <p class="id-upload-hint">JPG, PNG, GIF, or WEBP — maximum of 3 photos, 3MB each</p>
+                      <p class="id-upload-hint">JPG, PNG, GIF, or WEBP — maximum of 4 photos, 3MB each</p>
                     </label>
                     <div class="feedback-photo-previews" id="feedbackPhotoPreviews"></div>
                     <div class="id-upload-status" id="feedbackPhotoStatus" style="display: none;"></div>
@@ -537,8 +630,33 @@ $statusChip = [
       <div class="page-header">
         <h1 class="page-title">Track Your Feedback & Complaints</h1>
       </div>
-      <div id="trackedFeedbackContainer" class="feedback-list">
-        <p class="empty-state">Loading your submissions...</p>
+      <div class="list-toolbar">
+        <div class="list-search">
+          <svg viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M8 4a4 4 0 100 8 4 4 0 000-8zM2 8a6 6 0 1110.89 3.476l4.817 4.817a1 1 0 01-1.414 1.414l-4.816-4.816A6 6 0 012 8z" clip-rule="evenodd"/></svg>
+          <input type="text" id="tfSearch" placeholder="Search your reports">
+        </div>
+        <div class="list-pager">
+          <span class="list-pager-info" id="tfPagerInfo">0 of 0</span>
+          <button type="button" class="list-pager-btn" id="tfPagerPrev" title="Previous page" aria-label="Previous page"><svg viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M12.707 5.293a1 1 0 010 1.414L9.414 10l3.293 3.293a1 1 0 01-1.414 1.414l-4-4a1 1 0 010-1.414l4-4a1 1 0 011.414 0z" clip-rule="evenodd"/></svg></button>
+          <button type="button" class="list-pager-btn" id="tfPagerNext" title="Next page" aria-label="Next page"><svg viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M7.293 14.707a1 1 0 010-1.414L10.586 10 7.293 6.707a1 1 0 011.414-1.414l4 4a1 1 0 010 1.414l-4 4a1 1 0 01-1.414 0z" clip-rule="evenodd"/></svg></button>
+        </div>
+      </div>
+      <div class="table-card">
+        <table class="data-table">
+          <thead>
+            <tr>
+              <th>Report</th>
+              <th>Category</th>
+              <th>Priority</th>
+              <th>Location</th>
+              <th>Submitted</th>
+              <th>Status</th>
+            </tr>
+          </thead>
+          <tbody id="trackedFeedbackBody">
+            <tr><td colspan="6" class="table-empty">Loading your submissions…</td></tr>
+          </tbody>
+        </table>
       </div>
     </section>
 
@@ -570,12 +688,84 @@ $statusChip = [
         </div>
       </div>
 
+      <!-- Charts: all figures come straight from the staff-side projects &
+           expenses tables via citizen/api/transparency.php -->
+      <div class="transparency-charts">
+        <article class="chart-card">
+          <div class="chart-header">
+            <h2 class="chart-title">Budget Utilization</h2>
+          </div>
+          <div class="chart-body budget-body">
+            <div class="donut-wrapper">
+              <canvas id="budgetDonutChart"></canvas>
+              <div class="donut-center">
+                <span class="donut-pct" id="budgetDonutPct">0%</span>
+                <span class="donut-sub">spent</span>
+              </div>
+            </div>
+            <div class="budget-legend" id="budgetDonutLegend"></div>
+          </div>
+        </article>
+
+        <article class="chart-card">
+          <div class="chart-header">
+            <h2 class="chart-title">Spending by Category</h2>
+          </div>
+          <div class="chart-canvas-box">
+            <canvas id="categorySpendChart"></canvas>
+          </div>
+        </article>
+
+        <article class="chart-card chart-card-full">
+          <div class="chart-header">
+            <h2 class="chart-title">Monthly Spending</h2>
+            <span class="chart-subnote">Expenses recorded over the last 12 months</span>
+          </div>
+          <div class="chart-canvas-box chart-canvas-tall">
+            <canvas id="monthlySpendChart"></canvas>
+          </div>
+        </article>
+
+        <article class="chart-card chart-card-full">
+          <div class="chart-header">
+            <h2 class="chart-title">Budget vs Spent by Project</h2>
+            <span class="chart-subnote">The largest public projects by allocated budget</span>
+          </div>
+          <div class="chart-canvas-box chart-canvas-tall">
+            <canvas id="projectBudgetChart"></canvas>
+          </div>
+        </article>
+      </div>
+
       <section class="dashboard-section">
         <div class="section-header">
           <h2>Project Expenses Breakdown</h2>
         </div>
-        <div id="expensesContainer" class="expenses-list">
-          <p class="empty-state">Loading expense data...</p>
+        <div class="list-toolbar">
+          <div class="list-search">
+            <svg viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M8 4a4 4 0 100 8 4 4 0 000-8zM2 8a6 6 0 1110.89 3.476l4.817 4.817a1 1 0 01-1.414 1.414l-4.816-4.816A6 6 0 012 8z" clip-rule="evenodd"/></svg>
+            <input type="text" id="expSearch" placeholder="Search expenses by project or category">
+          </div>
+          <div class="list-pager">
+            <span class="list-pager-info" id="expPagerInfo">0 of 0</span>
+            <button type="button" class="list-pager-btn" id="expPagerPrev" title="Previous page" aria-label="Previous page"><svg viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M12.707 5.293a1 1 0 010 1.414L9.414 10l3.293 3.293a1 1 0 01-1.414 1.414l-4-4a1 1 0 010-1.414l4-4a1 1 0 011.414 0z" clip-rule="evenodd"/></svg></button>
+            <button type="button" class="list-pager-btn" id="expPagerNext" title="Next page" aria-label="Next page"><svg viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M7.293 14.707a1 1 0 010-1.414L10.586 10 7.293 6.707a1 1 0 011.414-1.414l4 4a1 1 0 010 1.414l-4 4a1 1 0 01-1.414 0z" clip-rule="evenodd"/></svg></button>
+          </div>
+        </div>
+        <div class="table-card">
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th>Project</th>
+                <th>Category</th>
+                <th>Date</th>
+                <th class="cell-num">Amount</th>
+              </tr>
+            </thead>
+            <tbody id="expensesBody">
+              <tr><td colspan="4" class="table-empty">Loading expense data…</td></tr>
+            </tbody>
+          </table>
         </div>
       </section>
     </section>
@@ -763,6 +953,41 @@ $statusChip = [
     </div>
     <div class="project-detail-body" id="projectDetailBody">
       <p class="empty-state">Loading project details...</p>
+    </div>
+  </div>
+</div>
+
+<!-- Logout Confirmation Modal -->
+<div class="modal-overlay" id="logoutConfirmModal" style="display: none;">
+  <div class="modal-card">
+    <div class="modal-head">
+      <h3>
+        <svg width="17" height="17" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M3 3a1 1 0 00-1 1v12a1 1 0 102 0V4a1 1 0 00-1-1zm10.293 9.293a1 1 0 001.414 1.414l3-3a1 1 0 000-1.414l-3-3a1 1 0 10-1.414 1.414L14.586 9H7a1 1 0 100 2h7.586l-1.293 1.293z" clip-rule="evenodd"/></svg>
+        Log Out?
+      </h3>
+      <button type="button" class="modal-close" id="logoutConfirmClose" title="Close">&times;</button>
+    </div>
+    <p class="modal-text">Are you sure you want to log out? You'll need to sign in again to access your account.</p>
+    <div class="modal-actions">
+      <button type="button" class="btn-modal-ghost" id="logoutCancelBtn">Cancel</button>
+      <a href="<?= htmlspecialchars(appUrl('/auth/logout.php')) ?>" class="btn-modal-danger">Yes, Log Out</a>
+    </div>
+  </div>
+</div>
+
+<!-- Inactivity Auto-Logout Warning Modal -->
+<div class="modal-overlay" id="idleWarningModal" style="display: none;">
+  <div class="modal-card">
+    <div class="modal-head">
+      <h3>
+        <svg width="17" height="17" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm1-12a1 1 0 10-2 0v4a1 1 0 00.293.707l2.828 2.829a1 1 0 101.415-1.415L11 9.586V6z" clip-rule="evenodd"/></svg>
+        Are you still there?
+      </h3>
+    </div>
+    <p class="modal-text">You've been inactive for a while. For your security, you'll be logged out automatically in <strong id="idleCountdown">60</strong> seconds.</p>
+    <div class="modal-actions">
+      <a href="<?= htmlspecialchars(appUrl('/auth/logout.php')) ?>?timeout=1" class="btn-modal-ghost">Log Out Now</a>
+      <button type="button" class="btn-modal-primary" id="idleStayBtn">Stay Logged In</button>
     </div>
   </div>
 </div>
