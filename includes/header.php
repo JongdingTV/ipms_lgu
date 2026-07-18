@@ -38,6 +38,17 @@ $extraStylesheets = $extraStylesheets ?? [];
   <!-- Only the UMD build works as a plain classic script — dist/chart.js (and its
        chart.min.js minified alias) is an ES module and throws a SyntaxError here. -->
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+  <script>
+    // Charts inherit the app's type system (same face the citizen charts use)
+    // and theme-appropriate tick/grid colors. Page loads re-apply this, so a
+    // theme toggle takes effect on the next chart render.
+    if (window.Chart) {
+      Chart.defaults.font.family = "'Plus Jakarta Sans', sans-serif";
+      var __chartDark = document.documentElement.getAttribute('data-theme') === 'dark';
+      Chart.defaults.color = __chartDark ? '#94a3b8' : '#64748b';
+      Chart.defaults.borderColor = __chartDark ? 'rgba(148,163,184,.18)' : 'rgba(100,116,139,.15)';
+    }
+  </script>
   <script src="<?= htmlspecialchars(assetUrl('/assets/js/scroll-reveal.js')) ?>"></script>
   <script src="<?= htmlspecialchars(assetUrl('/assets/js/theme-toggle.js')) ?>"></script>
   <script>

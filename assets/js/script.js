@@ -355,7 +355,8 @@ function renderProgressChart(data) {
       scales: {
         x: { grid: { display: false }, ticks: { color: '#94a3b8', font: { size: 11 } }, border: { display: false } },
         y: { min: 0, max: 100, ticks: { stepSize: 25, color: '#94a3b8', font: { size: 11 }, callback: v => v + '%' },
-             grid: { color: '#f1f5f9' }, border: { display: false } }
+             // Theme-aware gridlines: the old #f1f5f9 glared on dark cards.
+             grid: { color: document.documentElement.getAttribute('data-theme') === 'dark' ? 'rgba(148,163,184,.18)' : 'rgba(100,116,139,.12)' }, border: { display: false } }
       }
     }
   });
@@ -408,7 +409,7 @@ function renderTopDelayed(projects) {
       <span class="proj-name">${escapeHtml(p.name)}</span>
       <button class="btn-view" onclick="openProjectModal(${p.id})">View</button>
     </div>
-  `).join('') : '<p class="empty-state">No delayed projects 🎉</p>';
+  `).join('') : '<p class="empty-state">No delayed projects</p>';
 }
 
 function renderAnomalies(anomalies) {
@@ -893,9 +894,9 @@ function renderProjectsTable(rows) {
             <td>${statusBadge(p.status)}</td>
             <td>
               <div class="action-btns">
-                <button class="btn-icon" title="View" onclick="openProjectModal(${p.id})">👁</button>
-                <button class="btn-icon" title="Edit" onclick="showProjectForm(${p.id})">✏️</button>
-                <button class="btn-icon btn-danger" title="Delete" onclick="deleteProject(${p.id})">🗑</button>
+                <button class="btn-icon" title="View" onclick="openProjectModal(${p.id})"><svg viewBox="0 0 20 20" fill="currentColor" width="14" height="14"><path d="M10 12.5a2.5 2.5 0 100-5 2.5 2.5 0 000 5z"/><path fill-rule="evenodd" d="M.664 10.59a1.651 1.651 0 010-1.186A10.004 10.004 0 0110 3c4.257 0 7.893 2.66 9.336 6.41.147.381.146.804 0 1.186A10.004 10.004 0 0110 17c-4.257 0-7.893-2.66-9.336-6.41zM14 10a4 4 0 11-8 0 4 4 0 018 0z" clip-rule="evenodd"/></svg></button>
+                <button class="btn-icon" title="Edit" onclick="showProjectForm(${p.id})"><svg viewBox="0 0 20 20" fill="currentColor" width="14" height="14"><path d="M13.586 3.586a2 2 0 112.828 2.828l-.793.793-2.828-2.828.793-.793z"/><path d="M11.379 5.793L3 14.172V17h2.828l8.38-8.379-2.83-2.828z"/></svg></button>
+                <button class="btn-icon btn-danger" title="Delete" onclick="deleteProject(${p.id})"><svg viewBox="0 0 20 20" fill="currentColor" width="14" height="14"><path fill-rule="evenodd" d="M9 2a1 1 0 00-.894.553L7.382 4H4a1 1 0 000 2v10a2 2 0 002 2h8a2 2 0 002-2V6a1 1 0 100-2h-3.382l-.724-1.447A1 1 0 0011 2H9zM7 8a1 1 0 012 0v6a1 1 0 11-2 0V8zm5-1a1 1 0 00-1 1v6a1 1 0 102 0V8a1 1 0 00-1-1z" clip-rule="evenodd"/></svg></button>
               </div>
             </td>
           </tr>`;
@@ -1870,8 +1871,8 @@ function renderExpensesTable(rows) {
             <td>${e.flagged == 1 ? '<span style="color:#ef4444;">⚠ Flagged</span>' : '<span style="color:#22c55e;">✓ OK</span>'}</td>
             <td>
               <div class="action-btns">
-                <button class="btn-icon" onclick="toggleFlag(${e.id}, ${e.flagged})" title="${e.flagged?'Unflag':'Flag'}">${e.flagged?'🚩':'⬜'}</button>
-                <button class="btn-icon btn-danger" onclick="deleteExpense(${e.id})" title="Delete">🗑</button>
+                <button class="btn-icon" onclick="toggleFlag(${e.id}, ${e.flagged})" title="${e.flagged?'Unflag':'Flag'}" style="color:${e.flagged?'#ef4444':'#94a3b8'};"><svg viewBox="0 0 20 20" fill="currentColor" width="14" height="14"><path fill-rule="evenodd" d="M3 2.75A.75.75 0 013.75 2h.5a.75.75 0 01.75.75V3h9.19c.727 0 1.15.826.723 1.415L12.86 7.25l2.053 2.835c.427.589.004 1.415-.723 1.415H5v5.75a.75.75 0 01-.75.75h-.5a.75.75 0 01-.75-.75V2.75z" clip-rule="evenodd"/></svg></button>
+                <button class="btn-icon btn-danger" onclick="deleteExpense(${e.id})" title="Delete"><svg viewBox="0 0 20 20" fill="currentColor" width="14" height="14"><path fill-rule="evenodd" d="M9 2a1 1 0 00-.894.553L7.382 4H4a1 1 0 000 2v10a2 2 0 002 2h8a2 2 0 002-2V6a1 1 0 100-2h-3.382l-.724-1.447A1 1 0 0011 2H9zM7 8a1 1 0 012 0v6a1 1 0 11-2 0V8zm5-1a1 1 0 00-1 1v6a1 1 0 102 0V8a1 1 0 00-1-1z" clip-rule="evenodd"/></svg></button>
               </div>
             </td>
           </tr>`).join('')}

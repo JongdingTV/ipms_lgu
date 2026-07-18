@@ -154,6 +154,14 @@
   white-space: nowrap;
 }
 
+/* The budget KPI card can't afford nowrap: long peso totals must shrink
+   and wrap inside the card instead of clipping at the glass edge. */
+.kpi-value.hope-money {
+  white-space: normal;
+  overflow-wrap: anywhere;
+  font-size: clamp(1.05rem, 1.7vw, 1.45rem);
+}
+
 .hope-decision-note {
   font-size: .82rem;
   color: var(--text-muted);

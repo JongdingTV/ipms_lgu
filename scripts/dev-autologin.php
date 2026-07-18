@@ -19,7 +19,25 @@ if (in_array($staffRole, ['super_admin', 'admin', 'bac', 'engineer', 'contractor
     $u = $stmt->fetch();
     if (!$u) exit('No ' . htmlspecialchars($staffRole) . ' user');
     establishUserSession($u);
-    redirectToRoleDashboard($u['role']);
+
+    $staffDashboards = [
+        'super_admin' => '/superadmin/dashboard.php',
+        'admin' => '/admin/dashboard.php',
+        'bac' => '/bac/dashboard.php',
+        'engineer' => '/engineer/dashboard.php',
+        'contractor' => '/contractor/dashboard.php',
+        'hope' => '/hope/dashboard.php',
+    ];
+    $staffTarget = appUrl($staffDashboards[$staffRole]);
+
+    // ?theme=dark seeds localStorage first (theme is client-side only).
+    if (($_GET['theme'] ?? '') === 'dark') {
+        $t = json_encode($staffTarget);
+        echo "<script>try{localStorage.setItem('theme','dark')}catch(e){};location.replace($t);</script>";
+        exit;
+    }
+    header('Location: ' . $staffTarget);
+    exit;
 }
 
 // ?verified=1 picks a citizen whose account is verified (wizard access).
