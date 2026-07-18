@@ -2,7 +2,6 @@
 require_once __DIR__ . '/../auth/session.php';
 
 $user = requireLogin(['bac']);
-$topbarSearchPlaceholder = 'Search bids, contractors, procurement logs...';
 $extraStylesheets = ['assets/css/pagination.css', 'bac/assets/css/bac.css'];
 
 require_once __DIR__ . '/../includes/header.php';

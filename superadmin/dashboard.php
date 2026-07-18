@@ -2,7 +2,6 @@
 require_once __DIR__ . '/../auth/session.php';
 
 $user = requireLogin(['super_admin']);
-$topbarSearchPlaceholder = 'Search users, audit logs, login activity...';
 $extraStylesheets = ['assets/css/pagination.css', 'superadmin/assets/css/superadmin.css'];
 
 require_once __DIR__ . '/../includes/header.php';

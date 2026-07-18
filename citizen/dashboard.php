@@ -2,7 +2,6 @@
 require_once __DIR__ . '/../auth/session.php';
 
 $user = requireLogin(['citizen']);
-$topbarSearchPlaceholder = 'Search projects...';
 // filemtime as cache-buster so style/behavior changes show up without a hard refresh
 $extraStylesheets = ['citizen/assets/css/citizen.css?v=' . filemtime(__DIR__ . '/assets/css/citizen.css')];
 

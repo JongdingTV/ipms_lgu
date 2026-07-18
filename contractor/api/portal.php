@@ -371,7 +371,16 @@ if ($method === 'GET') {
     }
 
     if ($action === 'projects') {
-        respond(['data' => contractorPortalProjects($db, $contractorId)]);
+        // Optional search over code/name/location (used by the global
+        // Ctrl+K search); the assigned list is small, so filter in PHP.
+        $search = trim((string) ($_GET['search'] ?? ''));
+        $rows = contractorPortalProjects($db, $contractorId);
+        if ($search !== '') {
+            $rows = array_values(array_filter($rows, static fn (array $p): bool =>
+                mb_stripos(($p['project_code'] ?? '') . ' ' . ($p['name'] ?? '') . ' ' . ($p['location'] ?? ''), $search) !== false
+            ));
+        }
+        respond(['data' => $rows]);
     }
 
     if ($action === 'project') {

@@ -1436,6 +1436,19 @@ async function engineerSubmitStatus(event) {
   }
 }
 
+window.GLOBAL_SEARCH_NAVIGATE = engineerShowPage;
+window.GLOBAL_SEARCH_SOURCES = [
+  {
+    label: 'Assigned Projects',
+    url: `${ENGINEER_API}?action=projects`,
+    mapItem: row => ({
+      title: row.name,
+      meta: `${row.project_code || ''} · ${row.status || ''}`.replace(/^ · /, ''),
+      page: 'assigned-projects',
+    }),
+  },
+];
+
 function engineerWireShell() {
   document.getElementById('sidebarToggle')?.addEventListener('click', () => {
     if (window.matchMedia('(min-width: 769px)').matches) {

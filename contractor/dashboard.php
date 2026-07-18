@@ -2,7 +2,6 @@
 require_once __DIR__ . '/../auth/session.php';
 
 $user = requireLogin(['contractor']);
-$topbarSearchPlaceholder = 'Search assigned projects...';
 $extraStylesheets = ['assets/css/pagination.css', 'contractor/assets/css/contractor.css'];
 
 require_once __DIR__ . '/../includes/header.php';

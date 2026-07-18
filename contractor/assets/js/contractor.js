@@ -1551,6 +1551,28 @@ function contractorGoToReport(projectId = '') {
   }
 }
 
+window.GLOBAL_SEARCH_NAVIGATE = contractorShowPage;
+window.GLOBAL_SEARCH_SOURCES = [
+  {
+    label: 'Assigned Projects',
+    url: `${CONTRACTOR_API}?action=projects`,
+    mapItem: row => ({
+      title: row.name,
+      meta: `${row.project_code || ''} · ${row.status || ''}`.replace(/^ · /, ''),
+      page: 'assigned-projects',
+    }),
+  },
+  {
+    label: 'Accomplishment Reports',
+    url: `${CONTRACTOR_API}?action=reports`,
+    mapItem: row => ({
+      title: `${row.project_code || ''} — ${row.report_date || ''}`,
+      meta: `${row.progress_percent ?? 0}% · ${(row.accomplishments || '').slice(0, 60)}`,
+      page: 'accomplishment-report',
+    }),
+  },
+];
+
 function contractorWireShell() {
   document.getElementById('sidebarToggle')?.addEventListener('click', () => {
     if (window.matchMedia('(min-width: 769px)').matches) {

@@ -2,7 +2,6 @@
 require_once __DIR__ . '/../auth/session.php';
 
 $user = requireLogin(['hope']);
-$topbarSearchPlaceholder = 'Search projects...';
 $extraStylesheets = ['assets/css/pagination.css', 'hope/assets/css/hope.css'];
 
 require_once __DIR__ . '/../includes/header.php';
