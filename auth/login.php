@@ -41,7 +41,7 @@ $portalRoles = [
 ];
 
 if (isset($_GET['timeout'])) {
-    $status = 'Your session expired after 30 minutes of inactivity. Please sign in again.';
+    $status = 'You were logged out due to inactivity. Please sign in again.';
 } elseif (isset($_GET['reset'])) {
     $status = 'Password reset! Please log in with your new password.';
 } elseif (isset($_GET['error'])) {

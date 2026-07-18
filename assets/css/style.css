@@ -682,6 +682,56 @@ button { cursor: pointer; font-family: var(--font); }
 /* ── Empty state ── */
 .empty-state { text-align: center; color: var(--text-muted); padding: 32px; font-size: .85rem; }
 
+/* ── Confirm dialogs (logout confirmation + idle auto-logout warning) ──
+   Markup in includes/topbar.php, behavior in assets/js/session-guard.js.
+   Same look as the citizen portal's modal-card dialogs; a separate class
+   from .modal-overlay because these toggle display, not the .open class. */
+.confirm-overlay {
+  position: fixed; inset: 0; z-index: 400;
+  display: flex; align-items: center; justify-content: center;
+  padding: 16px;
+  background: rgba(15,23,42,.5);
+  backdrop-filter: blur(3px);
+}
+.confirm-card {
+  background: var(--card-bg);
+  border-radius: 12px;
+  box-shadow: 0 24px 60px rgba(15,23,42,.3);
+  width: 100%;
+  max-width: 420px;
+  padding: 22px;
+  animation: confirmFadeIn .2s ease-out;
+}
+@keyframes confirmFadeIn {
+  from { opacity: 0; transform: translateY(10px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+.confirm-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 14px; }
+.confirm-head h3 { display: flex; align-items: center; gap: 8px; font-size: 1rem; font-weight: 700; color: var(--text-primary); }
+.confirm-head h3 svg { color: #28507d; }
+:root[data-theme="dark"] .confirm-head h3 svg { color: #93c5fd; }
+.confirm-text { color: var(--text-muted); font-size: .9rem; line-height: 1.55; }
+.confirm-text strong { color: var(--text-primary); font-family: var(--mono); }
+.confirm-actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 18px; }
+
+.btn-modal-ghost,
+.btn-modal-danger,
+.btn-modal-primary {
+  display: inline-flex; align-items: center; justify-content: center;
+  padding: 9px 18px; border-radius: 8px;
+  font-size: .85rem; font-weight: 600; font-family: var(--font);
+  cursor: pointer; text-decoration: none;
+  border: 1px solid transparent;
+  transition: background .15s, color .15s, box-shadow .15s;
+}
+.btn-modal-ghost { background: transparent; border-color: var(--border); color: var(--text-muted); }
+.btn-modal-ghost:hover { background: #f1f5f9; color: var(--text-primary); }
+:root[data-theme="dark"] .btn-modal-ghost:hover { background: rgba(148,163,184,.15); }
+.btn-modal-danger { background: #dc2626; color: #fff; }
+.btn-modal-danger:hover { background: #b91c1c; box-shadow: 0 8px 18px rgba(220,38,38,.3); }
+.btn-modal-primary { background: linear-gradient(135deg, #28507d, #1e3a5f); color: #fff; }
+.btn-modal-primary:hover { box-shadow: 0 8px 18px rgba(40,80,125,.35); }
+
 /* Modern shell refinements */
 .sidebar {
   border-right: 1px solid rgba(255,255,255,.06);

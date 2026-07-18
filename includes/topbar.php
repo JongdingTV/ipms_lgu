@@ -96,3 +96,42 @@
     </div>
   </div>
 </header>
+
+<?php if (($_SESSION['role'] ?? '') !== 'citizen'): // citizen pages ship their own copies of these modals (citizen/dashboard.php) ?>
+<!-- Logout confirmation (see assets/js/session-guard.js) -->
+<div class="confirm-overlay" id="logoutConfirmModal" style="display: none;">
+  <div class="confirm-card">
+    <div class="confirm-head">
+      <h3>
+        <svg width="17" height="17" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M3 3a1 1 0 00-1 1v12a1 1 0 102 0V4a1 1 0 00-1-1zm10.293 9.293a1 1 0 001.414 1.414l3-3a1 1 0 000-1.414l-3-3a1 1 0 10-1.414 1.414L14.586 9H7a1 1 0 100 2h7.586l-1.293 1.293z" clip-rule="evenodd"/></svg>
+        Log Out?
+      </h3>
+      <button type="button" class="modal-close" id="logoutConfirmClose" title="Close">&times;</button>
+    </div>
+    <p class="confirm-text">Are you sure you want to log out? You'll need to sign in again to access your portal.</p>
+    <div class="confirm-actions">
+      <button type="button" class="btn-modal-ghost" id="logoutCancelBtn">Cancel</button>
+      <a href="<?= htmlspecialchars(appUrl('/auth/logout.php')) ?>" class="btn-modal-danger">Yes, Log Out</a>
+    </div>
+  </div>
+</div>
+
+<!-- Inactivity auto-logout warning (3-minute staff idle policy) -->
+<div class="confirm-overlay" id="idleWarningModal" style="display: none;" data-logout-url="<?= htmlspecialchars(appUrl('/auth/logout.php')) ?>?timeout=1">
+  <div class="confirm-card">
+    <div class="confirm-head">
+      <h3>
+        <svg width="17" height="17" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm1-12a1 1 0 10-2 0v4a1 1 0 00.293.707l2.828 2.829a1 1 0 101.415-1.415L11 9.586V6z" clip-rule="evenodd"/></svg>
+        Are you still there?
+      </h3>
+    </div>
+    <p class="confirm-text">You've been inactive for a while. For your security, you'll be logged out automatically in <strong id="idleCountdown">60</strong> seconds.</p>
+    <div class="confirm-actions">
+      <a href="<?= htmlspecialchars(appUrl('/auth/logout.php')) ?>?timeout=1" class="btn-modal-ghost">Log Out Now</a>
+      <button type="button" class="btn-modal-primary" id="idleStayBtn">Stay Logged In</button>
+    </div>
+  </div>
+</div>
+
+<script src="<?= htmlspecialchars(assetUrl('/assets/js/session-guard.js')) ?>"></script>
+<?php endif; ?>
