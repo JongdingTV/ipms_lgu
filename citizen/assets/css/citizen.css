@@ -3491,6 +3491,50 @@ body {
     margin-top: 1px;
 }
 
+.fb-cimm-chip {
+    display: inline-flex;
+    align-items: center;
+    margin: 0 0 0.5rem;
+    padding: 0.2rem 0.55rem;
+    border-radius: 999px;
+    font-size: 0.72rem;
+    font-weight: 600;
+    letter-spacing: 0.01em;
+    background: rgba(14, 116, 144, 0.12);
+    color: #0e7490;
+}
+
+.fb-cimm-chip.fb-cimm-synced {
+    background: rgba(39, 174, 96, 0.14);
+    color: #1e8449;
+}
+
+.fb-cimm-chip.fb-cimm-pending {
+    background: rgba(243, 156, 18, 0.16);
+    color: #b9770e;
+}
+
+.fb-success-cimm-note {
+    margin: 0.75rem 0 0;
+    font-size: 0.9rem;
+    color: var(--text-secondary, #64748b);
+}
+
+:root[data-theme="dark"] .fb-cimm-chip {
+    background: rgba(34, 211, 238, 0.14);
+    color: #67e8f9;
+}
+
+:root[data-theme="dark"] .fb-cimm-chip.fb-cimm-synced {
+    background: rgba(74, 222, 128, 0.16);
+    color: #86efac;
+}
+
+:root[data-theme="dark"] .fb-cimm-chip.fb-cimm-pending {
+    background: rgba(251, 191, 36, 0.16);
+    color: #fbbf24;
+}
+
 .fb-form-tips-layout form {
     max-width: none;
 }

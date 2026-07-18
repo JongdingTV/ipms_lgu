@@ -1717,14 +1717,31 @@ function createFeedbackItem(item) {
     }[item.priority] || '#666';
 
     const photos = Array.isArray(item.photos) ? item.photos : [];
+    const isMaintenance = item.concern_type === 'maintenance';
+    const title = item.project_name
+        || (isMaintenance ? 'Maintenance Concern' : 'Community Concern');
+    const cimmBadge = isMaintenance
+        ? (() => {
+            const sync = item.cimm_sync_status || 'none';
+            const ref = item.cimm_reference ? ` · ${escapeHtml(item.cimm_reference)}` : '';
+            if (sync === 'synced') {
+                return `<span class="fb-cimm-chip fb-cimm-synced">Sent to CIMMS${ref}</span>`;
+            }
+            if (sync === 'failed' || sync === 'pending') {
+                return `<span class="fb-cimm-chip fb-cimm-pending">CIMMS sync: ${escapeHtml(sync)}</span>`;
+            }
+            return `<span class="fb-cimm-chip">CIMMS route</span>`;
+        })()
+        : '';
 
     return `
         <div class="feedback-item">
             <div>
                 <div class="feedback-header">
-                    <div class="feedback-title">${escapeHtml(item.project_name || 'Community Concern')}</div>
+                    <div class="feedback-title">${escapeHtml(title)}</div>
                     <span class="feedback-status ${statusClass}">${capitalizeFirst(item.status)}</span>
                 </div>
+                ${cimmBadge}
                 <div class="feedback-message">${escapeHtml(item.message)}</div>
                 ${photos.length ? `
                 <div class="feedback-photos">
@@ -1765,11 +1782,8 @@ function handleFeedbackSubmit(e) {
 }
 
 // ===== Submit Feedback wizard (Step 1 concern type -> Step 2 form -> Step 3 review -> Step 4 success) =====
-// Pure front-end flow: still posts to the same real citizen/api/submit-feedback.php
-// endpoint with the same fields it has always understood. The new fields this
-// wizard collects (project_name, anonymous, contact_name, contact_info,
-// concern_type) travel along in the same request for future use, but nothing
-// server-side reads them yet — see the "UI only" scope for this redesign.
+// Posts to citizen/api/submit-feedback.php. Maintenance concerns are also
+// forwarded to CIMMS when CIMM_API_ENABLED is configured on the server.
 let fbCurrentStep = 1;
 let fbConcernType = 'project';
 
@@ -2328,7 +2342,19 @@ function setupCimmsMaintenanceForm() {
                 if (data.success) {
                     cimmsNotify('success', 'Maintenance request submitted successfully! Request ID: ' + (data.id || 0));
                     const chip = document.getElementById('fbTrackingChip');
-                    if (chip) chip.textContent = '#FB-' + String(data.id || 0).padStart(6, '0');
+                    if (chip) {
+                        const cimmRef = data.cimm && data.cimm.reference ? ` · ${data.cimm.reference}` : '';
+                        chip.textContent = '#FB-' + String(data.id || 0).padStart(6, '0') + cimmRef;
+                    }
+                    const successNote = document.getElementById('fbSuccessCimmNote');
+                    if (successNote) {
+                        successNote.style.display = 'block';
+                        successNote.textContent = data.cimm && data.cimm.status === 'synced'
+                            ? (data.cimm.reference
+                                ? `Also filed in CIMMS as ${data.cimm.reference}.`
+                                : 'Also forwarded to CIMMS for maintenance handling.')
+                            : 'Saved in IPMS. CIMMS forwarding is pending or needs staff follow-up.';
+                    }
                     cimmsResetForm();
                     loadTrackedFeedback();
                     fbGoToStep(4);
@@ -2377,7 +2403,14 @@ function fbToggleAnonymous() {
     const grid = document.getElementById('fbContactGrid');
     if (!checkbox || !grid) return;
     grid.classList.toggle('fb-contact-disabled', checkbox.checked);
-    grid.querySelectorAll('input').forEach(input => { input.disabled = checkbox.checked; });
+    grid.querySelectorAll('input').forEach(input => {
+        // CIMMS still needs a callback number for maintenance reports, even if anonymous.
+        if (fbConcernType === 'maintenance' && input.id === 'feedbackContactPhone') {
+            input.disabled = false;
+            return;
+        }
+        input.disabled = checkbox.checked;
+    });
 }
 
 const FB_ILLUSTRATIONS = {
@@ -2467,7 +2500,27 @@ function submitFeedbackWizard() {
         .then(data => {
             if (data.success) {
                 const chip = document.getElementById('fbTrackingChip');
-                if (chip) chip.textContent = '#FB-' + String(data.id || 0).padStart(6, '0');
+                if (chip) {
+                    const fbId = '#FB-' + String(data.id || 0).padStart(6, '0');
+                    const cimmRef = data.cimm && data.cimm.reference ? ` · ${data.cimm.reference}` : '';
+                    chip.textContent = fbId + cimmRef;
+                }
+                const successNote = document.getElementById('fbSuccessCimmNote');
+                if (successNote) {
+                    if (data.concern_type === 'maintenance' && data.cimm) {
+                        if (data.cimm.status === 'synced') {
+                            successNote.style.display = 'block';
+                            successNote.textContent = data.cimm.reference
+                                ? `Also filed in CIMMS as ${data.cimm.reference}.`
+                                : 'Also forwarded to CIMMS for maintenance handling.';
+                        } else {
+                            successNote.style.display = 'block';
+                            successNote.textContent = 'Saved in IPMS. CIMMS forwarding is pending or needs staff follow-up.';
+                        }
+                    } else {
+                        successNote.style.display = 'none';
+                    }
+                }
                 fbGoToStep(4);
             } else if (errorBox) {
                 errorBox.textContent = data.message || 'Failed to submit feedback. Please try again.';
@@ -2518,6 +2571,30 @@ function setupFeedbackWizard() {
     document.getElementById('fbNextBtn2')?.addEventListener('click', () => {
         const form = document.getElementById('feedbackForm');
         if (form && !form.reportValidity()) return;
+
+        // CIMMS requires a PH mobile number for maintenance reports.
+        if (fbConcernType === 'maintenance') {
+            const phoneRaw = (document.getElementById('feedbackContactPhone')?.value || '').replace(/\D/g, '')
+                || (form?.dataset.profilePhone || '');
+            if (!/^09\d{9}$/.test(phoneRaw)) {
+                const errorBox = document.getElementById('fbSubmitError');
+                const msg = 'Maintenance reports forwarded to CIMMS need a valid mobile number (09XXXXXXXXX). Add it under Contact Information, or update your Profile phone.';
+                if (errorBox) {
+                    errorBox.textContent = msg;
+                    errorBox.style.display = 'block';
+                } else {
+                    alert(msg);
+                }
+                document.getElementById('feedbackContactPhone')?.focus();
+                return;
+            }
+            // Ensure the resolved number travels with the POST even if the field was cleared.
+            const phoneInput = document.getElementById('feedbackContactPhone');
+            if (phoneInput && !phoneInput.value.trim() && phoneRaw) {
+                phoneInput.value = phoneRaw;
+            }
+        }
+
         fbGoToStep(3);
     });
 

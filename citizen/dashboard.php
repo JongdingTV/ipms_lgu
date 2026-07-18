@@ -428,7 +428,7 @@ $statusChip = [
               </div>
 
               <div class="fb-form-tips-layout">
-                <form id="feedbackForm" method="POST">
+                <form id="feedbackForm" method="POST" data-profile-phone="<?= htmlspecialchars(preg_replace('/\D+/', '', (string) ($citizen['phone'] ?? '')), ENT_QUOTES) ?>">
                   <input type="hidden" name="concern_type" id="feedbackConcernType" value="project">
 
                   <div class="fb-anon-row" id="fbAnonRow">
@@ -445,15 +445,15 @@ $statusChip = [
                     <div class="fb-contact-grid">
                       <div class="form-group">
                         <label for="feedbackContactName">Contact Name</label>
-                        <input type="text" id="feedbackContactName" name="contact_name" placeholder="Your name">
+                        <input type="text" id="feedbackContactName" name="contact_name" placeholder="Your name" value="<?= htmlspecialchars(trim(($citizen['first_name'] ?? '') . ' ' . ($citizen['last_name'] ?? ''))) ?>">
                       </div>
                       <div class="form-group">
                         <label for="feedbackContactPhone" id="fbPhoneLabel">Contact Number</label>
-                        <input type="tel" id="feedbackContactPhone" name="contact_phone" placeholder="09XX-XXX-XXXX" maxlength="13">
+                        <input type="tel" id="feedbackContactPhone" name="contact_phone" placeholder="09XX-XXX-XXXX" maxlength="13" value="<?= htmlspecialchars((string) ($citizen['phone'] ?? '')) ?>">
                       </div>
                       <div class="form-group">
                         <label for="feedbackContactEmail">Email</label>
-                        <input type="email" id="feedbackContactEmail" name="contact_email" placeholder="you@example.com">
+                        <input type="email" id="feedbackContactEmail" name="contact_email" placeholder="you@example.com" value="<?= htmlspecialchars((string) ($citizen['email'] ?? '')) ?>">
                       </div>
                     </div>
                   </div>
@@ -602,7 +602,7 @@ $statusChip = [
                   </div>
                   <div class="cimms-input-group">
                     <label for="cimmsName">NAME <span class="cimms-opt">(Optional)</span></label>
-                    <input type="text" id="cimmsName" name="name" placeholder="Your name">
+                    <input type="text" id="cimmsName" name="name" placeholder="Your name" value="<?= htmlspecialchars(trim(($citizen['first_name'] ?? '') . ' ' . ($citizen['last_name'] ?? ''))) ?>">
                   </div>
                   <div class="cimms-input-group">
                     <label for="cimmsContactNumber">CONTACT NUMBER <span class="cimms-req">*</span></label>
@@ -612,12 +612,13 @@ $statusChip = [
                       name="contact_number"
                       placeholder="09XX-XXX-XXXX"
                       maxlength="13"
+                      value="<?= htmlspecialchars(preg_replace('/\D+/', '', (string) ($citizen['phone'] ?? ''))) ?>"
                       required
                     >
                   </div>
                   <div class="cimms-input-group cimms-full-width">
                     <label for="cimmsEmail">EMAIL ADDRESS <span class="cimms-opt">(Optional)</span></label>
-                    <input type="email" id="cimmsEmail" name="email" placeholder="your@email.com">
+                    <input type="email" id="cimmsEmail" name="email" placeholder="your@email.com" value="<?= htmlspecialchars((string) ($citizen['email'] ?? '')) ?>">
                     <p class="cimms-hint">
                       <svg width="14" height="14" viewBox="0 0 20 20" fill="currentColor"><path d="M2.003 5.884L10 9.882l7.997-3.998A2 2 0 0016 4H4a2 2 0 00-1.997 1.884z"/><path d="M18 8.118l-8 4-8-4V14a2 2 0 002 2h12a2 2 0 002-2V8.118z"/></svg>
                       If provided, we'll send you progress updates on your report.
@@ -689,6 +690,7 @@ $statusChip = [
               <h2 class="fb-panel-title">Your report has been received.</h2>
               <p class="fb-panel-sub">Your concern will be routed to the appropriate government office. A tracking number has been generated below.</p>
               <div class="fb-tracking-chip" id="fbTrackingChip">#FB-000000</div>
+              <p class="fb-success-cimm-note" id="fbSuccessCimmNote" style="display:none;"></p>
               <div class="fb-success-actions">
                 <button type="button" class="btn-outline" id="fbBtnDashboard">Return to Dashboard</button>
                 <button type="button" class="btn-outline" id="fbBtnTrack">Track Report</button>
@@ -1108,4 +1110,6 @@ $statusChip = [
   window.QC_GEOJSON_URL = <?= json_encode(appUrl('/citizen/assets/data/qc-barangays.geojson')) ?>;
 </script>
 <script src="<?= htmlspecialchars(assetUrl('/assets/js/notifications.js')) ?>"></script>
+<script>window.SIDEBAR_BADGES_PORTAL = 'citizen';</script>
+<script src="<?= htmlspecialchars(assetUrl('/assets/js/sidebar-badges.js')) ?>"></script>
 <script src="<?= htmlspecialchars(assetUrl('/citizen/assets/js/citizen.js')) ?>"></script>

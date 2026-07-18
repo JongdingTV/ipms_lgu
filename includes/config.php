@@ -71,6 +71,18 @@ define('MAIL_USERNAME', envValue('MAIL_USERNAME', 'ipms.systemlgu@gmail.com'));
 define('MAIL_PASSWORD', envValue('MAIL_PASSWORD', '')); // Set your app password in .env
 define('MAIL_ENCRYPTION', envValue('MAIL_ENCRYPTION', 'tls'));
 
+// CIMMS (Community Infrastructure Maintenance) — outbound integration for
+// maintenance-type citizen feedback. Canonical receiver is in the LGU repo:
+// https://github.com/EXEQUIELKENT/LGU → lgu-portal/public/api/ipms-requests.php
+define('CIMM_API_ENABLED', filter_var(envValue('CIMM_API_ENABLED', '0'), FILTER_VALIDATE_BOOLEAN));
+define('CIMM_API_URL', envValue(
+    'CIMM_API_URL',
+    'https://cimm.infragovservices.com/lgu-portal/public/api/ipms-requests.php'
+));
+define('CIMM_API_KEY', envValue('CIMM_API_KEY', ''));
+define('CIMM_API_TIMEOUT', (int) envValue('CIMM_API_TIMEOUT', '20'));
+define('CIMM_SSL_VERIFY', filter_var(envValue('CIMM_SSL_VERIFY', '1'), FILTER_VALIDATE_BOOLEAN));
+
 const APP_ROLES = ['super_admin', 'admin', 'bac', 'engineer', 'contractor', 'citizen', 'hope'];
 
 const ROLE_LABELS = [

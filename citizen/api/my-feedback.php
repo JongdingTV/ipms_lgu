@@ -18,8 +18,9 @@ if (!$citizenId) {
 }
 
 $stmt = $pdo->prepare("
-    SELECT f.id, f.project_id, f.message, f.category, f.priority, f.district, f.barangay,
-           f.latitude, f.longitude, f.status, f.created_at,
+    SELECT f.id, f.project_id, f.message, f.category, f.concern_type, f.priority,
+           f.district, f.barangay, f.latitude, f.longitude, f.status, f.created_at,
+           f.cimm_sync_status, f.cimm_reference, f.cimm_request_id,
            p.name as project_name
     FROM feedback f
     LEFT JOIN projects p ON f.project_id = p.id

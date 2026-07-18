@@ -216,6 +216,9 @@ function navigate(page) {
     s.style.display = s.id === `page-${page}` ? 'block' : 'none';
   });
 
+  // Sidebar badge clearing/refresh is handled independently by
+  // assets/js/sidebar-badges.js's own click listener on .nav-item.
+
   // Load page data
   const loaders = {
     dashboard: loadDashboard,
@@ -230,6 +233,8 @@ function navigate(page) {
     'ai-risk-insights': loadAIRiskInsightsPage,
     'citizen-feedback': () => loadFeedbackPage('page-citizen-feedback', 'Citizen Feedback Review', false),
     'staff-requests': loadStaffRequestsPage,
+    'completed-projects': () => loadStatusFilteredProjectsPage('page-completed-projects', 'Completed Projects', 'turnover'),
+    'cancelled-projects': () => loadStatusFilteredProjectsPage('page-cancelled-projects', 'Cancelled Projects', 'cancelled'),
   };
   if (loaders[page]) loaders[page]();
 }
@@ -1135,6 +1140,91 @@ async function submitTurnover(e, id) {
   } catch {
     toast('Failed to record turnover', 'error');
   }
+}
+
+/* ============================================================
+   ARCHIVE
+   Completed Projects (status=turnover) and Cancelled Projects (status=
+   cancelled) are just api/projects.php filtered to a different status,
+   reusing the same read-only table. Archived Documents / Historical
+   Records have no backing data model yet, so they're placeholders.
+   ============================================================ */
+const statusListState = {};
+
+async function loadStatusFilteredProjectsPage(containerId, title, statusParam) {
+  const container = document.getElementById(containerId);
+  if (!container) return;
+
+  statusListState[containerId] = statusListState[containerId] || { page: 1, search: '' };
+
+  container.innerHTML = `
+    <div class="page-header">
+      <h2 class="page-title">${title}</h2>
+    </div>
+    <div class="filter-bar">
+      <input class="filter-input" placeholder="Search projects..." id="${containerId}Search" />
+    </div>
+    <div id="${containerId}Table" class="table-card" style="margin-top:12px;"></div>
+    <div id="${containerId}Pager" class="pager"></div>
+  `;
+
+  document.getElementById(`${containerId}Search`)?.addEventListener('input', e => {
+    statusListState[containerId].search = e.target.value;
+    statusListState[containerId].page = 1;
+    fetchStatusFilteredProjects(containerId, statusParam);
+  });
+
+  fetchStatusFilteredProjects(containerId, statusParam);
+}
+
+async function fetchStatusFilteredProjects(containerId, statusParam) {
+  const wrap = document.getElementById(`${containerId}Table`);
+  if (!wrap) return;
+  setLoading(wrap, true);
+  const state = statusListState[containerId] || { page: 1, search: '' };
+
+  try {
+    const d = await get(API.projects, { page: state.page, search: state.search, status: statusParam });
+    renderStatusFilteredTable(containerId, d.data || []);
+    renderPager(`${containerId}Pager`, d.page, d.last_page, p => {
+      statusListState[containerId].page = p;
+      fetchStatusFilteredProjects(containerId, statusParam);
+    });
+  } catch {
+    wrap.innerHTML = '<p class="empty-state">Failed to load projects.</p>';
+  } finally {
+    setLoading(wrap, false);
+  }
+}
+
+function renderStatusFilteredTable(containerId, rows) {
+  const wrap = document.getElementById(`${containerId}Table`);
+  if (!wrap) return;
+  if (!rows.length) {
+    wrap.innerHTML = '<p class="empty-state">No projects found.</p>';
+    return;
+  }
+
+  wrap.innerHTML = `
+    <table class="data-table">
+      <thead>
+        <tr><th>Code</th><th>Project</th><th>Budget</th><th>Schedule</th><th>Contractor</th><th>Status</th><th>Actions</th></tr>
+      </thead>
+      <tbody>
+        ${rows.map(p => `
+          <tr>
+            <td><span class="proj-id">${p.project_code}</span></td>
+            <td><strong>${escapeHtml(p.name)}</strong><br><small style="color:#94a3b8">${escapeHtml(p.location || '-')}</small></td>
+            <td>${formatMoney(p.budget)}</td>
+            <td>${formatDate(p.start_date)} to ${formatDate(p.end_date)}</td>
+            <td>${p.contractor_name || 'Unassigned'}</td>
+            <td>${statusBadge(p.status)}</td>
+            <td><button class="btn-secondary btn-compact" onclick="openProjectModal(${p.id})">View</button></td>
+          </tr>
+        `).join('')}
+      </tbody>
+    </table>
+  `;
 }
 
 /* ============================================================
@@ -2049,17 +2139,24 @@ function renderFeedbackTable(rows) {
   wrap.innerHTML = `
     <table class="data-table">
       <thead>
-        <tr><th>Citizen</th><th>Project</th><th>Message</th><th>Category</th><th>Priority</th><th>Status</th><th>Date</th><th>Actions</th></tr>
+        <tr><th>Citizen</th><th>Type</th><th>Message</th><th>Category</th><th>Priority</th><th>Status</th><th>CIMMS</th><th>Date</th><th>Actions</th></tr>
       </thead>
       <tbody>
         ${rows.map(f => `
           <tr>
             <td>${f.citizen_name ? escapeHtml(f.citizen_name) : '<em style="color:#94a3b8">Anonymous</em>'}</td>
-            <td>${escapeHtml(f.project_name || '—')}</td>
+            <td>${f.concern_type === 'maintenance' ? 'Maintenance' : 'Project'}</td>
             <td style="max-width:200px;">${escapeHtml(f.message)}</td>
             <td>${escapeHtml(f.category)}</td>
             <td><span class="badge ${pBadge[f.priority]||'badge-resolved'}">${f.priority}</span></td>
             <td><span class="badge ${sBadge[f.status]||'badge-resolved'}">${f.status}</span></td>
+            <td style="font-size:.75rem;">${
+              f.concern_type !== 'maintenance'
+                ? '—'
+                : (f.cimm_reference
+                    ? escapeHtml(f.cimm_reference)
+                    : escapeHtml(f.cimm_sync_status || '—'))
+            }</td>
             <td style="font-size:.75rem;color:#94a3b8;">${f.created_at?.slice(0,10)}</td>
             <td>
               <div class="action-btns">
@@ -2206,6 +2303,7 @@ document.querySelectorAll('.nav-item').forEach(item => {
 });
 
 // ── Notification bell/panel toggle + polling is handled by assets/js/notifications.js. ──
+// ── Sidebar notification badges are handled by assets/js/sidebar-badges.js. ──
 
 // ── Search ──
 document.getElementById('searchInput')?.addEventListener('keydown', e => {
@@ -2260,6 +2358,8 @@ document.addEventListener('DOMContentLoaded', () => {
     <div id="page-ai-risk-insights" class="page-section" style="display:none;"></div>
     <div id="page-citizen-feedback" class="page-section" style="display:none;"></div>
     <div id="page-staff-requests" class="page-section" style="display:none;"></div>
+    <div id="page-completed-projects" class="page-section" style="display:none;"></div>
+    <div id="page-cancelled-projects" class="page-section" style="display:none;"></div>
   `;
 
   loadDashboard();
