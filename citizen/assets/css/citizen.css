@@ -4047,3 +4047,539 @@ body {
 :root[data-theme="dark"] .chip-pending { background: rgba(59, 130, 246, .16); color: #93c5fd; }
 :root[data-theme="dark"] .chip-verified { background: rgba(34, 197, 94, .16); color: #6ee7b7; }
 :root[data-theme="dark"] .chip-rejected { background: rgba(239, 68, 68, .16); color: #fca5a5; }
+
+/* ============================================================ */
+/* CIMM "Submit a Request" replica (Submit Feedback →           */
+/* Infrastructure Maintenance Issue). Styled after the CIMM     */
+/* citizen request form: blue accents, uppercase labels,        */
+/* dashed upload dropzone, terms row, paper-plane submit.       */
+/* Class names are cimms- prefixed to stay out of the portal's  */
+/* namespace. The card sits in the wizard's main column with    */
+/* the stepper on the left and the illustration on the right.   */
+/* ============================================================ */
+
+.cimms-form-wrapper {
+    position: relative;
+    z-index: 1;
+    min-width: 0;
+    font-family: 'Poppins', sans-serif;
+}
+
+.cimms-report-card {
+    width: 100%;
+    background: rgba(238, 238, 240, 0.97);
+    padding: 30px 34px 26px;
+    border-radius: 12px;
+    box-shadow: 0 20px 45px rgba(0, 0, 0, .25);
+}
+.cimms-report-card h2 {
+    margin-bottom: 22px;
+    padding-bottom: 18px;
+    border-bottom: 1px solid #d9dde3;
+    font-size: 1.9rem;
+    line-height: 1.25;
+    color: #2563eb;
+    text-align: center;
+    letter-spacing: .01em;
+    font-weight: 700;
+    font-family: 'Poppins', sans-serif;
+    grid-column: 1 / -1;
+}
+.cimms-report-card form {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 22px 26px;
+}
+.cimms-input-group.cimms-full-width { grid-column: 1 / -1; }
+.cimms-input-group {
+    display: flex;
+    flex-direction: column;
+    margin-bottom: 0;
+    text-align: left;
+}
+.cimms-input-group label {
+    font-size: 12.5px;
+    font-weight: 700;
+    margin-bottom: 8px;
+    color: #2b3442;
+    letter-spacing: 0.04em;
+}
+.cimms-req { color: #e11d48; font-weight: 700; }
+.cimms-opt {
+    color: #94a3b8;
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.02em;
+}
+.cimms-input-group select,
+.cimms-input-group input,
+.cimms-input-group textarea {
+    width: 100%;
+    padding: 12px 14px;
+    border-radius: 10px;
+    border: 1px solid #dfe5ec;
+    background: #fff;
+    color: #212121;
+    font-family: 'Poppins', sans-serif;
+    font-size: 14.5px;
+    transition: all .2s ease;
+    box-sizing: border-box;
+}
+.cimms-input-group input::placeholder,
+.cimms-input-group textarea::placeholder { color: #a9b4c2; }
+.cimms-input-group textarea {
+    resize: none;
+    height: 110px;
+    min-height: 80px;
+}
+.cimms-input-group input:focus,
+.cimms-input-group select:focus,
+.cimms-input-group textarea:focus {
+    outline: none;
+    border-color: #2563eb;
+    box-shadow: 0 0 0 3px rgba(37, 99, 235, .15);
+}
+#cimmsLocationInput { cursor: pointer; }
+
+/* Email hint line */
+.cimms-hint {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin-top: 7px;
+    font-size: 12px;
+    color: #94a3b8;
+}
+.cimms-hint svg { flex-shrink: 0; }
+
+/* Evidence dropzone */
+.cimms-dropzone {
+    border: 2px dashed #2f6bdd;
+    background: #e8effc;
+    border-radius: 12px;
+    padding: 36px 20px;
+    text-align: center;
+    cursor: pointer;
+    transition: background .18s ease, border-color .18s ease;
+}
+.cimms-dropzone:hover,
+.cimms-dropzone.dragover { background: #dce8fb; }
+.cimms-dropzone-icon {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 44px;
+    height: 44px;
+    margin: 0 auto 10px;
+    border-radius: 50%;
+    background: #2563eb;
+    color: #fff;
+}
+.cimms-dropzone-text {
+    font-size: 15px;
+    font-weight: 600;
+    color: #1f2937;
+    margin: 0 0 4px;
+}
+.cimms-dropzone-hint {
+    font-size: 12px;
+    color: #93a0b4;
+    margin: 0;
+}
+
+/* Image previews with remove buttons */
+#cimmsImagePreview {
+    display: flex;
+    gap: 10px;
+    margin-top: 10px;
+    flex-wrap: wrap;
+}
+#cimmsImagePreview .cimms-preview-item {
+    flex: 1 1 45%;
+    max-width: 45%;
+    position: relative;
+    display: inline-block;
+}
+#cimmsImagePreview .cimms-preview-item img {
+    width: 100%;
+    height: auto;
+    aspect-ratio: 1/1;
+    object-fit: cover;
+    border-radius: 8px;
+    cursor: pointer;
+    border: 1px solid #ccc;
+    background: #f1f1f1;
+    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.07);
+}
+.cimms-preview-remove {
+    position: absolute;
+    top: 5%;
+    right: 5%;
+    width: 22px;
+    height: 22px;
+    background: rgba(0, 0, 0, 0.75);
+    color: #fff;
+    border-radius: 50%;
+    font-size: 14px;
+    line-height: 22px;
+    text-align: center;
+    cursor: pointer;
+    font-weight: bold;
+    z-index: 5;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+.cimms-preview-remove:hover { background: #d73f52; }
+@media (max-width: 768px) {
+    .cimms-preview-remove {
+        width: 26px;
+        height: 26px;
+        font-size: 16px;
+        line-height: 26px;
+    }
+}
+@media (min-width: 769px) {
+    #cimmsImagePreview .cimms-preview-item {
+        flex: 0 0 auto;
+        max-width: 80px;
+    }
+    #cimmsImagePreview .cimms-preview-item img {
+        width: 80px;
+        height: 80px;
+    }
+}
+
+/* Terms & Conditions row */
+.cimms-terms label {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    cursor: pointer;
+    font-size: 12.5px;
+    font-weight: 700;
+    color: #2b3442;
+    letter-spacing: 0.03em;
+}
+.cimms-terms input[type="checkbox"] {
+    width: 17px;
+    height: 17px;
+    accent-color: #2563eb;
+    flex-shrink: 0;
+    cursor: pointer;
+}
+.cimms-terms a {
+    color: #2563eb;
+    font-weight: 700;
+    text-decoration: underline;
+}
+
+/* Bottom actions row: Back on the left (wizard style), submit centered */
+.cimms-actions {
+    display: grid;
+    grid-template-columns: 1fr auto 1fr;
+    align-items: center;
+    gap: 12px;
+    margin-top: 4px;
+    grid-column: 1 / -1;
+}
+.cimms-actions .btn-outline { justify-self: start; }
+.cimms-btn-primary {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    white-space: nowrap;
+    background: #2563eb;
+    color: #fff;
+    border: none;
+    border-radius: 10px;
+    padding: 13px 30px;
+    font-weight: 600;
+    font-size: 16px;
+    font-family: 'Poppins', sans-serif;
+    cursor: pointer;
+    transition: all .25s;
+    box-shadow: 0 10px 22px rgba(37, 99, 235, .35);
+}
+.cimms-btn-primary:hover { transform: translateY(-2px); background: #1d4fd8; }
+.cimms-btn-primary:disabled { opacity: .7; cursor: default; transform: none; }
+
+/* Location autocomplete dropdown (inside the map modal search) */
+.cimms-location-suggestions {
+    position: absolute;
+    top: 100%;
+    left: 0;
+    right: 0;
+    background: #fff;
+    border-radius: 10px;
+    box-shadow: 0 10px 25px rgba(0, 0, 0, 0.18);
+    margin-top: 6px;
+    z-index: 9999;
+    max-height: 240px;
+    overflow-y: auto;
+    display: none;
+}
+.cimms-location-suggestions div {
+    padding: 10px 14px;
+    font-size: 13.5px;
+    color: #212121;
+    cursor: pointer;
+    border-bottom: 1px solid #eee;
+}
+.cimms-location-suggestions div:last-child { border-bottom: none; }
+.cimms-location-suggestions div:hover { background: #f1f5ff; }
+
+/* Submit confirmation modal */
+#cimmsAlertBackdrop {
+    position: fixed;
+    z-index: 5000;
+    inset: 0;
+    background: rgba(37, 59, 115, 0.20);
+    display: none;
+    align-items: center;
+    justify-content: center;
+    transition: background 0.18s;
+}
+#cimmsAlertBackdrop.active { display: flex; }
+#cimmsAlertModal {
+    background: #fff;
+    border-radius: 18px;
+    box-shadow: 0 8px 42px rgba(17, 39, 77, 0.15);
+    padding: 36px 28px 22px 28px;
+    width: 340px;
+    max-width: 95vw;
+    animation: cimmsFadeIn 0.22s cubic-bezier(.6, -0.01, .52, 1.23) 1;
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    font-family: 'Poppins', sans-serif;
+}
+@keyframes cimmsFadeIn {
+    from { transform: translateY(34px) scale(.95); opacity: .24; }
+    to   { transform: translateY(0) scale(1); opacity: 1; }
+}
+#cimmsAlertModal .cimms-icon-wrap {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    width: 62px;
+    height: 62px;
+    background: #e8effc;
+    border-radius: 50%;
+    margin: 0 auto 13px auto;
+    box-shadow: 0 2px 8px 0 rgba(37, 99, 235, 0.15);
+}
+#cimmsAlertModal .cimms-icon {
+    font-size: 2.1rem;
+    line-height: 1;
+}
+#cimmsAlertModal .cimms-alert-title {
+    font-size: 1.09rem;
+    letter-spacing: 0.04em;
+    font-weight: bold;
+    color: #23285c;
+    text-align: center;
+    margin-bottom: 8px;
+    margin-top: 6px;
+}
+#cimmsAlertModal .cimms-alert-desc {
+    color: #374565;
+    font-size: 0.99rem;
+    text-align: center;
+    margin-bottom: 19px;
+}
+#cimmsAlertModal .cimms-alert-btns {
+    display: flex;
+    gap: 15px;
+    justify-content: center;
+}
+#cimmsAlertModal .cimms-alert-btn,
+#cimmsMapModal .cimms-alert-btn {
+    min-width: 95px;
+    padding: 9px 16px;
+    border-radius: 8px;
+    border: none;
+    font-weight: bold;
+    font-size: 0.95rem;
+    font-family: 'Poppins', sans-serif;
+    cursor: pointer;
+    transition: background .18s, color .18s;
+    outline: none;
+}
+#cimmsAlertModal .cimms-alert-btn.cancel,
+#cimmsMapModal .cimms-alert-btn.cancel {
+    background: #e9eeff;
+    color: #3650c7;
+}
+#cimmsAlertModal .cimms-alert-btn.confirm,
+#cimmsMapModal .cimms-alert-btn.confirm {
+    background: #2563eb;
+    color: #fff;
+}
+#cimmsAlertModal .cimms-alert-btn.confirm:hover,
+#cimmsMapModal .cimms-alert-btn.confirm:hover { background: #1d4fd8; }
+
+/* Map picker modal */
+#cimmsMapBackdrop {
+    position: fixed;
+    z-index: 5000;
+    inset: 0;
+    background: rgba(37, 59, 115, 0.20);
+    display: none;
+    align-items: center;
+    justify-content: center;
+}
+#cimmsMapBackdrop.active { display: flex; }
+#cimmsMapModal {
+    background: #fff;
+    border-radius: 14px;
+    box-shadow: 0 8px 42px rgba(17, 39, 77, 0.15);
+    padding: 22px 22px 18px;
+    width: 680px;
+    max-width: 95vw;
+    max-height: 94vh;
+    overflow-y: auto;
+    animation: cimmsFadeIn 0.22s cubic-bezier(.6, -0.01, .52, 1.23) 1;
+    display: flex;
+    flex-direction: column;
+    font-family: 'Poppins', sans-serif;
+}
+#cimmsMapModal .cimms-map-title {
+    font-size: 1.15rem;
+    letter-spacing: 0.02em;
+    font-weight: 700;
+    color: #2563eb;
+    text-align: center;
+    margin-bottom: 4px;
+}
+#cimmsMapModal .cimms-map-desc {
+    color: #64748b;
+    font-size: 0.85rem;
+    text-align: center;
+    margin-bottom: 12px;
+}
+.cimms-map-toolbar {
+    display: flex;
+    gap: 10px;
+    margin-bottom: 12px;
+}
+.cimms-map-search {
+    position: relative;
+    flex: 1;
+    display: flex;
+    align-items: center;
+}
+.cimms-map-search svg {
+    position: absolute;
+    left: 12px;
+    color: #94a3b8;
+    pointer-events: none;
+}
+.cimms-map-search input {
+    width: 100%;
+    padding: 10px 14px 10px 36px;
+    border-radius: 10px;
+    border: 1px solid #dfe5ec;
+    background: #fff;
+    font-family: 'Poppins', sans-serif;
+    font-size: 13.5px;
+    box-sizing: border-box;
+    transition: all .2s ease;
+}
+.cimms-map-search input:focus {
+    outline: none;
+    border-color: #2563eb;
+    box-shadow: 0 0 0 3px rgba(37, 99, 235, .15);
+}
+#cimmsMapGeo {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    white-space: nowrap;
+    padding: 10px 14px;
+    border-radius: 10px;
+    border: 1px solid #2563eb;
+    background: #fff;
+    color: #2563eb;
+    font-family: 'Poppins', sans-serif;
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: background .18s;
+}
+#cimmsMapGeo:hover { background: #e8effc; }
+#cimmsMapCanvas {
+    width: 100%;
+    height: 400px;
+    border-radius: 12px;
+    border: 1px solid #dfe5ec;
+    overflow: hidden;
+}
+#cimmsMapModal .cimms-map-address {
+    min-height: 20px;
+    margin: 10px 2px 12px;
+    font-size: 0.85rem;
+    color: #23285c;
+    text-align: center;
+}
+#cimmsMapModal .cimms-map-btns {
+    display: flex;
+    gap: 15px;
+    justify-content: center;
+}
+
+/* Top-center toast, same as the CIMM notif popup */
+.cimms-notif-popup {
+    position: fixed;
+    top: 30px;
+    left: 50%;
+    transform: translateX(-50%);
+    min-width: 280px;
+    max-width: 95vw;
+    padding: 18px 32px;
+    background: #fff;
+    border-radius: 13px;
+    box-shadow: 0 8px 38px rgba(34, 53, 126, 0.23);
+    z-index: 5001;
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    font-family: 'Poppins', Arial, sans-serif;
+    font-size: 17px;
+    font-weight: 500;
+    color: #212121;
+    opacity: 1;
+    transition: opacity .35s;
+}
+.cimms-notif-popup .cimms-notif-icon { font-size: 23px; }
+.cimms-notif-popup.cimms-notif-success { border-left: 5px solid #4fc97a; }
+.cimms-notif-popup.cimms-notif-error { border-left: 5px solid #d73f52; }
+.cimms-notif-popup .cimms-notif-close {
+    background: none;
+    border: none;
+    font-size: 20px;
+    margin-left: auto;
+    color: #888;
+    cursor: pointer;
+}
+
+/* Responsive collapse */
+@media (max-width: 950px) {
+    .cimms-report-card { padding: 24px 5vw 22px; }
+}
+@media (max-width: 768px) {
+    .cimms-report-card form {
+        grid-template-columns: 1fr;
+        gap: 19px;
+    }
+    .cimms-report-card h2 { font-size: 1.6rem; }
+    .cimms-actions {
+        grid-template-columns: auto 1fr;
+    }
+    .cimms-actions .cimms-btn-primary { justify-self: end; }
+    .cimms-actions span { display: none; }
+    .cimms-map-toolbar { flex-wrap: wrap; }
+    #cimmsMapCanvas { height: 320px; }
+}

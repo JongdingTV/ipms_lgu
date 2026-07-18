@@ -1525,7 +1525,7 @@ function setupListControls() {
                 </td>
                 <td class="cell-nowrap">${feedbackCategoryLabel(f.category)}</td>
                 <td class="cell-nowrap"><span class="priority-dot priority-${escapeHtml(f.priority)}"></span>${capitalizeFirst(f.priority)}</td>
-                <td class="cell-nowrap">${f.barangay ? 'Brgy. ' + escapeHtml(f.barangay) : '—'}</td>
+                <td class="cell-nowrap">${f.barangay ? (f.district ? 'Brgy. ' + escapeHtml(f.barangay) : escapeHtml(f.barangay)) : '—'}</td>
                 <td class="cell-nowrap">${formatDate(f.created_at)}</td>
                 <td><span class="feedback-status status-${escapeHtml(f.status)}">${capitalizeFirst(f.status)}</span></td>
             </tr>`,
@@ -1746,7 +1746,7 @@ function createFeedbackItem(item) {
                     ${item.barangay ? `
                     <span>
                         <svg width="14" height="14" viewBox="0 0 20 20" fill="currentColor" class="meta-icon"><path fill-rule="evenodd" d="M5.05 4.05a7 7 0 119.9 9.9L10 18.9l-4.95-4.95a7 7 0 010-9.9zM10 11a2 2 0 100-4 2 2 0 000 4z" clip-rule="evenodd"/></svg>
-                        Brgy. ${escapeHtml(item.barangay)}${item.district ? ', ' + escapeHtml(item.district) : ''}
+                        ${item.district ? 'Brgy. ' + escapeHtml(item.barangay) + ', ' + escapeHtml(item.district) : escapeHtml(item.barangay)}
                     </span>` : ''}
                     ${item.latitude && item.longitude ? `
                     <a class="feedback-pin-link" href="https://www.openstreetmap.org/?mlat=${encodeURIComponent(item.latitude)}&mlon=${encodeURIComponent(item.longitude)}#map=18/${encodeURIComponent(item.latitude)}/${encodeURIComponent(item.longitude)}" target="_blank" rel="noopener">
@@ -1822,62 +1822,25 @@ function fbSelectConcern(concern) {
 }
 
 function fbApplyConcernType(concern) {
-    const banner = document.getElementById('fbCimmsBanner');
-    const title = document.getElementById('fbStep2Title');
-    const sub = document.getElementById('fbStep2Sub');
-    const catLabel = document.getElementById('fbCategoryLabel');
-    const projectNameGroup = document.getElementById('feedbackProjectName')?.closest('.form-group');
-
-    // Maintenance mirrors the CIMMS public request form (LGU
-    // citizenrepform.php): Infrastructure Type is required, the description
-    // is the "Issue / Damage Description", and a contact number in
-    // 09XX-XXX-XXXX form is mandatory (CIMMS has no anonymous submissions,
-    // so the anonymous toggle only applies to the project path).
+    // Maintenance issues get an exact replica of the CIMMS public request
+    // form (LGU citizenrepform.php) — its own centered card with only the
+    // CIMMS fields — while project concerns keep the IPMS wizard form. The
+    // fb-cimms-mode class hides the wizard chrome (progress bar, stepper,
+    // illustration) so the card stands alone like the original.
     const maintenance = concern === 'maintenance';
-    const infraGroup = document.getElementById('fbInfraGroup');
-    const infraSelect = document.getElementById('feedbackInfraSelect');
-    const anonRow = document.getElementById('fbAnonRow');
-    const anonCheckbox = document.getElementById('feedbackAnonymous');
-    const msgLabel = document.getElementById('fbMessageLabel');
-    const msgInput = document.getElementById('feedbackMessage');
-    const phoneLabel = document.getElementById('fbPhoneLabel');
-    const phoneInput = document.getElementById('feedbackContactPhone');
-    const photosLabel = document.getElementById('fbPhotosLabel');
+    const projectWrap = document.getElementById('fbProjectWrap');
+    const cimmsWrap = document.getElementById('fbCimmsWrap');
 
-    if (infraGroup) infraGroup.style.display = maintenance ? '' : 'none';
-    if (infraSelect) infraSelect.required = maintenance && document.getElementById('feedbackInfraOther')?.style.display === 'none';
-    if (anonRow) anonRow.style.display = maintenance ? 'none' : '';
-    if (maintenance && anonCheckbox?.checked) {
-        anonCheckbox.checked = false;
-        fbToggleAnonymous();
-    }
-    if (msgLabel) msgLabel.textContent = maintenance ? 'Issue / Damage Description *' : 'Description *';
-    if (msgInput) msgInput.placeholder = maintenance
-        ? 'Describe the problem in detail...'
-        : 'Describe your concern, report, or complaint about your area...';
-    if (phoneLabel) phoneLabel.textContent = maintenance ? 'Contact Number *' : 'Contact Number';
-    if (phoneInput) phoneInput.required = maintenance;
-    if (photosLabel) photosLabel.innerHTML = maintenance
-        ? 'Evidence — Upload Images <span class="fb-optional">(up to 4 images accepted, 3MB each)</span>'
-        : 'Photos (proof) <span class="fb-optional">— optional, up to 4 images, 3MB each</span>';
-
+    if (projectWrap) projectWrap.style.display = maintenance ? 'none' : '';
+    if (cimmsWrap) cimmsWrap.style.display = maintenance ? '' : 'none';
     if (maintenance) {
-        if (banner) banner.style.display = 'flex';
-        if (title) title.textContent = 'Tell us about the maintenance issue';
-        if (sub) sub.textContent = 'This helps route your report to the right maintenance crew.';
-        if (catLabel) catLabel.textContent = 'Maintenance Category *';
-        if (projectNameGroup) projectNameGroup.style.display = 'none';
-    } else {
-        if (banner) banner.style.display = 'none';
-        if (title) title.textContent = 'Tell us about the project concern';
-        if (sub) sub.textContent = 'A few details help IPMS route this to the right office.';
-        if (catLabel) catLabel.textContent = 'Project Category *';
-        if (projectNameGroup) projectNameGroup.style.display = '';
+        // The card is self-contained; only the side illustration follows the concern.
+        fbRenderIllustration('fbIllustration2', concern);
+        return;
     }
 
-    // Filter the (unchanged) category options so each path only shows its
-    // own + general-purpose categories — same underlying <select>, same
-    // values the backend already validates.
+    // Project path: only project + general-purpose categories are offered —
+    // same underlying <select>, same values the backend already validates.
     const categorySelect = document.getElementById('feedbackCategory');
     if (categorySelect) {
         let currentStillValid = false;
@@ -1898,34 +1861,30 @@ function fbApplyConcernType(concern) {
 // The effective infrastructure value: the "specify" text wins over the
 // dropdown when it's in use — same hybrid rule as the CIMMS form.
 function fbCurrentInfrastructure() {
-    const other = document.getElementById('feedbackInfraOther');
+    const other = document.getElementById('cimmsInfraOther');
     if (other && other.style.display !== 'none' && other.value.trim() !== '') return other.value.trim();
-    return document.getElementById('feedbackInfraSelect')?.value || '';
+    return document.getElementById('cimmsInfraSelect')?.value || '';
 }
 
-// Hybrid infrastructure dropdown/input — behavior copied from the CIMMS
-// request form: picking "Other" swaps the select for a free-text input;
-// leaving it empty swaps back.
+// Hybrid infrastructure dropdown/input — behavior copied verbatim from the
+// CIMMS request form: picking "Other" swaps the select for a free-text
+// input; leaving it empty swaps back.
 function setupInfrastructureHybrid() {
-    const infraSelect = document.getElementById('feedbackInfraSelect');
-    const infraOther = document.getElementById('feedbackInfraOther');
+    const infraSelect = document.getElementById('cimmsInfraSelect');
+    const infraOther = document.getElementById('cimmsInfraOther');
     if (!infraSelect || !infraOther) return;
 
     const revertToDropdown = () => {
         infraOther.style.display = 'none';
-        infraOther.required = false;
         infraSelect.style.display = '';
         infraSelect.value = '';
-        infraSelect.required = fbConcernType === 'maintenance';
     };
 
     infraSelect.addEventListener('change', () => {
         if (infraSelect.value === 'Other') {
             infraSelect.style.display = 'none';
-            infraSelect.required = false;
             infraSelect.value = '';
             infraOther.style.display = '';
-            infraOther.required = fbConcernType === 'maintenance';
             infraOther.focus();
         }
     });
@@ -1938,6 +1897,454 @@ function setupInfrastructureHybrid() {
         if (infraOther.style.display !== 'none' && e.target !== infraOther && infraOther.value.trim() === '') {
             revertToDropdown();
         }
+    });
+}
+
+// ===== CIMMS Maintenance Request replica =====
+// Everything below is ported from the CIMMS public form
+// (LGU/lgu-portal/public/citizenrepform.php) so the maintenance path looks
+// and behaves exactly like the original: top-center notif popups, cursor-
+// preserving phone formatting, OpenStreetMap location autocomplete, merged
+// evidence uploads with previews, and a confirm modal before submitting.
+// The only adaptation: it posts to citizen/api/submit-feedback.php (AJAX)
+// instead of CIMMS's own requests table.
+
+// The CIMMS form has no category picker — the feedback category is derived
+// from the chosen infrastructure so the report still lands in the right
+// bucket on the staff side.
+const CIMMS_CATEGORY_BY_INFRA = {
+    'Roads': 'road_damage',
+    'Street Lights': 'streetlight',
+    'Electrical': 'streetlight',
+    'Drainage': 'drainage_flooding',
+};
+
+let cimmsSelectedFiles = [];
+
+function cimmsNotify(type, message) {
+    const notif = document.createElement('div');
+    notif.className = 'cimms-notif-popup cimms-notif-' + type;
+    const icon = (type === 'success') ? '✔️' : (type === 'error' ? '❌' : 'ℹ️');
+    notif.innerHTML = `<span class='cimms-notif-icon'>${icon}</span>
+                       <span class='cimms-notif-message'>${escapeHtml(message)}</span>
+                       <button class='cimms-notif-close'>&times;</button>`;
+    document.body.appendChild(notif);
+
+    const dismiss = () => {
+        notif.style.opacity = '0';
+        setTimeout(() => notif.remove(), 400);
+    };
+    notif.querySelector('.cimms-notif-close').addEventListener('click', dismiss);
+    setTimeout(dismiss, 2200);
+}
+
+function cimmsResetForm() {
+    const form = document.getElementById('cimmsForm');
+    if (!form) return;
+    form.reset();
+    cimmsSelectedFiles.length = 0;
+    const preview = document.getElementById('cimmsImagePreview');
+    if (preview) preview.innerHTML = '';
+    const evidence = document.getElementById('cimmsEvidence');
+    if (evidence) evidence.value = '';
+    const dropzone = document.getElementById('cimmsDropzone');
+    if (dropzone) { dropzone.style.pointerEvents = 'auto'; dropzone.style.opacity = '1'; }
+    const infraSelect = document.getElementById('cimmsInfraSelect');
+    const infraOther = document.getElementById('cimmsInfraOther');
+    if (infraOther) infraOther.style.display = 'none';
+    if (infraSelect) { infraSelect.style.display = ''; infraSelect.value = ''; }
+    const search = document.getElementById('cimmsMapSearch');
+    if (search) search.value = '';
+    const addr = document.getElementById('cimmsMapAddress');
+    if (addr) addr.textContent = '';
+    const suggestions = document.getElementById('cimmsLocationSuggestions');
+    if (suggestions) suggestions.style.display = 'none';
+}
+
+function setupCimmsMaintenanceForm() {
+    const form = document.getElementById('cimmsForm');
+    if (!form) return;
+
+    document.getElementById('fbCimmsBack')?.addEventListener('click', () => fbGoToStep(1));
+
+    // --- Contact number: auto-format 09XX-XXX-XXXX, cursor preserved ---
+    const phoneInput = document.getElementById('cimmsContactNumber');
+    if (phoneInput) {
+        phoneInput.addEventListener('input', (e) => {
+            const input = e.target;
+            const cursorPos = input.selectionStart;
+            let digits = input.value.replace(/\D/g, '').slice(0, 11);
+
+            let formatted = '';
+            if (digits.length <= 4) {
+                formatted = digits;
+            } else if (digits.length <= 7) {
+                formatted = digits.slice(0, 4) + '-' + digits.slice(4);
+            } else {
+                formatted = digits.slice(0, 4) + '-' + digits.slice(4, 7) + '-' + digits.slice(7);
+            }
+
+            const digitsBeforeCursor = input.value.slice(0, cursorPos).replace(/\D/g, '').length;
+            input.value = formatted;
+
+            let newCursor = 0;
+            let digitCount = 0;
+            for (let i = 0; i < formatted.length; i++) {
+                if (/\d/.test(formatted[i])) digitCount++;
+                if (digitCount === digitsBeforeCursor) {
+                    newCursor = i + 1;
+                    break;
+                }
+            }
+            input.setSelectionRange(newCursor, newCursor);
+        });
+    }
+
+    // --- Location: the readonly field opens the map picker. Inside the
+    // modal: search a place (OpenStreetMap Nominatim, Quezon City only),
+    // tap the map to drop a pin, or use GPS — every path reverse-geocodes
+    // and fills the Location field automatically. ---
+    const locationInput = document.getElementById('cimmsLocationInput');
+    const mapBackdrop = document.getElementById('cimmsMapBackdrop');
+    const mapAddress = document.getElementById('cimmsMapAddress');
+    const mapSearch = document.getElementById('cimmsMapSearch');
+    const suggestionBox = document.getElementById('cimmsLocationSuggestions');
+    let cimmsMap = null;
+    let cimmsMapMarker = null;
+    let cimmsPickedAddress = '';
+    let debounceTimer = null;
+
+    function cimmsSetAddress(address) {
+        cimmsPickedAddress = address;
+        if (mapAddress) mapAddress.textContent = '📍 ' + address;
+        if (locationInput) locationInput.value = address;
+    }
+
+    function cimmsReverseGeocode(latlng) {
+        if (mapAddress) mapAddress.textContent = 'Looking up address…';
+        const fallback = latlng.lat.toFixed(5) + ', ' + latlng.lng.toFixed(5);
+        fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${latlng.lat}&lon=${latlng.lng}&addressdetails=1`)
+            .then(res => res.json())
+            .then(data => cimmsSetAddress(data.display_name || fallback))
+            .catch(() => cimmsSetAddress(fallback));
+    }
+
+    // When the address is already known (a picked search suggestion), the
+    // reverse lookup is skipped and the suggestion text is used as-is.
+    function cimmsPlacePin(latlng, knownAddress) {
+        if (!cimmsMap) return;
+        if (!cimmsMapMarker) {
+            cimmsMapMarker = L.marker(latlng, { draggable: true }).addTo(cimmsMap);
+            cimmsMapMarker.on('dragend', () => cimmsReverseGeocode(cimmsMapMarker.getLatLng()));
+        } else {
+            cimmsMapMarker.setLatLng(latlng);
+        }
+        if (knownAddress) cimmsSetAddress(knownAddress);
+        else cimmsReverseGeocode(latlng);
+    }
+
+    function openCimmsMap() {
+        if (!mapBackdrop) return;
+        mapBackdrop.classList.add('active');
+        loadLeafletOnce().then(() => {
+            if (!cimmsMap) {
+                cimmsMap = L.map('cimmsMapCanvas').setView([14.6760, 121.0437], 12); // Quezon City
+                L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
+                    attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+                }).addTo(cimmsMap);
+                cimmsMap.on('click', (e) => cimmsPlacePin(e.latlng));
+            }
+            // Leaflet mis-sizes maps created while hidden; re-measure now that the modal is open.
+            setTimeout(() => cimmsMap.invalidateSize(), 80);
+        }).catch(() => {
+            mapBackdrop.classList.remove('active');
+            cimmsNotify('error', 'Could not load the map. Please try again.');
+        });
+    }
+
+    locationInput?.addEventListener('click', openCimmsMap);
+    document.getElementById('cimmsMapCancel')?.addEventListener('click', () => {
+        mapBackdrop?.classList.remove('active');
+    });
+    document.getElementById('cimmsMapUse')?.addEventListener('click', () => {
+        if (locationInput && cimmsPickedAddress) locationInput.value = cimmsPickedAddress;
+        mapBackdrop?.classList.remove('active');
+    });
+
+    // Search box inside the modal — picking a result jumps the map there
+    // and drops the pin with the suggestion's own address text.
+    if (mapSearch && suggestionBox) {
+        mapSearch.addEventListener('input', () => {
+            const query = mapSearch.value.trim();
+            clearTimeout(debounceTimer);
+
+            if (query.length < 3) {
+                suggestionBox.style.display = 'none';
+                return;
+            }
+
+            debounceTimer = setTimeout(() => {
+                fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(query)}&addressdetails=1&limit=10&countrycodes=PH`)
+                    .then(res => res.json())
+                    .then(data => {
+                        suggestionBox.innerHTML = '';
+
+                        const qcResults = data.filter(place => {
+                            const addr = place.address;
+                            return addr.city === 'Quezon City' || addr.county === 'Quezon City' || addr.town === 'Quezon City' || addr.village === 'Quezon City';
+                        });
+
+                        if (!qcResults.length) {
+                            suggestionBox.style.display = 'none';
+                            return;
+                        }
+
+                        qcResults.forEach(place => {
+                            const div = document.createElement('div');
+                            div.textContent = place.display_name;
+                            div.onclick = () => {
+                                suggestionBox.style.display = 'none';
+                                mapSearch.value = place.display_name;
+                                const latlng = { lat: parseFloat(place.lat), lng: parseFloat(place.lon) };
+                                if (cimmsMap) cimmsMap.setView(latlng, 17);
+                                cimmsPlacePin(latlng, place.display_name);
+                            };
+                            suggestionBox.appendChild(div);
+                        });
+
+                        suggestionBox.style.display = 'block';
+                    })
+                    .catch(() => {
+                        suggestionBox.style.display = 'none';
+                    });
+            }, 350);
+        });
+
+        document.addEventListener('click', e => {
+            if (!e.target.closest('.cimms-map-search')) {
+                suggestionBox.style.display = 'none';
+            }
+        });
+    }
+
+    // "My location" — GPS pin with the same reverse-geocode fill.
+    document.getElementById('cimmsMapGeo')?.addEventListener('click', () => {
+        if (!navigator.geolocation) {
+            cimmsNotify('error', 'Location services are not available in this browser.');
+            return;
+        }
+        navigator.geolocation.getCurrentPosition(
+            (pos) => {
+                const latlng = { lat: pos.coords.latitude, lng: pos.coords.longitude };
+                if (cimmsMap) cimmsMap.setView(latlng, 17);
+                cimmsPlacePin(latlng);
+            },
+            () => cimmsNotify('error', 'Could not get your location. Please allow location access or pin it on the map.')
+        );
+    });
+
+    // --- Evidence images: dropzone (click or drag), merged file state,
+    // previews with remove buttons ---
+    const evidenceInput = document.getElementById('cimmsEvidence');
+    const dropzone = document.getElementById('cimmsDropzone');
+    const previewDiv = document.getElementById('cimmsImagePreview');
+    const MAX_FILES = 4;
+
+    function updateUploadButton() {
+        const full = cimmsSelectedFiles.length >= MAX_FILES;
+        if (dropzone) {
+            dropzone.style.pointerEvents = full ? 'none' : 'auto';
+            dropzone.style.opacity = full ? '0.5' : '1';
+        }
+    }
+
+    function syncInputWithState() {
+        const dt = new DataTransfer();
+        cimmsSelectedFiles.forEach(f => dt.items.add(f));
+        if (evidenceInput) evidenceInput.files = dt.files;
+        renderImagePreview();
+    }
+
+    function mergeFiles(incoming) {
+        cimmsSelectedFiles = cimmsSelectedFiles.concat(incoming.filter(f => f.type.startsWith('image/')));
+
+        const seen = new Set();
+        cimmsSelectedFiles = cimmsSelectedFiles.filter(f => {
+            const key = f.name + f.size + f.lastModified;
+            if (seen.has(key)) return false;
+            seen.add(key);
+            return true;
+        });
+
+        if (cimmsSelectedFiles.length > MAX_FILES) {
+            cimmsNotify('error', `Maximum of ${MAX_FILES} images allowed.`);
+            cimmsSelectedFiles.length = MAX_FILES;
+        }
+
+        syncInputWithState();
+    }
+
+    function mergeAndPreviewFiles(e) {
+        mergeFiles(Array.from(e.target.files || []));
+    }
+
+    function removeImageAtIndex(index) {
+        cimmsSelectedFiles.splice(index, 1);
+        syncInputWithState();
+    }
+
+    function openFullImage(src) {
+        const modalBackdrop = document.createElement('div');
+        modalBackdrop.style.position = 'fixed';
+        modalBackdrop.style.inset = '0';
+        modalBackdrop.style.background = 'rgba(0,0,0,0.6)';
+        modalBackdrop.style.display = 'flex';
+        modalBackdrop.style.alignItems = 'center';
+        modalBackdrop.style.justifyContent = 'center';
+        modalBackdrop.style.zIndex = '8000';
+
+        const fullImg = document.createElement('img');
+        fullImg.src = src;
+        fullImg.style.maxWidth = '90%';
+        fullImg.style.maxHeight = '90%';
+        fullImg.style.borderRadius = '12px';
+
+        modalBackdrop.appendChild(fullImg);
+        document.body.appendChild(modalBackdrop);
+        modalBackdrop.addEventListener('click', () => modalBackdrop.remove());
+    }
+
+    function renderImagePreview() {
+        if (!previewDiv) return;
+        previewDiv.innerHTML = '';
+        cimmsSelectedFiles.forEach((file, index) => {
+            if (!file.type.startsWith('image/')) return;
+
+            const reader = new FileReader();
+            reader.onload = e => {
+                const wrapper = document.createElement('div');
+                wrapper.className = 'cimms-preview-item';
+
+                const img = document.createElement('img');
+                img.src = e.target.result;
+                img.title = 'Click to view full image';
+                img.addEventListener('click', () => openFullImage(e.target.result));
+
+                const removeBtn = document.createElement('div');
+                removeBtn.className = 'cimms-preview-remove';
+                removeBtn.innerHTML = '&times;';
+                removeBtn.addEventListener('click', (ev) => {
+                    ev.stopPropagation();
+                    removeImageAtIndex(index);
+                });
+
+                wrapper.appendChild(img);
+                wrapper.appendChild(removeBtn);
+                previewDiv.appendChild(wrapper);
+            };
+            reader.readAsDataURL(file);
+        });
+        updateUploadButton();
+    }
+
+    evidenceInput?.addEventListener('change', mergeAndPreviewFiles);
+
+    if (dropzone && evidenceInput) {
+        dropzone.addEventListener('click', () => evidenceInput.click());
+        dropzone.addEventListener('dragover', (e) => {
+            e.preventDefault();
+            dropzone.classList.add('dragover');
+        });
+        dropzone.addEventListener('dragleave', () => dropzone.classList.remove('dragover'));
+        dropzone.addEventListener('drop', (e) => {
+            e.preventDefault();
+            dropzone.classList.remove('dragover');
+            mergeFiles(Array.from(e.dataTransfer?.files || []));
+        });
+    }
+
+    // --- Confirm modal + submit ---
+    const backdrop = document.getElementById('cimmsAlertBackdrop');
+    const submitBtn = document.getElementById('cimmsSubmitBtn');
+
+    form.addEventListener('submit', e => {
+        e.preventDefault();
+
+        // The readonly Location field is exempt from native "required"
+        // validation, so it gets checked here instead.
+        if (!locationInput || locationInput.value.trim() === '') {
+            cimmsNotify('error', 'Please select a location.');
+            openCimmsMap();
+            return false;
+        }
+
+        const val = (phoneInput?.value || '').replace(/\D/g, '');
+        if (!/^09\d{9}$/.test(val)) {
+            cimmsNotify('error', 'Contact number must be 11 digits and start with 09.');
+            phoneInput?.focus();
+            return false;
+        }
+
+        if (backdrop) {
+            backdrop.classList.add('active');
+            document.getElementById('cimmsAlertConfirm')?.focus();
+        }
+    });
+
+    document.getElementById('cimmsAlertCancel')?.addEventListener('click', () => {
+        backdrop?.classList.remove('active');
+    });
+
+    document.getElementById('cimmsAlertConfirm')?.addEventListener('click', () => {
+        backdrop?.classList.remove('active');
+        if (submitBtn) {
+            submitBtn.disabled = true;
+            submitBtn.textContent = 'Submitting...';
+        }
+
+        const infraSelect = document.getElementById('cimmsInfraSelect');
+        const infraOther = document.getElementById('cimmsInfraOther');
+        const infrastructure = fbCurrentInfrastructure();
+
+        const formData = new FormData();
+        formData.append('concern_type', 'maintenance');
+        formData.append('infrastructure', infraSelect?.value || '');
+        formData.append('infrastructure_other', (infraOther && infraOther.style.display !== 'none') ? infraOther.value.trim() : '');
+        formData.append('location', document.getElementById('cimmsLocationInput')?.value.trim() || '');
+        formData.append('contact_name', document.getElementById('cimmsName')?.value.trim() || '');
+        formData.append('contact_phone', phoneInput?.value.trim() || '');
+        formData.append('contact_email', document.getElementById('cimmsEmail')?.value.trim() || '');
+        formData.append('message', document.getElementById('cimmsIssue')?.value.trim() || '');
+        formData.append('category', CIMMS_CATEGORY_BY_INFRA[infrastructure] || 'complaint');
+        formData.append('priority', 'medium');
+        cimmsSelectedFiles.forEach(f => formData.append('photos[]', f));
+
+        fetch(citizenUrl('citizen/api/submit-feedback.php'), {
+            method: 'POST',
+            body: formData
+        })
+            .then(res => res.json())
+            .then(data => {
+                if (data.success) {
+                    cimmsNotify('success', 'Maintenance request submitted successfully! Request ID: ' + (data.id || 0));
+                    const chip = document.getElementById('fbTrackingChip');
+                    if (chip) chip.textContent = '#FB-' + String(data.id || 0).padStart(6, '0');
+                    cimmsResetForm();
+                    loadTrackedFeedback();
+                    fbGoToStep(4);
+                } else {
+                    cimmsNotify('error', data.message || 'Failed to submit request. Please try again.');
+                }
+            })
+            .catch(() => {
+                cimmsNotify('error', 'Failed to submit request. Please try again.');
+            })
+            .finally(() => {
+                if (submitBtn) {
+                    submitBtn.disabled = false;
+                    submitBtn.textContent = 'Submit Request';
+                }
+            });
     });
 }
 
@@ -2004,7 +2411,6 @@ function fbRenderReview() {
     const card = document.getElementById('fbReviewCard');
     if (!card) return;
 
-    const form = document.getElementById('feedbackForm');
     const districtSel = document.getElementById('feedbackDistrict');
     const barangaySel = document.getElementById('feedbackBarangay');
     const category = document.getElementById('feedbackCategory');
@@ -2083,11 +2489,7 @@ function submitFeedbackWizard() {
 function resetFeedbackWizard() {
     const form = document.getElementById('feedbackForm');
     if (form) form.reset();
-    // Put the hybrid infrastructure field back in its dropdown state.
-    const infraOther = document.getElementById('feedbackInfraOther');
-    const infraSelect = document.getElementById('feedbackInfraSelect');
-    if (infraOther) { infraOther.style.display = 'none'; infraOther.required = false; }
-    if (infraSelect) infraSelect.style.display = '';
+    cimmsResetForm();
     document.getElementById('feedbackContactPhone')?.setCustomValidity('');
     resetLocationPicker();
     renderFeedbackPhotoPreviews();
@@ -2109,6 +2511,7 @@ function setupFeedbackWizard() {
     document.getElementById('feedbackAnonymous')?.addEventListener('change', fbToggleAnonymous);
     setupInfrastructureHybrid();
     setupContactPhoneFormat();
+    setupCimmsMaintenanceForm();
 
     // Step 2 (Fill Information) in-panel actions
     document.getElementById('fbBackBtn2')?.addEventListener('click', () => fbGoToStep(1));

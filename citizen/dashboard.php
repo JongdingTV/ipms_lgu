@@ -416,7 +416,9 @@ $statusChip = [
 
           <!-- ============ STEP 2: Form ============ -->
           <div class="fb-panel" data-panel="2">
-            <div class="fb-panel-main">
+            <!-- Project concerns use the IPMS wizard form below; maintenance
+                 issues swap it for the CIMMS replica card (#fbCimmsWrap). -->
+            <div class="fb-panel-main" id="fbProjectWrap">
               <div class="fb-panel-headrow">
                 <div>
                   <h2 class="fb-panel-title" id="fbStep2Title">Tell us more</h2>
@@ -425,32 +427,9 @@ $statusChip = [
                 <span class="fb-time-badge">⏱ Approximately 2–3 minutes</span>
               </div>
 
-              <div class="fb-cimms-banner" id="fbCimmsBanner" style="display:none;">
-                <svg width="18" height="18" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M18 10A8 8 0 112 10a8 8 0 0116 0zm-7-4a1 1 0 10-2 0v4a1 1 0 00.293.707l2.828 2.829a1 1 0 101.415-1.415L11 9.586V6z" clip-rule="evenodd"/></svg>
-                <span>This maintenance concern will be coordinated with the Community Infrastructure Maintenance Management System (CIMMS) for proper handling.</span>
-              </div>
-
               <div class="fb-form-tips-layout">
                 <form id="feedbackForm" method="POST">
                   <input type="hidden" name="concern_type" id="feedbackConcernType" value="project">
-
-                  <!-- Maintenance path only — mirrors the CIMMS public request
-                       form (LGU citizenrepform.php): same options, same hybrid
-                       "Other → specify" behavior. -->
-                  <div class="form-group" id="fbInfraGroup" style="display: none;">
-                    <label for="feedbackInfraSelect">Infrastructure Type *</label>
-                    <select id="feedbackInfraSelect" name="infrastructure">
-                      <option value="">Select infrastructure</option>
-                      <option value="Roads">Roads</option>
-                      <option value="Street Lights">Street Lights</option>
-                      <option value="Drainage">Drainage</option>
-                      <option value="Public Facilities">Public Facilities</option>
-                      <option value="Water Supply">Water Supply</option>
-                      <option value="Electrical">Electrical</option>
-                      <option value="Other">Other</option>
-                    </select>
-                    <input type="text" id="feedbackInfraOther" name="infrastructure_other" placeholder="Specify infrastructure" style="display: none;" autocomplete="off">
-                  </div>
 
                   <div class="fb-anon-row" id="fbAnonRow">
                     <label class="fb-toggle">
@@ -580,6 +559,105 @@ $statusChip = [
               </div>
             </div>
 
+            <!-- ============ Maintenance path: replica of the CIMM
+                 "Submit a Request" form. Same fields, same order, same
+                 look — location is picked on a map (search / tap / GPS)
+                 and fills itself in. Submits to the same feedback API. -->
+            <div id="fbCimmsWrap" class="cimms-form-wrapper" style="display: none;">
+              <div class="cimms-report-card">
+                <h2>Submit a Request</h2>
+                <form id="cimmsForm" autocomplete="off">
+                  <!-- Hybrid dropdown/input: Infrastructure -->
+                  <div class="cimms-input-group">
+                    <label for="cimmsInfraSelect">INFRASTRUCTURE TYPE <span class="cimms-req">*</span></label>
+                    <select id="cimmsInfraSelect" name="infrastructure">
+                      <option value="">— Select infrastructure —</option>
+                      <option value="Roads">Roads</option>
+                      <option value="Street Lights">Street Lights</option>
+                      <option value="Drainage">Drainage</option>
+                      <option value="Public Facilities">Public Facilities</option>
+                      <option value="Water Supply">Water Supply</option>
+                      <option value="Electrical">Electrical</option>
+                      <option value="Other">Other</option>
+                    </select>
+                    <input
+                      type="text"
+                      id="cimmsInfraOther"
+                      name="infrastructure_other"
+                      placeholder="Specify infrastructure"
+                      style="display:none;"
+                      autocomplete="off"
+                    >
+                  </div>
+                  <div class="cimms-input-group">
+                    <label for="cimmsLocationInput">LOCATION <span class="cimms-req">*</span></label>
+                    <input
+                      type="text"
+                      id="cimmsLocationInput"
+                      name="location"
+                      placeholder="Click to select location"
+                      autocomplete="off"
+                      readonly
+                    >
+                  </div>
+                  <div class="cimms-input-group">
+                    <label for="cimmsName">NAME <span class="cimms-opt">(Optional)</span></label>
+                    <input type="text" id="cimmsName" name="name" placeholder="Your name">
+                  </div>
+                  <div class="cimms-input-group">
+                    <label for="cimmsContactNumber">CONTACT NUMBER <span class="cimms-req">*</span></label>
+                    <input
+                      type="tel"
+                      id="cimmsContactNumber"
+                      name="contact_number"
+                      placeholder="09XX-XXX-XXXX"
+                      maxlength="13"
+                      required
+                    >
+                  </div>
+                  <div class="cimms-input-group cimms-full-width">
+                    <label for="cimmsEmail">EMAIL ADDRESS <span class="cimms-opt">(Optional)</span></label>
+                    <input type="email" id="cimmsEmail" name="email" placeholder="your@email.com">
+                    <p class="cimms-hint">
+                      <svg width="14" height="14" viewBox="0 0 20 20" fill="currentColor"><path d="M2.003 5.884L10 9.882l7.997-3.998A2 2 0 0016 4H4a2 2 0 00-1.997 1.884z"/><path d="M18 8.118l-8 4-8-4V14a2 2 0 002 2h12a2 2 0 002-2V8.118z"/></svg>
+                      If provided, we'll send you progress updates on your report.
+                    </p>
+                  </div>
+                  <div class="cimms-input-group cimms-full-width">
+                    <label for="cimmsIssue">ISSUE / DAMAGE DESCRIPTION <span class="cimms-req">*</span></label>
+                    <textarea id="cimmsIssue" name="issue" placeholder="Describe the problem in detail..." required></textarea>
+                  </div>
+                  <div class="cimms-input-group cimms-full-width">
+                    <label>EVIDENCE PHOTOS</label>
+                    <div class="cimms-dropzone" id="cimmsDropzone">
+                      <input type="file" id="cimmsEvidence" accept="image/*" multiple hidden>
+                      <span class="cimms-dropzone-icon" aria-hidden="true">
+                        <svg width="22" height="22" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M5.5 17a4.5 4.5 0 01-1.44-8.765 4.5 4.5 0 018.302-3.046 3.5 3.5 0 014.504 4.272A4 4 0 0115 17H5.5zm3.75-2.75a.75.75 0 001.5 0V9.66l1.95 2.1a.75.75 0 101.1-1.02l-3.25-3.5a.75.75 0 00-1.1 0l-3.25 3.5a.75.75 0 101.1 1.02l1.95-2.1v4.59z" clip-rule="evenodd"/></svg>
+                      </span>
+                      <p class="cimms-dropzone-text">Click or drag to upload images</p>
+                      <p class="cimms-dropzone-hint">JPG, PNG, WEBP</p>
+                    </div>
+                    <div id="cimmsImagePreview" style="display:flex; gap:10px; margin-top:10px; flex-wrap:wrap;"></div>
+                  </div>
+                  <div class="cimms-terms cimms-full-width">
+                    <label>
+                      <input type="checkbox" id="cimmsAgree" required>
+                      <span>I AGREE TO THE <a href="#" onclick="return false;">Terms and Conditions</a> AND <a href="#" onclick="return false;">Privacy Policy</a></span>
+                    </label>
+                  </div>
+                  <!-- Back sits at the bottom, matching the wizard's other steps -->
+                  <div class="cimms-actions cimms-full-width">
+                    <button type="button" class="btn-outline" id="fbCimmsBack">Back</button>
+                    <button type="submit" class="cimms-btn-primary" id="cimmsSubmitBtn">
+                      <svg width="15" height="15" viewBox="0 0 20 20" fill="currentColor"><path d="M3.105 2.289a.75.75 0 00-.826.95l1.414 4.925A1.5 1.5 0 005.135 9.25h6.115a.75.75 0 010 1.5H5.135a1.5 1.5 0 00-1.442 1.086l-1.414 4.926a.75.75 0 00.826.95 28.896 28.896 0 0015.293-7.154.75.75 0 000-1.115A28.897 28.897 0 003.105 2.289z"/></svg>
+                      Submit Request
+                    </button>
+                    <span></span>
+                  </div>
+                </form>
+              </div>
+            </div>
+
             <aside class="fb-illustration" id="fbIllustration2" data-state="project"></aside>
           </div>
 
@@ -619,6 +697,36 @@ $statusChip = [
             </div>
           </div>
 
+        </div>
+      </div>
+
+      <!-- CIMMS-style submit confirmation modal (maintenance path only) -->
+      <div id="cimmsAlertBackdrop">
+        <div id="cimmsAlertModal">
+          <div class="cimms-icon-wrap">
+            <span class="cimms-icon">✅</span>
+          </div>
+          <div class="cimms-alert-title">Confirm Submission</div>
+          <div class="cimms-alert-desc">Are you sure you want to submit this maintenance request?</div>
+          <div class="cimms-alert-btns">
+            <button class="cimms-alert-btn cancel" type="button" id="cimmsAlertCancel">Cancel</button>
+            <button class="cimms-alert-btn confirm" type="button" id="cimmsAlertConfirm">Submit</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- CIMMS-style map picker: drop or drag the pin and the Location
+           field fills itself from OpenStreetMap reverse geocoding. -->
+      <div id="cimmsMapBackdrop">
+        <div id="cimmsMapModal">
+          <div class="cimms-map-title">Pin the Location</div>
+          <div class="cimms-map-desc">Tap the map to drop a pin — drag it to fine-tune. The address fills in automatically.</div>
+          <div id="cimmsMapCanvas"></div>
+          <div class="cimms-map-address" id="cimmsMapAddress"></div>
+          <div class="cimms-map-btns">
+            <button class="cimms-alert-btn cancel" type="button" id="cimmsMapCancel">Cancel</button>
+            <button class="cimms-alert-btn confirm" type="button" id="cimmsMapUse">Use this location</button>
+          </div>
         </div>
       </div>
 

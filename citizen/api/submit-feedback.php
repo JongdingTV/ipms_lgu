@@ -75,6 +75,16 @@ if ($concernType === 'maintenance') {
     if (!preg_match('/^09\d{9}$/', $pureNumber)) {
         $errors[] = 'Contact number must be 11 digits (09XX-XXX-XXXX) and start with 09';
     }
+
+    // The CIMMS form uses a single free-text location instead of the IPMS
+    // district/barangay pair. It travels in the existing barangay column
+    // (no schema change); district stays NULL for maintenance reports.
+    $location = trim($_POST['location'] ?? '');
+    if ($location === '') {
+        $errors[] = 'Location is required';
+    }
+    $district = '';
+    $barangay = mb_substr($location, 0, 100);
 }
 if (empty($category) || !array_key_exists($category, feedbackCategories())) {
     $errors[] = 'Invalid category';
@@ -85,11 +95,13 @@ if (empty($priority) || !in_array($priority, ['low', 'medium', 'high', 'urgent']
 if (empty($message) || strlen($message) < 10) {
     $errors[] = 'Message must be at least 10 characters';
 }
-if ($district === '' || $barangay === '') {
-    $errors[] = 'Please select your district and barangay';
-} elseif (!qcIsValidLocation($district, $barangay)) {
-    // Rejects mismatched pairs (e.g. a D1 barangay submitted with D3) and unknown names.
-    $errors[] = 'The selected barangay does not belong to the selected district';
+if ($concernType !== 'maintenance') {
+    if ($district === '' || $barangay === '') {
+        $errors[] = 'Please select your district and barangay';
+    } elseif (!qcIsValidLocation($district, $barangay)) {
+        // Rejects mismatched pairs (e.g. a D1 barangay submitted with D3) and unknown names.
+        $errors[] = 'The selected barangay does not belong to the selected district';
+    }
 }
 
 // Optional exact pin: both coordinates or neither, and roughly within Quezon City.
@@ -166,7 +178,7 @@ try {
         INSERT INTO feedback (project_id, citizen_id, message, category, infrastructure_type, priority, district, barangay, latitude, longitude, status)
         VALUES (NULL, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'open')
     ");
-    $stmt->execute([$citizenId, $message, $category, $infrastructureType, $priority, $district, $barangay, $latitude, $longitude]);
+    $stmt->execute([$citizenId, $message, $category, $infrastructureType, $priority, $district ?: null, $barangay ?: null, $latitude, $longitude]);
     $feedbackId = (int) $pdo->lastInsertId();
 
     if ($photoFiles) {
@@ -175,7 +187,7 @@ try {
             $fileName = 'feedback_' . $feedbackId . '_' . time() . '_' . bin2hex(random_bytes(6)) . '.' . $photo['ext'];
             $filePath = $uploadDir . $fileName;
             if (!move_uploaded_file($photo['tmp'], $filePath)) {
-                throw new RuntimeException('Failed to save feedback photo #' . ($i + 1));
+                throw new RuntimeException(sprintf('Failed to save feedback photo #%d', $i + 1));
             }
             $savedPaths[] = $filePath;
             $photoStmt->execute([$feedbackId, '/assets/img/feedback-photos/' . $fileName]);
