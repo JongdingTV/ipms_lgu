@@ -2049,17 +2049,24 @@ function renderFeedbackTable(rows) {
   wrap.innerHTML = `
     <table class="data-table">
       <thead>
-        <tr><th>Citizen</th><th>Project</th><th>Message</th><th>Category</th><th>Priority</th><th>Status</th><th>Date</th><th>Actions</th></tr>
+        <tr><th>Citizen</th><th>Type</th><th>Message</th><th>Category</th><th>Priority</th><th>Status</th><th>CIMMS</th><th>Date</th><th>Actions</th></tr>
       </thead>
       <tbody>
         ${rows.map(f => `
           <tr>
             <td>${f.citizen_name ? escapeHtml(f.citizen_name) : '<em style="color:#94a3b8">Anonymous</em>'}</td>
-            <td>${escapeHtml(f.project_name || '—')}</td>
+            <td>${f.concern_type === 'maintenance' ? 'Maintenance' : 'Project'}</td>
             <td style="max-width:200px;">${escapeHtml(f.message)}</td>
             <td>${escapeHtml(f.category)}</td>
             <td><span class="badge ${pBadge[f.priority]||'badge-resolved'}">${f.priority}</span></td>
             <td><span class="badge ${sBadge[f.status]||'badge-resolved'}">${f.status}</span></td>
+            <td style="font-size:.75rem;">${
+              f.concern_type !== 'maintenance'
+                ? '—'
+                : (f.cimm_reference
+                    ? escapeHtml(f.cimm_reference)
+                    : escapeHtml(f.cimm_sync_status || '—'))
+            }</td>
             <td style="font-size:.75rem;color:#94a3b8;">${f.created_at?.slice(0,10)}</td>
             <td>
               <div class="action-btns">

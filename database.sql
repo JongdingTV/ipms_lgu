@@ -366,6 +366,16 @@ CREATE TABLE feedback (
   citizen_name VARCHAR(120),
   message TEXT NOT NULL,
   category ENUM('complaint','road_damage','drainage_flooding','streetlight','sidewalk_accessibility','safety_hazard','project_delay','suggestion','inquiry','commendation') DEFAULT 'complaint' COMMENT 'Keep in sync with citizen/includes/feedback-categories.php',
+  concern_type ENUM('project','maintenance') NOT NULL DEFAULT 'project' COMMENT 'maintenance concerns are forwarded to CIMMS',
+  anonymous TINYINT(1) NOT NULL DEFAULT 0,
+  contact_name VARCHAR(120) NULL,
+  contact_phone VARCHAR(30) NULL,
+  contact_email VARCHAR(180) NULL,
+  cimm_sync_status ENUM('none','pending','synced','failed') NOT NULL DEFAULT 'none',
+  cimm_request_id VARCHAR(64) NULL,
+  cimm_reference VARCHAR(64) NULL,
+  cimm_synced_at DATETIME NULL,
+  cimm_last_error TEXT NULL,
   priority ENUM('low','medium','high','urgent') DEFAULT 'medium',
   district VARCHAR(20) NULL COMMENT 'QC congressional district, e.g. District 1',
   barangay VARCHAR(100) NULL COMMENT 'QC barangay within the district',
@@ -374,7 +384,9 @@ CREATE TABLE feedback (
   status ENUM('open','in_progress','resolved','closed') DEFAULT 'open',
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
   FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE SET NULL,
-  FOREIGN KEY (citizen_id) REFERENCES citizens(id) ON DELETE SET NULL
+  FOREIGN KEY (citizen_id) REFERENCES citizens(id) ON DELETE SET NULL,
+  INDEX idx_feedback_concern_type (concern_type),
+  INDEX idx_feedback_cimm_sync (cimm_sync_status)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE feedback_photos (
