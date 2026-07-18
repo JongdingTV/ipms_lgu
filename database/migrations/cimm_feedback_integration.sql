@@ -1,7 +1,4 @@
--- CIMMS integration: track concern type + outbound sync status on feedback.
--- Run against the IPMS database (e.g. lgu_infrastructure).
-
-USE lgu_infrastructure;
+USE ipms_infra;
 
 ALTER TABLE feedback
   ADD COLUMN concern_type ENUM('project','maintenance') NOT NULL DEFAULT 'project'
