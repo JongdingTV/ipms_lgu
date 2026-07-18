@@ -216,6 +216,9 @@ function navigate(page) {
     s.style.display = s.id === `page-${page}` ? 'block' : 'none';
   });
 
+  // Sidebar badge clearing/refresh is handled independently by
+  // assets/js/sidebar-badges.js's own click listener on .nav-item.
+
   // Load page data
   const loaders = {
     dashboard: loadDashboard,
@@ -232,8 +235,6 @@ function navigate(page) {
     'staff-requests': loadStaffRequestsPage,
     'completed-projects': () => loadStatusFilteredProjectsPage('page-completed-projects', 'Completed Projects', 'turnover'),
     'cancelled-projects': () => loadStatusFilteredProjectsPage('page-cancelled-projects', 'Cancelled Projects', 'cancelled'),
-    'archived-documents': loadArchivedDocumentsPage,
-    'historical-records': loadHistoricalRecordsPage,
   };
   if (loaders[page]) loaders[page]();
 }
@@ -1224,30 +1225,6 @@ function renderStatusFilteredTable(containerId, rows) {
       </tbody>
     </table>
   `;
-}
-
-function renderPlaceholderPage(containerId, title, description) {
-  const container = document.getElementById(containerId);
-  if (!container) return;
-  container.innerHTML = `
-    <div class="page-header">
-      <h2 class="page-title">${title}</h2>
-    </div>
-    <div class="placeholder-panel">
-      <div class="placeholder-icon">
-        <svg viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm1-13a1 1 0 10-2 0v.092a4.535 4.535 0 00-1.676.662C6.602 6.234 6 7.009 6 8c0 .99.602 1.765 1.324 2.246.48.32 1.054.545 1.676.662v1.941c-.391-.127-.68-.317-.843-.504a1 1 0 10-1.51 1.31c.562.649 1.413 1.076 2.353 1.253V15a1 1 0 102 0v-.092a4.535 4.535 0 001.676-.662C13.398 13.766 14 12.991 14 12c0-.99-.602-1.765-1.324-2.246A4.535 4.535 0 0011 9.092V7.151c.391.127.68.317.843.504a1 1 0 101.51-1.31c-.562-.649-1.413-1.076-2.353-1.253V5z" clip-rule="evenodd"/></svg>
-      </div>
-      <h3>Coming soon</h3>
-      <p>${description}</p>
-    </div>
-  `;
-}
-
-function loadArchivedDocumentsPage() {
-  renderPlaceholderPage('page-archived-documents', 'Archived Documents', 'Archived document storage is planned for a future update.');
-}
-function loadHistoricalRecordsPage() {
-  renderPlaceholderPage('page-historical-records', 'Historical Records', 'Long-term historical reporting is planned for a future update.');
 }
 
 /* ============================================================
@@ -2326,6 +2303,7 @@ document.querySelectorAll('.nav-item').forEach(item => {
 });
 
 // ── Notification bell/panel toggle + polling is handled by assets/js/notifications.js. ──
+// ── Sidebar notification badges are handled by assets/js/sidebar-badges.js. ──
 
 // ── Search ──
 document.getElementById('searchInput')?.addEventListener('keydown', e => {
@@ -2382,8 +2360,6 @@ document.addEventListener('DOMContentLoaded', () => {
     <div id="page-staff-requests" class="page-section" style="display:none;"></div>
     <div id="page-completed-projects" class="page-section" style="display:none;"></div>
     <div id="page-cancelled-projects" class="page-section" style="display:none;"></div>
-    <div id="page-archived-documents" class="page-section" style="display:none;"></div>
-    <div id="page-historical-records" class="page-section" style="display:none;"></div>
   `;
 
   loadDashboard();

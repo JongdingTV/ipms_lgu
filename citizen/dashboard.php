@@ -1001,4 +1001,6 @@ $statusChip = [
   window.QC_GEOJSON_URL = <?= json_encode(appUrl('/citizen/assets/data/qc-barangays.geojson')) ?>;
 </script>
 <script src="<?= htmlspecialchars(assetUrl('/assets/js/notifications.js')) ?>"></script>
+<script>window.SIDEBAR_BADGES_PORTAL = 'citizen';</script>
+<script src="<?= htmlspecialchars(assetUrl('/assets/js/sidebar-badges.js')) ?>"></script>
 <script src="<?= htmlspecialchars(assetUrl('/citizen/assets/js/citizen.js')) ?>"></script>
