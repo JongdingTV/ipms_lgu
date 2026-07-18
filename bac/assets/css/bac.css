@@ -305,22 +305,36 @@
 .bac-filters input,
 .bac-filters select,
 .bac-panel-head input,
-.bac-panel-head select {
+.bac-panel-head select,
+.bac-content .page-header > input[type="text"] {
   border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
-  padding: 7px 10px;
-  font-size: .8rem;
+  border-radius: 999px;
+  padding: 9px 16px;
+  font-size: .85rem;
   font-family: var(--font);
   outline: none;
   background: var(--card-bg);
+  color: var(--text-primary);
   transition: border-color .2s, box-shadow .2s;
 }
 .bac-filters input:focus,
 .bac-filters select:focus,
 .bac-panel-head input:focus,
-.bac-panel-head select:focus {
+.bac-panel-head select:focus,
+.bac-content .page-header > input[type="text"]:focus {
   border-color: var(--primary);
   box-shadow: 0 0 0 3px rgba(37,99,235,.12);
+}
+/* Magnifier icon in search boxes, matching the citizen list-search pill. */
+.bac-filters input[type="text"],
+.bac-panel-head input[type="text"],
+.bac-content .page-header > input[type="text"] {
+  min-width: 220px;
+  padding-left: 42px;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20' fill='%2394a3b8'%3E%3Cpath fill-rule='evenodd' d='M8 4a4 4 0 100 8 4 4 0 000-8zM2 8a6 6 0 1110.89 3.476l4.817 4.817a1 1 0 01-1.414 1.414l-4.816-4.816A6 6 0 012 8z' clip-rule='evenodd'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: 16px center;
+  background-size: 16px 16px;
 }
 
 /* ── Motion polish (previously fully static) ── */

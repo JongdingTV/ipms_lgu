@@ -477,9 +477,33 @@ button { cursor: pointer; font-family: var(--font); }
    PAGE-LEVEL STYLES (Projects, Budget, Contractors, Feedback)
    ══════════════════════════════════════════════════════════ */
 
-/* ── Page header ── */
-.page-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 16px; }
-.page-title { font-size: 1.2rem; font-weight: 800; color: var(--text-primary); }
+/* ── Page header — same padded card treatment as the citizen portal, so
+   module titles sit on glass instead of floating over the photo backdrop. ── */
+.page-header {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 16px; flex-wrap: wrap;
+  padding: clamp(18px, 2.2vw, 26px) clamp(20px, 2.4vw, 28px);
+  margin-bottom: 20px;
+  background: var(--card-bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--card-shadow);
+}
+.page-title {
+  display: flex; align-items: center; gap: 12px;
+  font-size: clamp(1.35rem, 2vw, 1.7rem); font-weight: 800;
+  color: var(--text-primary); line-height: 1.15;
+}
+/* Same gradient accent bar as the citizen module titles. */
+.page-title::before {
+  content: ""; width: 5px; height: 1.05em; border-radius: 4px;
+  background: linear-gradient(180deg, var(--accent), var(--accent-dark, #1e40af));
+  flex-shrink: 0;
+}
+/* Portal scope notes ride inside the padded header; citizen-scale them.
+   (.content beats the per-portal .82rem rules loaded after this file.) */
+.content [class*="scope-note"],
+.content .hope-decision-note { font-size: .9rem; line-height: 1.55; }
 
 /* ── Buttons ── */
 .btn-primary { background: linear-gradient(135deg, var(--accent), var(--accent-dark, #1e40af)); color: white; border: none; border-radius: var(--radius-sm); padding: 9px 18px; font-size: .83rem; font-weight: 600; transition: box-shadow .15s, transform .1s; }
@@ -493,29 +517,134 @@ button { cursor: pointer; font-family: var(--font); }
 .btn-icon:disabled { opacity: .4; cursor: not-allowed; }
 .action-btns { display: flex; gap: 4px; }
 
-/* ── Filter bar ── */
-.filter-bar { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
-.filter-input { border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 7px 12px; font-size: .82rem; font-family: var(--font); outline: none; min-width: 200px; transition: border-color .2s; background: var(--card-bg); }
-.filter-input:focus { border-color: var(--accent); }
-.filter-select { border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 7px 12px; font-size: .82rem; font-family: var(--font); outline: none; background: var(--card-bg); cursor: pointer; }
+/* ── Filter bar (pill-styled to match the Gmail list toolbar) ── */
+.filter-bar { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 14px; }
+.filter-input { border: 1px solid var(--border); border-radius: 999px; padding: 9px 18px; font-size: .85rem; font-family: var(--font); outline: none; min-width: 220px; transition: border-color .2s, box-shadow .2s; background: var(--card-bg); color: var(--text-primary); }
+.filter-input:focus { border-color: var(--accent); box-shadow: 0 0 0 3px rgba(37, 99, 235, .12); }
+.filter-input::placeholder { color: var(--text-muted); }
+.filter-select { border: 1px solid var(--border); border-radius: 999px; padding: 9px 14px; font-size: .85rem; font-family: var(--font); outline: none; background: var(--card-bg); color: var(--text-primary); cursor: pointer; }
+/* Magnifier inside pill search boxes — the citizen .list-search look
+   without markup changes. Applies to any pill input that searches. */
+.filter-bar .filter-input[placeholder^="Search" i],
+input.search-pill {
+  padding-left: 42px;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20' fill='%2394a3b8'%3E%3Cpath fill-rule='evenodd' d='M8 4a4 4 0 100 8 4 4 0 000-8zM2 8a6 6 0 1110.89 3.476l4.817 4.817a1 1 0 01-1.414 1.414l-4.816-4.816A6 6 0 012 8z' clip-rule='evenodd'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: 16px center;
+  background-size: 16px 16px;
+}
 
-/* ── Table ── */
-.table-card { background: var(--card-bg); border-radius: var(--radius); box-shadow: var(--card-shadow); border: 1px solid var(--border); overflow: hidden; }
-.data-table { width: 100%; border-collapse: collapse; font-size: .82rem; }
-.data-table th { background: #f8fafc; padding: 11px 14px; text-align: left; font-size: .72rem; font-weight: 700; color: var(--text-muted); letter-spacing: .05em; text-transform: uppercase; border-bottom: 1px solid var(--border); white-space: nowrap; }
-.data-table td { padding: 11px 14px; border-bottom: 1px solid var(--border); vertical-align: middle; color: var(--text-primary); }
+/* ── Table — citizen-portal scale: roomier cells, clean (untinted) header
+   row, horizontal scroll inside the card when columns overflow. ── */
+.table-card { background: var(--card-bg); border-radius: var(--radius); box-shadow: var(--card-shadow); border: 1px solid var(--border); overflow-x: auto; }
+.data-table { width: 100%; border-collapse: collapse; font-size: .9rem; }
+.data-table th { padding: 13px 16px; text-align: left; font-size: .72rem; font-weight: 700; color: var(--text-muted); letter-spacing: .07em; text-transform: uppercase; border-bottom: 1px solid var(--border); white-space: nowrap; }
+.data-table td { padding: 13px 16px; border-bottom: 1px solid var(--border); vertical-align: middle; color: var(--text-primary); }
 .data-table tr:last-child td { border-bottom: none; }
-.data-table tr:hover td { background: #f8fafc; }
-/* Header strip and row hover above are hardcoded light-only tints. */
-:root[data-theme="dark"] .data-table th { background: rgba(148,163,184,.08); }
-:root[data-theme="dark"] .data-table tr:hover td { background: rgba(148,163,184,.08); }
+.data-table tbody tr:hover td { background: rgba(148,163,184,.1); }
 
-/* ── Pager ── */
-.pager { display: flex; align-items: center; justify-content: center; gap: 12px; padding: 12px 0; }
-.pager-btn { background: var(--card-bg); border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 6px 16px; font-size: .8rem; font-weight: 600; cursor: pointer; transition: background .15s; }
+/* ── Pager (legacy .pager containers restyle to the same pill look) ── */
+.pager { display: flex; align-items: center; justify-content: flex-end; gap: 12px; padding: 12px 0; }
+.pager-btn { background: var(--card-bg); border: 1px solid var(--border); border-radius: 999px; padding: 6px 16px; font-size: .8rem; font-weight: 600; cursor: pointer; transition: background .15s; }
 .pager-btn:hover:not(:disabled) { background: var(--accent); color: white; border-color: var(--accent); }
 .pager-btn:disabled { opacity: .4; cursor: not-allowed; }
-.pager-info { font-size: .8rem; color: var(--text-muted); }
+.pager-info { font-size: .8rem; color: var(--text-muted); font-variant-numeric: tabular-nums; }
+
+/* ── Gmail-style list toolbar + pager (ported from the citizen portal) ──
+   .list-toolbar rows hold a pill search box and the .list-pager pill that
+   assets/js/pagination.js renders inside each .pagination-wrap. */
+.list-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-bottom: 14px;
+}
+.list-search {
+  flex: 1;
+  min-width: 220px;
+  max-width: 520px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  background: var(--card-bg);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 9px 18px;
+  transition: border-color .2s, box-shadow .2s;
+}
+.list-search:focus-within {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px rgba(37, 99, 235, .12);
+}
+.list-search svg { width: 16px; height: 16px; color: var(--text-muted); flex-shrink: 0; }
+.list-search input {
+  flex: 1;
+  min-width: 0;
+  border: none;
+  outline: none;
+  background: transparent;
+  font-size: .9rem;
+  font-family: var(--font);
+  color: var(--text-primary);
+}
+.list-search input::placeholder { color: var(--text-muted); }
+.list-toolbar .filter-select { margin: 0; }
+
+.list-pager {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  /* Same surface as the search pill — without it the pager floats on the
+     blurred photo backdrop and is barely readable. */
+  background: var(--card-bg);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 5px 8px 5px 16px;
+}
+.list-pager-info {
+  font-size: .85rem;
+  font-weight: 600;
+  color: var(--text-primary);
+  margin-right: 8px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.list-pager-btn {
+  width: 34px;
+  height: 34px;
+  border: none;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--text-muted);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: background .15s, color .15s;
+}
+.list-pager-btn svg { width: 18px; height: 18px; }
+.list-pager-btn:hover:not(:disabled) {
+  background: rgba(148, 163, 184, .18);
+  color: var(--text-primary);
+}
+.list-pager-btn:disabled { opacity: .35; cursor: default; }
+
+/* Row/cell helpers shared with the citizen table design */
+.row-click { cursor: pointer; transition: background .12s; }
+.row-click:hover { background: rgba(148, 163, 184, .1); }
+.cell-title { font-weight: 600; color: var(--text-primary); }
+.cell-sub { font-size: .8rem; color: var(--text-muted); margin-top: 2px; }
+.cell-clamp { max-width: 360px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cell-money { font-family: var(--mono); white-space: nowrap; }
+.cell-nowrap { white-space: nowrap; }
+.cell-num { text-align: right; }
+.table-empty { text-align: center; color: var(--text-muted); padding: 30px 18px !important; }
+.cell-progress { display: flex; align-items: center; gap: 8px; min-width: 110px; }
+.cell-progress span { font-size: .82rem; color: var(--text-muted); font-variant-numeric: tabular-nums; }
+.mini-progress { flex: 1; height: 6px; border-radius: 999px; background: rgba(148, 163, 184, .25); overflow: hidden; }
+.mini-progress div { height: 100%; border-radius: 999px; background: linear-gradient(90deg, var(--accent), var(--accent-dark, #1e40af)); }
 
 /* ── Forms ── */
 .form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
@@ -740,7 +869,19 @@ button { cursor: pointer; font-family: var(--font); }
 @keyframes spin { to { transform: rotate(360deg); } }
 
 /* ── Empty state ── */
-.empty-state { text-align: center; color: var(--text-muted); padding: 32px; font-size: .85rem; }
+.empty-state { text-align: center; color: var(--text-muted); padding: 32px; font-size: .9rem; }
+/* Empty states rendered straight onto the photo backdrop (timeline/stack
+   containers with no card of their own) get a glass card for readability. */
+.page-section > .empty-state,
+.kpi-grid > .empty-state,
+.bac-timeline > .empty-state,
+.bac-list > .empty-state,
+.engineer-stack > .empty-state {
+  background: var(--card-bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--card-shadow);
+}
 
 /* ── Confirm dialogs (logout confirmation + idle auto-logout warning) ──
    Markup in includes/topbar.php, behavior in assets/js/session-guard.js.
@@ -857,13 +998,10 @@ button { cursor: pointer; font-family: var(--font); }
 
 .page-header {
   align-items: flex-start;
-  gap: 16px;
-  margin-bottom: 18px;
 }
 
 .page-title {
   letter-spacing: 0;
-  line-height: 1.15;
 }
 
 .kpi-grid {

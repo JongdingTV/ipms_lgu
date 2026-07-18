@@ -372,38 +372,42 @@ async function hopeRenderAwardApprovals() {
         <p class="hope-decision-note">Review BAC's recommended contractor and bid evaluation, then approve the award, return the recommendation for reconsideration, or reject it. A remark is required for Return and Reject decisions.</p>
       </div>
     </div>
-    <div id="hopeAwardTable" class="table-card"><div class="skeleton-group"><div class="skeleton-row"></div><div class="skeleton-row"></div></div></div>
+    ${listToolbarHtml('hopeAwardSearch', 'Search project, contractor...', 'hopeAwardPager')}
+    <div class="table-card">
+      <table class="data-table">
+        <thead><tr><th>Project</th><th>Contractor</th><th>Award Amount</th><th>Recommended</th><th>Actions</th></tr></thead>
+        <tbody id="hopeAwardBody"><tr><td colspan="5" class="table-empty">Loading...</td></tr></tbody>
+      </table>
+    </div>
   `;
+
+  initClientList('hopeAwards', {
+    bodyId: 'hopeAwardBody', searchId: 'hopeAwardSearch', pagerId: 'hopeAwardPager',
+    columns: 5, emptyText: 'No contract award recommendations are awaiting your decision.',
+    searchText: r => `${r.project_code} ${r.project_name} ${r.contractor_name}`,
+    rowHtml: r => `
+      <tr>
+        <td><span class="proj-id">${hopeEscape(r.project_code)}</span><br><strong>${hopeEscape(r.project_name)}</strong></td>
+        <td>${hopeEscape(r.contractor_name)}<br><small style="color:#94a3b8">Performance ${r.performance_score}/100</small></td>
+        <td class="cell-money">${hopeMoney(r.award_amount)}</td>
+        <td class="cell-nowrap">${hopeDate(r.created_at)}</td>
+        <td><button class="btn-primary btn-compact" onclick="hopeOpenAwardDetailModal(${r.id})">Review</button></td>
+      </tr>`,
+  });
 
   await hopeLoadAwardApprovals();
 }
 
 async function hopeLoadAwardApprovals() {
-  const wrap = document.getElementById('hopeAwardTable');
-  if (!wrap) return;
+  const body = document.getElementById('hopeAwardBody');
+  if (!body) return;
 
   try {
     const result = await hopeGet('list_award_recommendations');
     result.data.forEach(r => { hopeAwardRecsById[r.id] = r; });
-
-    wrap.innerHTML = result.data.length ? `
-      <table class="data-table">
-        <thead><tr><th>Project</th><th>Contractor</th><th>Award Amount</th><th>Recommended</th><th>Actions</th></tr></thead>
-        <tbody>
-          ${result.data.map(r => `
-            <tr>
-              <td><span class="proj-id">${hopeEscape(r.project_code)}</span><br><strong>${hopeEscape(r.project_name)}</strong></td>
-              <td>${hopeEscape(r.contractor_name)}<br><small style="color:#94a3b8">Performance ${r.performance_score}/100</small></td>
-              <td>${hopeMoney(r.award_amount)}</td>
-              <td>${hopeDate(r.created_at)}</td>
-              <td><button class="btn-primary btn-compact" onclick="hopeOpenAwardDetailModal(${r.id})">Review</button></td>
-            </tr>
-          `).join('')}
-        </tbody>
-      </table>
-    ` : '<p class="empty-state">No contract award recommendations are awaiting your decision.</p>';
+    setClientListData('hopeAwards', result.data);
   } catch (error) {
-    wrap.innerHTML = '<p class="empty-state">Failed to load award recommendations.</p>';
+    body.innerHTML = '<tr><td colspan="5" class="table-empty">Failed to load award recommendations.</td></tr>';
   }
 }
 
@@ -525,34 +529,39 @@ async function hopeRenderReturnedProjects() {
         <p class="hope-decision-note">Projects sent back for revision, awaiting Admin's resubmission.</p>
       </div>
     </div>
-    <div id="hopeReturnedTable" class="table-card"><div class="skeleton-group"><div class="skeleton-row"></div></div></div>
-  `;
-
-  const wrap = document.getElementById('hopeReturnedTable');
-  try {
-    const result = await hopeFetchProjects({ status: 'returned', per_page: 50 });
-    wrap.innerHTML = result.data.length ? `
+    ${listToolbarHtml('hopeReturnedSearch', 'Search code, project, reason...', 'hopeReturnedPager')}
+    <div class="table-card">
       <table class="data-table">
         <thead><tr><th>Code</th><th>Project</th><th>Budget</th><th>Reason</th><th>Actions</th></tr></thead>
-        <tbody>
-          ${result.data.map(p => `
-            <tr>
-              <td>${hopeEscape(p.project_code)}</td>
-              <td>${hopeEscape(p.name)}</td>
-              <td>${hopeMoney(p.budget)}</td>
-              <td>${hopeEscape(p.rejection_reason || '-')}</td>
-              <td><button class="btn-secondary btn-compact" onclick="hopeOpenProjectModal(${p.id})">View</button></td>
-            </tr>
-          `).join('')}
-        </tbody>
+        <tbody id="hopeReturnedBody"><tr><td colspan="5" class="table-empty">Loading...</td></tr></tbody>
       </table>
-    ` : '<p class="empty-state">No returned projects.</p>';
+    </div>
+  `;
+
+  initClientList('hopeReturned', {
+    bodyId: 'hopeReturnedBody', searchId: 'hopeReturnedSearch', pagerId: 'hopeReturnedPager',
+    columns: 5, emptyText: 'No returned projects.',
+    searchText: p => `${p.project_code} ${p.name} ${p.rejection_reason || ''}`,
+    rowHtml: p => `
+      <tr>
+        <td class="cell-nowrap">${hopeEscape(p.project_code)}</td>
+        <td><span class="cell-title">${hopeEscape(p.name)}</span></td>
+        <td class="cell-money">${hopeMoney(p.budget)}</td>
+        <td>${hopeEscape(p.rejection_reason || '-')}</td>
+        <td><button class="btn-secondary btn-compact" onclick="hopeOpenProjectModal(${p.id})">View</button></td>
+      </tr>`,
+  });
+
+  try {
+    const result = await hopeFetchProjects({ status: 'returned', per_page: 50 });
+    setClientListData('hopeReturned', result.data);
   } catch (error) {
-    wrap.innerHTML = '<p class="empty-state">Failed to load returned projects.</p>';
+    const body = document.getElementById('hopeReturnedBody');
+    if (body) body.innerHTML = '<tr><td colspan="5" class="table-empty">Failed to load returned projects.</td></tr>';
   }
 }
 
-let hopeHistoryState = { page: 1 };
+let hopeHistoryState = { page: 1, search: '' };
 
 async function hopeRenderDecisionHistory() {
   const container = document.getElementById('page-decision-history');
@@ -565,11 +574,16 @@ async function hopeRenderDecisionHistory() {
         <p class="hope-decision-note">Every project approval and contract award decision you've made.</p>
       </div>
     </div>
+    ${listToolbarHtml('hopeHistorySearch', 'Search action, project, details...', 'hopeHistoryPager')}
     <div id="hopeHistoryTable" class="table-card"></div>
-    <div id="hopeHistoryPager" class="pager"></div>
   `;
 
-  hopeHistoryState.page = 1;
+  hopeHistoryState = { page: 1, search: '' };
+  document.getElementById('hopeHistorySearch').addEventListener('input', debounce(() => {
+    hopeHistoryState.search = document.getElementById('hopeHistorySearch').value.trim();
+    hopeHistoryState.page = 1;
+    hopeLoadDecisionHistory();
+  }, 300));
   await hopeLoadDecisionHistory();
 }
 
@@ -579,7 +593,7 @@ async function hopeLoadDecisionHistory() {
   wrap.innerHTML = '<div class="skeleton-group"><div class="skeleton-row"></div><div class="skeleton-row"></div></div>';
 
   try {
-    const result = await hopeGet('decision_history', { page: hopeHistoryState.page, per_page: 15 });
+    const result = await hopeGet('decision_history', { page: hopeHistoryState.page, per_page: 15, search: hopeHistoryState.search });
     wrap.innerHTML = result.data.length ? `
       <table class="data-table">
         <thead><tr><th>Date</th><th>Action</th><th>Project</th><th>Details</th></tr></thead>
@@ -613,32 +627,42 @@ async function hopeRenderProjectsByStage(pageId, title, statusIn) {
 
   container.innerHTML = `
     <div class="page-header"><div><h2 class="page-title">${hopeEscape(title)}</h2></div></div>
-    <div id="${pageId}Table" class="table-card"><div class="skeleton-group"><div class="skeleton-row"></div></div></div>
-  `;
-
-  const wrap = document.getElementById(`${pageId}Table`);
-  try {
-    const result = await hopeFetchProjects({ status_in: statusIn, per_page: 100 });
-    wrap.innerHTML = result.data.length ? `
+    ${listToolbarHtml(`${pageId}Search`, 'Search code, project, contractor...', `${pageId}Pager`)}
+    <div class="table-card">
       <table class="data-table">
         <thead><tr><th>Code</th><th>Project</th><th>Budget</th><th>Contractor</th><th>Progress</th><th>Status</th><th>Actions</th></tr></thead>
-        <tbody>
-          ${result.data.map(p => `
-            <tr>
-              <td>${hopeEscape(p.project_code)}</td>
-              <td>${hopeEscape(p.name)}</td>
-              <td>${hopeMoney(p.budget)}</td>
-              <td>${hopeEscape(p.contractor_name || 'Unassigned')}</td>
-              <td>${Number(p.progress || 0)}%</td>
-              <td>${hopeBadge(p.status)}</td>
-              <td><button class="btn-secondary btn-compact" onclick="hopeOpenProjectModal(${p.id})">View</button></td>
-            </tr>
-          `).join('')}
-        </tbody>
+        <tbody id="${pageId}Body"><tr><td colspan="7" class="table-empty">Loading...</td></tr></tbody>
       </table>
-    ` : '<p class="empty-state">No projects in this category.</p>';
+    </div>
+  `;
+
+  initClientList(`stage-${pageId}`, {
+    bodyId: `${pageId}Body`, searchId: `${pageId}Search`, pagerId: `${pageId}Pager`,
+    columns: 7, emptyText: 'No projects in this category.',
+    searchText: p => `${p.project_code} ${p.name} ${p.contractor_name || ''} ${p.status}`,
+    rowHtml: p => `
+      <tr>
+        <td class="cell-nowrap">${hopeEscape(p.project_code)}</td>
+        <td><span class="cell-title">${hopeEscape(p.name)}</span></td>
+        <td class="cell-money">${hopeMoney(p.budget)}</td>
+        <td>${hopeEscape(p.contractor_name || 'Unassigned')}</td>
+        <td>
+          <div class="cell-progress">
+            <div class="mini-progress"><div style="width:${Number(p.progress) || 0}%"></div></div>
+            <span>${Number(p.progress || 0)}%</span>
+          </div>
+        </td>
+        <td>${hopeBadge(p.status)}</td>
+        <td><button class="btn-secondary btn-compact" onclick="hopeOpenProjectModal(${p.id})">View</button></td>
+      </tr>`,
+  });
+
+  try {
+    const result = await hopeFetchProjects({ status_in: statusIn, per_page: 100 });
+    setClientListData(`stage-${pageId}`, result.data);
   } catch (error) {
-    wrap.innerHTML = '<p class="empty-state">Failed to load projects.</p>';
+    const body = document.getElementById(`${pageId}Body`);
+    if (body) body.innerHTML = '<tr><td colspan="7" class="table-empty">Failed to load projects.</td></tr>';
   }
 }
 
@@ -715,21 +739,29 @@ async function hopeRenderBudgetSummary() {
         <div class="hope-stat-box"><span>Total Utilized</span><strong>${hopeMoney(data.total_spent)}</strong></div>
         <div class="hope-stat-box"><span>Utilization</span><strong>${data.utilization_pct}%</strong></div>
       </div>
-      <table class="data-table">
-        <thead><tr><th>Code</th><th>Project</th><th>Status</th><th>Budget</th><th>Spent</th></tr></thead>
-        <tbody>
-          ${data.projects.map(p => `
-            <tr>
-              <td>${hopeEscape(p.project_code)}</td>
-              <td>${hopeEscape(p.name)}</td>
-              <td>${hopeBadge(p.status)}</td>
-              <td>${hopeMoney(p.budget)}</td>
-              <td>${hopeMoney(p.spent)}</td>
-            </tr>
-          `).join('')}
-        </tbody>
-      </table>
+      ${listToolbarHtml('hopeBudgetSearch', 'Search code, project, status...', 'hopeBudgetPager')}
+      <div class="table-card">
+        <table class="data-table">
+          <thead><tr><th>Code</th><th>Project</th><th>Status</th><th>Budget</th><th>Spent</th></tr></thead>
+          <tbody id="hopeBudgetTableBody"></tbody>
+        </table>
+      </div>
     `;
+
+    initClientList('hopeBudget', {
+      bodyId: 'hopeBudgetTableBody', searchId: 'hopeBudgetSearch', pagerId: 'hopeBudgetPager',
+      columns: 5, emptyText: 'No projects with budget data.',
+      searchText: p => `${p.project_code} ${p.name} ${p.status}`,
+      rowHtml: p => `
+        <tr>
+          <td class="cell-nowrap">${hopeEscape(p.project_code)}</td>
+          <td><span class="cell-title">${hopeEscape(p.name)}</span></td>
+          <td>${hopeBadge(p.status)}</td>
+          <td class="cell-money">${hopeMoney(p.budget)}</td>
+          <td class="cell-money">${hopeMoney(p.spent)}</td>
+        </tr>`,
+    });
+    setClientListData('hopeBudget', data.projects);
   } catch (error) {
     body.innerHTML = '<p class="empty-state">Failed to load budget summary.</p>';
   }

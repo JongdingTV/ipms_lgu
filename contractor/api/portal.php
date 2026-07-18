@@ -391,27 +391,48 @@ if ($method === 'GET') {
     if ($action === 'reports') {
         $page = max(1, (int) ($_GET['page'] ?? 1));
         $perPage = min(100, max(1, (int) ($_GET['per_page'] ?? 10)));
+        $search = trim((string) ($_GET['search'] ?? ''));
+
+        $where = 'r.contractor_id = ?';
+        $params = [$contractorId];
+        if ($search !== '') {
+            $where .= ' AND (p.project_code LIKE ? OR p.name LIKE ? OR r.accomplishments LIKE ?)';
+            $like = '%' . $search . '%';
+            array_push($params, $like, $like, $like);
+        }
+
         $select = "
             SELECT r.*, p.project_code, p.name AS project_name
             FROM contractor_reports r
             INNER JOIN projects p ON p.id = r.project_id
-            WHERE r.contractor_id = ?
+            WHERE $where
             ORDER BY r.report_date DESC, r.id DESC
         ";
-        $count = "SELECT COUNT(*) FROM contractor_reports r WHERE r.contractor_id = ?";
-        respond(paginate($db, $select, $count, [$contractorId], $page, $perPage));
+        $count = "
+            SELECT COUNT(*)
+            FROM contractor_reports r
+            INNER JOIN projects p ON p.id = r.project_id
+            WHERE $where
+        ";
+        respond(paginate($db, $select, $count, $params, $page, $perPage));
     }
 
     if ($action === 'documents') {
         $page = max(1, (int) ($_GET['page'] ?? 1));
         $perPage = min(100, max(1, (int) ($_GET['per_page'] ?? 10)));
         $type = trim((string) ($_GET['type'] ?? ''));
+        $search = trim((string) ($_GET['search'] ?? ''));
 
         $where = 'd.contractor_id = ?';
         $params = [$contractorId];
         if ($type !== '') {
             $where .= ' AND d.document_type = ?';
             $params[] = $type;
+        }
+        if ($search !== '') {
+            $where .= ' AND (p.project_code LIKE ? OR p.name LIKE ? OR d.title LIKE ?)';
+            $like = '%' . $search . '%';
+            array_push($params, $like, $like, $like);
         }
 
         $select = "
@@ -421,7 +442,12 @@ if ($method === 'GET') {
             WHERE $where
             ORDER BY d.created_at DESC, d.id DESC
         ";
-        $count = "SELECT COUNT(*) FROM contractor_documents d WHERE $where";
+        $count = "
+            SELECT COUNT(*)
+            FROM contractor_documents d
+            INNER JOIN projects p ON p.id = d.project_id
+            WHERE $where
+        ";
         respond(paginate($db, $select, $count, $params, $page, $perPage));
     }
 

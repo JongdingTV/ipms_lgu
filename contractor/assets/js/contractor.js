@@ -12,8 +12,8 @@ let contractorState = {
 /* reports/documents accumulate over time, so they're fetched paginated,
    per-page, rather than bulk-loaded like the small/bounded lists above. */
 let contractorListState = {
-  reports: { page: 1, perPage: 10 },
-  documents: { page: 1, perPage: 10 },
+  reports: { page: 1, perPage: 10, search: '' },
+  documents: { page: 1, perPage: 10, search: '' },
 };
 
 /* Bidding, accreditation, and performance data is fetched lazily the first
@@ -435,6 +435,10 @@ function contractorRenderReportPage(selectedProjectId = '') {
       </article>
       <article class="contractor-history-card">
         <h2>Recent Reports</h2>
+        <label class="list-search" style="max-width:none;margin-bottom:10px;">
+          <svg viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M8 4a4 4 0 100 8 4 4 0 000-8zM2 8a6 6 0 1110.89 3.476l4.817 4.817a1 1 0 01-1.414 1.414l-4.816-4.816A6 6 0 012 8z" clip-rule="evenodd"/></svg>
+          <input type="text" id="contractorReportsSearch" placeholder="Search project or accomplishments...">
+        </label>
         <div id="contractorReportsList" class="contractor-mini-list"><p class="empty-state">Loading...</p></div>
         <div class="pagination-wrap" id="contractorReportsPager"></div>
       </article>
@@ -442,6 +446,11 @@ function contractorRenderReportPage(selectedProjectId = '') {
   `;
 
   document.getElementById('contractorReportForm').addEventListener('submit', contractorSubmitReport);
+  document.getElementById('contractorReportsSearch').addEventListener('input', debounce(() => {
+    contractorListState.reports.search = document.getElementById('contractorReportsSearch').value.trim();
+    contractorListState.reports.page = 1;
+    contractorLoadReportsList();
+  }, 300));
   contractorLoadReportsList();
 }
 
@@ -452,7 +461,7 @@ async function contractorLoadReportsList() {
   const state = contractorListState.reports;
 
   try {
-    const result = await contractorGet('reports', { page: state.page, per_page: state.perPage });
+    const result = await contractorGet('reports', { page: state.page, per_page: state.perPage, search: state.search });
 
     container.innerHTML = result.data.length ? result.data.map(report => `
       <div class="contractor-mini-row">
@@ -503,6 +512,10 @@ function contractorRenderDocumentsPage() {
       </article>
       <article class="contractor-history-card">
         <h2>Uploaded Documents</h2>
+        <label class="list-search" style="max-width:none;margin-bottom:10px;">
+          <svg viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M8 4a4 4 0 100 8 4 4 0 000-8zM2 8a6 6 0 1110.89 3.476l4.817 4.817a1 1 0 01-1.414 1.414l-4.816-4.816A6 6 0 012 8z" clip-rule="evenodd"/></svg>
+          <input type="text" id="contractorDocumentsSearch" placeholder="Search project or document title...">
+        </label>
         <div id="contractorDocumentsList" class="contractor-mini-list"><p class="empty-state">Loading...</p></div>
         <div class="pagination-wrap" id="contractorDocumentsPager"></div>
       </article>
@@ -511,6 +524,11 @@ function contractorRenderDocumentsPage() {
 
   contractorWireDocRows(document.getElementById('docRows'), document.getElementById('docAddBtn'));
   document.getElementById('contractorDocumentForm').addEventListener('submit', contractorSubmitDocument);
+  document.getElementById('contractorDocumentsSearch').addEventListener('input', debounce(() => {
+    contractorListState.documents.search = document.getElementById('contractorDocumentsSearch').value.trim();
+    contractorListState.documents.page = 1;
+    contractorLoadDocumentsList();
+  }, 300));
   contractorLoadDocumentsList();
 }
 
@@ -521,7 +539,7 @@ async function contractorLoadDocumentsList() {
   const state = contractorListState.documents;
 
   try {
-    const result = await contractorGet('documents', { page: state.page, per_page: state.perPage });
+    const result = await contractorGet('documents', { page: state.page, per_page: state.perPage, search: state.search });
 
     container.innerHTML = result.data.length ? result.data.map(doc => `
       <div class="contractor-mini-row">

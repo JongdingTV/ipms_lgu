@@ -2271,15 +2271,22 @@ document.getElementById('modalClose')?.addEventListener('click', closeModal);
 modalOverlay?.addEventListener('click', e => { if (e.target === modalOverlay) closeModal(); });
 document.addEventListener('keydown', e => { if (e.key === 'Escape') closeModal(); });
 
-// ── Pager ──
+// ── Pager — same Gmail-style pill as the citizen portal's list-pager ──
 function renderPager(containerId, page, lastPage, onPage) {
   const el = document.getElementById(containerId);
   if (!el || lastPage <= 1) { if (el) el.innerHTML = ''; return; }
+  const prevSvg = '<svg viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M12.707 5.293a1 1 0 010 1.414L9.414 10l3.293 3.293a1 1 0 01-1.414 1.414l-4-4a1 1 0 010-1.414l4-4a1 1 0 011.414 0z" clip-rule="evenodd"/></svg>';
+  const nextSvg = '<svg viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M7.293 14.707a1 1 0 010-1.414L10.586 10 7.293 6.707a1 1 0 011.414-1.414l4 4a1 1 0 010 1.414l-4 4a1 1 0 01-1.414 0z" clip-rule="evenodd"/></svg>';
   el.innerHTML = `
-    <button class="pager-btn" ${page<=1?'disabled':''} onclick="(${onPage.toString()})(${page-1})">‹ Prev</button>
-    <span class="pager-info">Page ${page} of ${lastPage}</span>
-    <button class="pager-btn" ${page>=lastPage?'disabled':''} onclick="(${onPage.toString()})(${page+1})">Next ›</button>
+    <div class="list-pager">
+      <span class="list-pager-info">Page ${page} of ${lastPage}</span>
+      <button type="button" class="list-pager-btn" data-page="${page - 1}" ${page <= 1 ? 'disabled' : ''} aria-label="Previous page">${prevSvg}</button>
+      <button type="button" class="list-pager-btn" data-page="${page + 1}" ${page >= lastPage ? 'disabled' : ''} aria-label="Next page">${nextSvg}</button>
+    </div>
   `;
+  el.querySelectorAll('.list-pager-btn:not([disabled])').forEach(btn => {
+    btn.addEventListener('click', () => onPage(parseInt(btn.dataset.page, 10)));
+  });
 }
 
 // ── Sidebar toggle ──

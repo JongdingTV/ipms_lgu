@@ -241,17 +241,32 @@ if ($method === 'GET') {
         $actions = ['Project approved', 'Project returned', 'Project rejected', 'Contract award approved', 'Contract award returned', 'Contract award rejected'];
         $placeholders = implode(',', array_fill(0, count($actions), '?'));
 
+        // Optional search over action text, details, and project code/name.
+        $search = trim((string) ($_GET['search'] ?? ''));
+        $searchSql = '';
+        $params = $actions;
+        if ($search !== '') {
+            $searchSql = " AND (l.action LIKE ? OR l.details LIKE ? OR p.project_code LIKE ? OR p.name LIKE ?)";
+            $like = '%' . $search . '%';
+            $params = array_merge($actions, [$like, $like, $like, $like]);
+        }
+
         $select = "
             SELECT l.id, l.created_at, l.action, l.details, p.project_code, p.name AS project_name, u.full_name AS actor_name
             FROM bac_procurement_logs l
             LEFT JOIN projects p ON p.id = l.project_id
             LEFT JOIN users u ON u.id = l.actor_id
-            WHERE l.action IN ($placeholders)
+            WHERE l.action IN ($placeholders)$searchSql
             ORDER BY l.created_at DESC, l.id DESC
         ";
-        $count = "SELECT COUNT(*) FROM bac_procurement_logs l WHERE l.action IN ($placeholders)";
+        $count = "
+            SELECT COUNT(*)
+            FROM bac_procurement_logs l
+            LEFT JOIN projects p ON p.id = l.project_id
+            WHERE l.action IN ($placeholders)$searchSql
+        ";
 
-        respond(paginate($db, $select, $count, $actions, $page, $perPage));
+        respond(paginate($db, $select, $count, $params, $page, $perPage));
     }
 
     if ($action === 'budget_summary') {
