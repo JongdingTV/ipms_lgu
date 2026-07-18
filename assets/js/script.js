@@ -2413,6 +2413,11 @@ document.addEventListener('DOMContentLoaded', () => {
     <div id="page-cancelled-projects" class="page-section" style="display:none;"></div>
   `;
 
+  // The re-wrap above just replaced every node scroll-reveal.js observed at
+  // DOMContentLoaded, so the fresh .reveal sections would stay at opacity:0
+  // forever (all the dashboard's lower cards). Re-scan the new DOM.
+  window.rescanScrollReveal?.();
+
   loadDashboard();
 });
 // Profile settings modal (already in topbar.php but with working implementation)
