@@ -96,7 +96,7 @@ $CITIZEN_SCOPE = [
         '/citizen/api/projects.php' => 'GET - Projects listing with filters',
         '/citizen/api/project-status.php' => 'GET - Detailed project status',
         '/citizen/api/my-feedback.php' => 'GET - User feedback history',
-        '/citizen/api/submit-feedback.php' => 'POST - Submit feedback',
+        '/citizen/api/submit-feedback.php' => 'POST - Submit feedback (maintenance concerns sync to CIMMS)',
         '/citizen/api/transparency.php' => 'GET - Transparency dashboard',
     ]
 ];

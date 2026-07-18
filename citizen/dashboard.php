@@ -431,7 +431,7 @@ $statusChip = [
               </div>
 
               <div class="fb-form-tips-layout">
-                <form id="feedbackForm" method="POST">
+                <form id="feedbackForm" method="POST" data-profile-phone="<?= htmlspecialchars(preg_replace('/\D+/', '', (string) ($citizen['phone'] ?? '')), ENT_QUOTES) ?>">
                   <input type="hidden" name="concern_type" id="feedbackConcernType" value="project">
 
                   <!-- Maintenance path only — mirrors the CIMMS public request
@@ -466,15 +466,15 @@ $statusChip = [
                     <div class="fb-contact-grid">
                       <div class="form-group">
                         <label for="feedbackContactName">Contact Name</label>
-                        <input type="text" id="feedbackContactName" name="contact_name" placeholder="Your name">
+                        <input type="text" id="feedbackContactName" name="contact_name" placeholder="Your name" value="<?= htmlspecialchars(trim(($citizen['first_name'] ?? '') . ' ' . ($citizen['last_name'] ?? ''))) ?>">
                       </div>
                       <div class="form-group">
-                        <label for="feedbackContactPhone" id="fbPhoneLabel">Contact Number</label>
-                        <input type="tel" id="feedbackContactPhone" name="contact_phone" placeholder="09XX-XXX-XXXX" maxlength="13">
+<label for="feedbackContactPhone">Contact Number</label>
+<input type="tel" id="feedbackContactPhone" name="contact_phone" placeholder="09xx xxx xxxx" maxlength="13" value="<?= htmlspecialchars((string) ($citizen['phone'] ?? '')) ?>">
                       </div>
                       <div class="form-group">
                         <label for="feedbackContactEmail">Email</label>
-                        <input type="email" id="feedbackContactEmail" name="contact_email" placeholder="you@example.com">
+                        <input type="email" id="feedbackContactEmail" name="contact_email" placeholder="you@example.com" value="<?= htmlspecialchars((string) ($citizen['email'] ?? '')) ?>">
                       </div>
                     </div>
                   </div>
@@ -611,6 +611,7 @@ $statusChip = [
               <h2 class="fb-panel-title">Your report has been received.</h2>
               <p class="fb-panel-sub">Your concern will be routed to the appropriate government office. A tracking number has been generated below.</p>
               <div class="fb-tracking-chip" id="fbTrackingChip">#FB-000000</div>
+              <p class="fb-success-cimm-note" id="fbSuccessCimmNote" style="display:none;"></p>
               <div class="fb-success-actions">
                 <button type="button" class="btn-outline" id="fbBtnDashboard">Return to Dashboard</button>
                 <button type="button" class="btn-outline" id="fbBtnTrack">Track Report</button>
