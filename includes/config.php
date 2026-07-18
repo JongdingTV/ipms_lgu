@@ -72,9 +72,8 @@ define('MAIL_PASSWORD', envValue('MAIL_PASSWORD', '')); // Set your app password
 define('MAIL_ENCRYPTION', envValue('MAIL_ENCRYPTION', 'tls'));
 
 // CIMMS (Community Infrastructure Maintenance) — outbound integration for
-// maintenance-type citizen feedback. Receiver lives on the CIMMS host:
-// https://cimm.infragovservices.com/lgu-portal/public/api/ipms-requests.php
-// (deploy integrations/cimm/ipms-requests.php there).
+// maintenance-type citizen feedback. Canonical receiver is in the LGU repo:
+// https://github.com/EXEQUIELKENT/LGU → lgu-portal/public/api/ipms-requests.php
 define('CIMM_API_ENABLED', filter_var(envValue('CIMM_API_ENABLED', '0'), FILTER_VALIDATE_BOOLEAN));
 define('CIMM_API_URL', envValue(
     'CIMM_API_URL',

@@ -2,8 +2,12 @@
 /**
  * Outbound client: push IPMS maintenance feedback to CIMMS (InfraGovServices).
  *
- * Target: POST {CIMM_API_URL} with X-API-Key auth and multipart fields that
- * match the CIMMS citizen request form (citizenrepform.php / requests queue).
+ * Receiver (canonical, LGU repo):
+ *   https://github.com/EXEQUIELKENT/LGU
+ *   lgu-portal/public/api/ipms-requests.php
+ *
+ * Inserts into CIMMS `requests` (req_id) + `evidence_images`, same queue as
+ * citizenrepform.php.
  */
 class CimmClient
 {
@@ -19,7 +23,7 @@ class CimmClient
 
     /**
      * Map IPMS feedback.category → CIMMS infrastructure type labels
-     * (Roads, Street Lights, Drainage, Public Facilities, Water Supply, Electrical).
+     * (must match citizenrepform.php combobox values).
      */
     public static function mapInfrastructure(string $category): string
     {
@@ -40,6 +44,27 @@ class CimmClient
     }
 
     /**
+     * Location string for CIMMS requests.location (mirrors citizenrepform style).
+     */
+    public static function buildLocation(string $barangay, string $district): string
+    {
+        $barangay = trim($barangay);
+        $district = trim($district);
+        $parts = [];
+
+        if ($barangay !== '') {
+            $parts[] = (stripos($barangay, 'brgy') === false ? 'Brgy. ' : '') . $barangay;
+        }
+        if ($district !== '') {
+            $parts[] = $district;
+        }
+        $parts[] = 'Quezon City';
+
+        $location = implode(', ', $parts);
+        return strlen($location) >= 5 ? $location : 'Quezon City';
+    }
+
+    /**
      * @param array{
      *   feedback_id:int,
      *   category:string,
@@ -54,7 +79,7 @@ class CimmClient
      *   email:?string,
      *   anonymous?:bool
      * } $payload
-     * @param list<string> $absolutePhotoPaths Local filesystem paths to attach as evidence[]
+     * @param list<string> $absolutePhotoPaths Local filesystem paths for evidence[n]
      * @return array{success:bool,request_id:?string,reference:?string,message:string,http_status:int}
      */
     public static function submitRequest(array $payload, array $absolutePhotoPaths = []): array
@@ -79,26 +104,20 @@ class CimmClient
             ];
         }
 
-        $location = trim(($payload['barangay'] ?? '') . ', ' . ($payload['district'] ?? '') . ', Quezon City', ' ,');
-        if ($location === 'Quezon City' || $location === '') {
-            $location = 'Quezon City';
-        }
+        $barangay = (string) ($payload['barangay'] ?? '');
+        $district = (string) ($payload['district'] ?? '');
 
         $fields = [
             'source' => 'ipms',
             'source_feedback_id' => (string) (int) ($payload['feedback_id'] ?? 0),
             'infrastructure' => self::mapInfrastructure((string) ($payload['category'] ?? '')),
-            'location' => $location,
-            'district' => (string) ($payload['district'] ?? ''),
-            'barangay' => (string) ($payload['barangay'] ?? ''),
+            'location' => self::buildLocation($barangay, $district),
+            'district' => $district,
+            'barangay' => $barangay,
             'issue' => (string) ($payload['message'] ?? ''),
-            'priority' => (string) ($payload['priority'] ?? 'medium'),
-            'category' => (string) ($payload['category'] ?? ''),
             'name' => (string) ($payload['name'] ?? ''),
             'contact_number' => preg_replace('/\D+/', '', (string) ($payload['contact_number'] ?? '')),
             'req_email' => (string) ($payload['email'] ?? ''),
-            'consent_agree' => '1',
-            'anonymous' => !empty($payload['anonymous']) ? '1' : '0',
         ];
 
         if (isset($payload['latitude']) && $payload['latitude'] !== null && $payload['latitude'] !== '') {
@@ -108,12 +127,15 @@ class CimmClient
             $fields['coord_lng'] = (string) $payload['longitude'];
         }
 
-        foreach ($absolutePhotoPaths as $i => $path) {
+        // CIMMS ipms-requests.php accepts evidence[] (citizen form) or evidence[0]… (curl).
+        $fileIndex = 0;
+        foreach ($absolutePhotoPaths as $path) {
             if (!is_string($path) || $path === '' || !is_file($path)) {
                 continue;
             }
             $mime = mime_content_type($path) ?: 'application/octet-stream';
-            $fields['evidence[' . $i . ']'] = new CURLFile($path, $mime, basename($path));
+            $fields['evidence[' . $fileIndex . ']'] = new CURLFile($path, $mime, basename($path));
+            $fileIndex++;
         }
 
         $ch = curl_init(CIMM_API_URL);
@@ -127,7 +149,6 @@ class CimmClient
                 'Accept: application/json',
                 'User-Agent: IPMS-CIMM-Integration/1.0',
             ],
-            // Production CIMMS is HTTPS; keep verification on unless explicitly disabled for local stubs.
             CURLOPT_SSL_VERIFYPEER => !defined('CIMM_SSL_VERIFY') || CIMM_SSL_VERIFY,
             CURLOPT_SSL_VERIFYHOST => (!defined('CIMM_SSL_VERIFY') || CIMM_SSL_VERIFY) ? 2 : 0,
         ]);
@@ -150,16 +171,18 @@ class CimmClient
 
         $decoded = json_decode((string) $raw, true);
         if (!is_array($decoded)) {
+            $snippet = trim(substr(strip_tags((string) $raw), 0, 120));
             return [
                 'success' => false,
                 'request_id' => null,
                 'reference' => null,
-                'message' => 'CIMMS returned a non-JSON response (HTTP ' . $status . ')',
+                'message' => 'CIMMS returned non-JSON (HTTP ' . $status . ')' . ($snippet !== '' ? ': ' . $snippet : ''),
                 'http_status' => $status,
             ];
         }
 
         $ok = !empty($decoded['success']) && $status >= 200 && $status < 300;
+
         return [
             'success' => $ok,
             'request_id' => isset($decoded['request_id']) ? (string) $decoded['request_id'] : null,

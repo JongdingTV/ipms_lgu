@@ -25,7 +25,10 @@ const FEEDBACK_ALLOWED_PHOTO_MIME = [
 ];
 
 // Get citizen ID + verification status + contact defaults for CIMMS sync
-$stmt = $pdo->prepare("\n    SELECT id, verification_status, first_name, middle_name, last_name, phone, email\n    FROM citizens WHERE user_id = ?\n");
+$stmt = $pdo->prepare("
+    SELECT id, verification_status, first_name, middle_name, last_name, phone, email
+    FROM citizens WHERE user_id = ?
+");
 $stmt->execute([$user['user_id']]);
 $citizen = $stmt->fetch();
 $citizenId = $citizen['id'] ?? null;
@@ -183,7 +186,17 @@ try {
     $cimmStatus = $concernType === 'maintenance' ? 'pending' : 'none';
     $citizenNameForRow = $isAnonymous ? null : $resolvedName;
 
-    $stmt = $pdo->prepare("\n        INSERT INTO feedback (\n            project_id, citizen_id, citizen_name, message, category, concern_type,\n            anonymous, contact_name, contact_phone, contact_email,\n            cimm_sync_status, priority, district, barangay, latitude, longitude, status\n        ) VALUES (\n            NULL, ?, ?, ?, ?, ?,\n            ?, ?, ?, ?,\n            ?, ?, ?, ?, ?, ?, 'open'\n        )\n    ");
+$stmt = $pdo->prepare("
+        INSERT INTO feedback (
+            project_id, citizen_id, citizen_name, message, category, concern_type,
+            anonymous, contact_name, contact_phone, contact_email,
+            cimm_sync_status, priority, district, barangay, latitude, longitude, status
+        ) VALUES (
+            NULL, ?, ?, ?, ?, ?,
+            ?, ?, ?, ?,
+            ?, ?, ?, ?, ?, ?, 'open'
+        )
+    ");
     $stmt->execute([
         $citizenId,
         $citizenNameForRow,
@@ -246,7 +259,15 @@ try {
                 'message' => $result['message'],
             ];
 
-            $upd = $pdo->prepare("\n                UPDATE feedback\n                SET cimm_sync_status = ?,\n                    cimm_request_id = ?,\n                    cimm_reference = ?,\n                    cimm_synced_at = CASE WHEN ? = 'synced' THEN NOW() ELSE NULL END,\n                    cimm_last_error = ?\n                WHERE id = ?\n            ");
+$upd = $pdo->prepare("
+                UPDATE feedback
+                SET cimm_sync_status = ?,
+                    cimm_request_id = ?,
+                    cimm_reference = ?,
+                    cimm_synced_at = CASE WHEN ? = 'synced' THEN NOW() ELSE NULL END,
+                    cimm_last_error = ?
+                WHERE id = ?
+            ");
             $upd->execute([
                 $cimmSync['status'],
                 $cimmSync['request_id'],
@@ -257,12 +278,16 @@ try {
             ]);
         } else {
             $cimmSync = [
-                'status' => 'failed',
+'status' => 'pending',
                 'request_id' => null,
                 'reference' => null,
                 'message' => 'CIMMS integration is not configured on this server',
             ];
-            $upd = $pdo->prepare("\n                UPDATE feedback\n                SET cimm_sync_status = 'failed', cimm_last_error = ?\n                WHERE id = ?\n            ");
+$upd = $pdo->prepare("
+                UPDATE feedback
+                SET cimm_sync_status = 'pending', cimm_last_error = ?
+                WHERE id = ?
+            ");
             $upd->execute([$cimmSync['message'], $feedbackId]);
         }
     }
