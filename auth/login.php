@@ -135,164 +135,242 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Login - <?= htmlspecialchars(APP_NAME) ?></title>
+    <title>Staff Login - <?= htmlspecialchars(APP_NAME) ?></title>
     <link rel="icon" href="<?= htmlspecialchars(appUrl('/assets/img/ipms-icon.png')) ?>" type="image/png">
     <link rel="apple-touch-icon" href="<?= htmlspecialchars(appUrl('/assets/img/ipms-icon.png')) ?>">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Sora:wght@600;700;800&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" crossorigin="anonymous">
+    <meta name="theme-color" content="#1e3a8a">
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self' https:; script-src 'self' https://cdnjs.cloudflare.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://cdnjs.cloudflare.com; font-src https://fonts.gstatic.com https://cdnjs.cloudflare.com; img-src 'self' data:; connect-src 'self';">
     <style>
-        @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap');
-
+        /* Same glass-over-City-Hall recipe as citizen/login.php so both
+           entrances read as one product — but deliberately differentiated:
+           the brand panel wears the staff sidebar's deep navy with the old
+           staff login's gold accent, so employees can tell at a glance this
+           is the internal entrance, not the citizen one. Unified for every
+           portal (the old per-role recolor scheme was dropped deliberately). */
         :root {
-            --page: #edf3f4;
-            --panel: #ffffff;
-            --text: #13201f;
-            --muted: #65737b;
-            --line: #d8e3e5;
-            --primary: #116466;
-            --primary-dark: #0f393a;
-            --secondary: #2f5fbb;
-            --accent: #d89c27;
-            --soft: #f5f8f9;
-            --danger-bg: #fef2f2;
-            --danger-text: #b91c1c;
-            --info-bg: #eff6ff;
-            --info-text: #1d4ed8;
+            --ink: #0f1c2e;
+            --muted: #51617a;
+            --deep: #1e3a8a;
+            --primary: #2563eb;
+            --navy: #182333;
+            --navy-mid: #22334d;
+            --navy-soft: #28507d;
+            --gold: #d89c27;
+            --mint: #dbeafe;
+            --paper: #f2f7fd;
+            --white: #ffffff;
+            --line: #d8e3f2;
+            --shadow: 0 24px 60px rgba(15, 23, 42, .22);
         }
 
-        * { box-sizing: border-box; }
-
-        html { min-height: 100%; }
+        *, *::before, *::after {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
 
         body {
-            margin: 0;
+            font-family: 'Plus Jakarta Sans', system-ui, -apple-system, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+            background: var(--paper);
+            color: var(--ink);
             min-height: 100vh;
-            font-family: 'Plus Jakarta Sans', sans-serif;
-            background: #edf3f4;
             display: grid;
             place-items: center;
-            padding: 28px;
-            color: var(--text);
-            transition: background 0.55s ease;
+            padding: 1.5rem;
+            -webkit-font-smoothing: antialiased;
+        }
+
+        h1, h2 {
+            font-family: 'Sora', 'Plus Jakarta Sans', system-ui, sans-serif;
+            letter-spacing: -0.015em;
+        }
+
+        /* Blurred City Hall photo backdrop (fixed, behind everything). */
+        body::before {
+            content: "";
+            position: fixed;
+            inset: -24px;
+            z-index: -2;
+            background: url('<?= htmlspecialchars(appUrl('/assets/img/cityhall.jpeg')) ?>') center / cover no-repeat;
+            filter: blur(7px) saturate(1.05);
+            transform: scale(1.04);
+        }
+
+        /* Navy-leaning wash (darker than the citizen login's light-blue one)
+           so the staff entrance feels more official over the same photo. */
+        body::after {
+            content: "";
+            position: fixed;
+            inset: 0;
+            z-index: -1;
+            background: linear-gradient(180deg, rgba(24, 35, 51, 0.38), rgba(242, 247, 253, 0.35));
         }
 
         .login-shell {
-            width: min(1040px, 100%);
-            min-height: 640px;
+            width: min(960px, 100%);
             display: grid;
-            grid-template-columns: minmax(0, 0.95fr) minmax(380px, 440px);
-            border-radius: 12px;
+            grid-template-columns: minmax(0, 1fr) minmax(330px, 410px);
+            border-radius: 16px;
             overflow: hidden;
-            border: 1px solid rgba(19, 32, 31, 0.1);
-            background: var(--panel);
-            box-shadow: 0 22px 70px rgba(20, 35, 38, 0.18);
+            background: rgba(255, 255, 255, 0.72);
+            backdrop-filter: blur(14px) saturate(1.4);
+            -webkit-backdrop-filter: blur(14px) saturate(1.4);
+            box-shadow: var(--shadow);
+            border: 1px solid rgba(255, 255, 255, 0.55);
         }
 
         /* ── Brand panel ── */
         .brand-panel {
             position: relative;
             isolation: isolate;
-            padding: 46px;
-            background: linear-gradient(145deg, #0f393a, #116466 56%, rgba(47, 95, 187, 0.92));
-            color: #f7fbfb;
+            padding: 3rem 2.5rem;
+            background: linear-gradient(150deg, rgba(15, 23, 42, 0.96), rgba(24, 35, 51, 0.93) 55%, rgba(40, 80, 125, 0.88));
+            color: var(--white);
             display: flex;
             flex-direction: column;
             justify-content: space-between;
-            gap: 44px;
-            transition: background 0.55s ease;
+            gap: 2.5rem;
         }
 
         .brand-panel::after {
             content: "";
             position: absolute;
-            inset: auto 34px 28px auto;
-            width: 180px;
-            height: 180px;
-            border: 1px solid rgba(255, 255, 255, 0.12);
+            inset: auto -40px -60px auto;
+            width: 220px;
+            height: 220px;
+            border: 1px solid rgba(255, 255, 255, 0.14);
             border-radius: 50%;
-            opacity: 0.45;
-            z-index: -1;
+            z-index: 0;
         }
 
         .brand-logo-wrap {
-            width: 198px;
-            min-height: 198px;
+            position: relative;
+            z-index: 1;
+            width: 84px;
+            height: 84px;
             display: grid;
             place-items: center;
-            border-radius: 8px;
-            background: rgba(255, 255, 255, 0.94);
-            border: 1px solid rgba(255, 255, 255, 0.5);
-            padding: 18px;
+            border-radius: 14px;
+            background: rgba(255, 255, 255, 0.96);
+            box-shadow: 0 10px 24px rgba(30, 58, 138, 0.35);
+            padding: 12px;
         }
 
         .brand-logo {
             display: block;
             width: 100%;
-            height: auto;
+            height: 100%;
+            object-fit: contain;
+        }
+
+        .brand-copy {
+            position: relative;
+            z-index: 1;
         }
 
         .eyebrow {
             display: inline-flex;
             width: fit-content;
-            margin-bottom: 14px;
-            padding: 7px 10px;
+            margin-bottom: 0.9rem;
+            padding: 0.4rem 0.7rem;
             border-radius: 8px;
-            background: rgba(255, 255, 255, 0.12);
-            border: 1px solid rgba(255, 255, 255, 0.16);
-            font-size: 0.75rem;
+            background: rgba(216, 156, 39, 0.16);
+            border: 1px solid rgba(216, 156, 39, 0.45);
+            color: #f3c96b;
+            font-size: 0.72rem;
             font-weight: 700;
-            letter-spacing: 0;
-            transition: background 0.3s ease;
+            letter-spacing: 0.04em;
+            text-transform: uppercase;
         }
 
-        h1 {
-            max-width: 560px;
-            margin: 0 0 18px;
-            font-size: 3rem;
-            line-height: 1.05;
-            letter-spacing: 0;
+        .brand-copy h1 {
+            font-size: 1.9rem;
+            line-height: 1.2;
+            margin-bottom: 0.75rem;
         }
 
-        .hero-copy p {
-            max-width: 520px;
-            margin: 0;
-            color: rgba(247, 251, 251, 0.78);
-            font-size: 1rem;
-            line-height: 1.65;
+        .brand-copy p {
+            color: rgba(255, 255, 255, 0.82);
+            font-size: 0.95rem;
+            line-height: 1.6;
+            max-width: 360px;
+        }
+
+        /* Feature bullets under the headline */
+        .brand-features {
+            position: relative;
+            z-index: 1;
+            list-style: none;
+            margin: 1.4rem 0 0;
+            padding: 0;
+            display: flex;
+            flex-direction: column;
+            gap: 0.7rem;
+        }
+
+        .brand-features li {
+            display: flex;
+            align-items: flex-start;
+            gap: 10px;
+            font-size: 0.88rem;
+            color: rgba(255, 255, 255, 0.88);
+            line-height: 1.45;
+        }
+
+        .brand-features i {
+            flex-shrink: 0;
+            width: 26px;
+            height: 26px;
+            display: grid;
+            place-items: center;
+            border-radius: 7px;
+            background: rgba(216, 156, 39, 0.14);
+            border: 1px solid rgba(216, 156, 39, 0.35);
+            color: #f3c96b;
+            font-size: 0.72rem;
+            margin-top: 1px;
         }
 
         .brand-footer {
+            position: relative;
+            z-index: 1;
             display: flex;
             align-items: center;
-            gap: 14px;
-            max-width: 420px;
-            padding-top: 24px;
-            border-top: 1px solid rgba(255, 255, 255, 0.16);
+            gap: 12px;
+            padding-top: 1.5rem;
+            border-top: 1px solid rgba(255, 255, 255, 0.18);
         }
 
         .city-seal {
-            width: 54px;
-            height: 54px;
+            width: 42px;
+            height: 42px;
             object-fit: contain;
             flex: 0 0 auto;
             border-radius: 8px;
-            background: rgba(255, 255, 255, 0.92);
-            padding: 5px;
+            background: rgba(255, 255, 255, 0.94);
+            padding: 4px;
         }
 
-        .brand-footer strong,
-        .brand-footer span { display: block; }
+        .brand-footer strong {
+            display: block;
+            font-size: 0.85rem;
+        }
 
         .brand-footer span {
-            margin-top: 3px;
-            color: rgba(247, 251, 251, 0.72);
-            font-size: 0.88rem;
-            line-height: 1.45;
+            display: block;
+            margin-top: 2px;
+            color: rgba(255, 255, 255, 0.75);
+            font-size: 0.78rem;
+            line-height: 1.4;
         }
 
         /* ── Login panel ── */
         .login-panel {
-            background: var(--panel);
-            color: var(--text);
-            padding: 42px 38px;
+            padding: 2.75rem 2.25rem;
             display: flex;
             flex-direction: column;
             justify-content: center;
@@ -301,235 +379,233 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
         .panel-top {
             display: flex;
             align-items: center;
-            gap: 14px;
-            margin-bottom: 26px;
+            gap: 12px;
+            margin-bottom: 1.5rem;
         }
 
         .panel-icon {
-            width: 52px;
-            height: 52px;
+            width: 46px;
+            height: 46px;
             object-fit: contain;
             flex: 0 0 auto;
         }
 
         .login-panel h2 {
-            margin: 0 0 5px;
-            font-size: 1.85rem;
-            letter-spacing: 0;
+            font-size: 1.5rem;
+            margin-bottom: 0.2rem;
         }
 
         .panel-copy {
-            margin: 0;
             color: var(--muted);
-            line-height: 1.5;
-            font-size: 0.94rem;
+            font-size: 0.9rem;
         }
 
-        /* ── Messages ── */
         .message {
+            padding: 0.85rem 1rem;
             border-radius: 8px;
-            padding: 0.95rem 1rem;
-            margin-bottom: 16px;
-            font-size: 0.92rem;
+            margin-bottom: 1.25rem;
+            font-size: 0.88rem;
+            line-height: 1.4;
         }
 
         .message.error {
-            background: var(--danger-bg);
-            color: var(--danger-text);
-            border: 1px solid #fecaca;
+            background: #fdecea;
+            color: #b3261e;
+            border: 1px solid #f6cac6;
         }
 
         .message.info {
-            background: var(--info-bg);
-            color: var(--info-text);
+            background: var(--mint);
+            color: #1e40af;
             border: 1px solid #bfdbfe;
         }
 
-        /* ── Form ── */
+        .field {
+            margin-bottom: 1.15rem;
+        }
+
         label {
             display: block;
-            margin-bottom: 8px;
-            font-size: 0.8rem;
-            font-weight: 700;
-            letter-spacing: 0;
-            color: #334155;
+            margin-bottom: 0.4rem;
+            font-weight: 600;
+            color: var(--ink);
+            font-size: 0.85rem;
         }
 
-        .field { margin-bottom: 18px; }
-
-        input {
+        input[type="text"],
+        input[type="password"] {
             width: 100%;
-            min-height: 48px;
-            padding: 0.85rem 0.95rem;
-            border-radius: 8px;
+            min-height: 46px;
+            padding: 0.7rem 0.85rem;
             border: 1px solid var(--line);
-            background: var(--soft);
-            font: inherit;
-            color: var(--text);
+            border-radius: 8px;
+            font-size: 0.95rem;
+            font-family: inherit;
+            background: rgba(255, 255, 255, 0.65);
+            color: var(--ink);
+            transition: border-color 0.2s, box-shadow 0.2s, background 0.2s;
         }
 
-        input:focus {
+        input[type="text"]:focus,
+        input[type="password"]:focus {
             outline: none;
             border-color: var(--primary);
-            box-shadow: 0 0 0 4px rgba(17, 100, 102, 0.14);
-            background: #fff;
+            box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.16);
+            background: var(--white);
         }
 
-        /* ── Portal tiles ── */
-        .portal-options {
-            display: grid;
-            grid-template-columns: repeat(2, minmax(0, 1fr));
-            gap: 8px;
-        }
-
-        .portal-option {
+        /* ── Portal dropdown ── */
+        .select-wrap {
             position: relative;
-            display: block;
-            margin-bottom: 0;
-            cursor: pointer;
-            color: inherit;
-            font: inherit;
-            letter-spacing: 0;
-            text-transform: none;
         }
 
-        .portal-option input[type="radio"] {
-            position: absolute;
-            width: 1px;
-            height: 1px;
-            margin: 0;
-            padding: 0;
-            border: 0;
-            opacity: 0;
-            pointer-events: none;
-        }
-
-        .portal-option-content {
-            display: flex;
-            min-height: 64px;
-            flex-direction: column;
-            justify-content: center;
-            gap: 3px;
-            padding: 12px 14px;
+        .select-wrap select {
+            width: 100%;
+            min-height: 46px;
+            padding: 0.7rem 2.4rem 0.7rem 0.85rem;
             border: 1px solid var(--line);
             border-radius: 8px;
-            background: var(--soft);
-            transition: border-color 0.18s ease, background 0.18s ease, box-shadow 0.18s ease, transform 0.18s ease;
+            font-size: 0.95rem;
+            font-family: inherit;
+            font-weight: 600;
+            background: rgba(255, 255, 255, 0.65);
+            color: var(--ink);
+            appearance: none;
+            -webkit-appearance: none;
+            cursor: pointer;
+            transition: border-color 0.2s, box-shadow 0.2s, background 0.2s;
         }
 
-        .portal-option-content strong {
-            color: var(--text);
-            font-size: 0.9rem;
-            line-height: 1.2;
+        .select-wrap select:focus {
+            outline: none;
+            border-color: var(--primary);
+            box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.16);
+            background: var(--white);
         }
 
-        .portal-option-content span {
+        /* Placeholder state before a portal is picked */
+        .select-wrap select:invalid {
             color: var(--muted);
-            font-size: 0.76rem;
-            line-height: 1.35;
+            font-weight: 500;
         }
 
-        .portal-option:hover .portal-option-content {
-            border-color: rgba(17, 100, 102, 0.45);
-            transform: translateY(-1px);
+        .select-wrap select option {
+            color: var(--ink);
+            font-weight: 500;
         }
 
-        .portal-option input[type="radio"]:focus-visible + .portal-option-content {
-            border-color: var(--primary);
-            box-shadow: 0 0 0 4px rgba(17, 100, 102, 0.14);
+        .select-wrap::after {
+            content: "\f078"; /* fa-chevron-down */
+            font-family: "Font Awesome 6 Free";
+            font-weight: 900;
+            position: absolute;
+            top: 50%;
+            right: 0.95rem;
+            transform: translateY(-50%);
+            pointer-events: none;
+            color: var(--muted);
+            font-size: 0.75rem;
         }
 
-        .portal-option input[type="radio"]:checked + .portal-option-content {
-            border-color: var(--primary);
-            background: #edf9f7;
-            box-shadow: inset 4px 0 0 var(--accent);
-        }
-
-        /* ── Submit button ── */
         button[type="submit"] {
             width: 100%;
-            border: 0;
+            min-height: 48px;
+            margin-top: 0.4rem;
+            padding: 0.8rem;
+            background: linear-gradient(135deg, var(--primary), var(--deep));
+            color: var(--white);
+            border: none;
             border-radius: 8px;
-            min-height: 50px;
-            padding: 0.95rem 1.1rem;
-            font: inherit;
+            font-size: 0.98rem;
             font-weight: 700;
-            color: #fff;
-            background: linear-gradient(135deg, var(--primary), var(--secondary));
-            box-shadow: 0 14px 28px rgba(17, 100, 102, 0.22);
+            font-family: inherit;
             cursor: pointer;
-            transition: transform 0.18s ease, box-shadow 0.18s ease, background 0.45s ease;
+            box-shadow: 0 12px 24px rgba(37, 99, 235, 0.24);
+            transition: transform 0.18s ease, box-shadow 0.18s ease;
         }
 
         button[type="submit"]:hover {
             transform: translateY(-1px);
-            box-shadow: 0 18px 32px rgba(17, 100, 102, 0.24);
+            box-shadow: 0 16px 28px rgba(37, 99, 235, 0.28);
         }
 
-        .footer {
-            margin-top: 18px;
-            font-size: 0.8rem;
+        button[type="submit"]:active {
+            transform: translateY(0);
+        }
+
+        .login-footer {
+            margin-top: 1.75rem;
+            padding-top: 1.25rem;
+            border-top: 1px solid var(--line);
+            text-align: center;
             color: var(--muted);
-            line-height: 1.5;
+            font-size: 0.85rem;
+            line-height: 1.6;
         }
 
-        .footer a {
+        .login-footer a {
             color: var(--primary);
             font-weight: 600;
             text-decoration: none;
         }
 
-        .footer a:hover {
+        .login-footer a:hover {
+            color: var(--deep);
             text-decoration: underline;
         }
 
         /* ── Responsive ── */
-        @media (max-width: 920px) {
-            body { padding: 18px; }
+        @media (max-width: 760px) {
             .login-shell {
                 grid-template-columns: 1fr;
-                min-height: 0;
             }
-            .brand-panel { padding: 32px; }
-            .brand-logo-wrap { width: 156px; min-height: 156px; }
-            h1 { font-size: 2.4rem; }
+
+            .brand-panel {
+                padding: 2rem 1.75rem;
+                gap: 1.5rem;
+            }
+
+            .brand-copy p {
+                max-width: none;
+            }
+
+            .login-panel {
+                padding: 2rem 1.75rem;
+            }
         }
 
-        @media (max-width: 520px) {
-            body { padding: 12px; }
-            .brand-panel,
-            .login-panel { padding: 24px 20px; }
-            .brand-logo-wrap { width: 132px; min-height: 132px; }
-            h1 { font-size: 2rem; }
-            .panel-top { align-items: flex-start; }
-            .portal-options { grid-template-columns: 1fr; }
+        @media (max-width: 420px) {
+            body {
+                padding: 0;
+            }
+
+            .login-shell {
+                border-radius: 0;
+                min-height: 100vh;
+            }
         }
     </style>
 </head>
-<body id="pageBody">
+<body>
     <main class="login-shell">
-        <section class="brand-panel" id="brandPanel" aria-labelledby="login-title">
+        <section class="brand-panel" aria-labelledby="login-title">
             <div class="brand-logo-wrap">
-                <img
-                    class="brand-logo"
-                    src="<?= htmlspecialchars(appUrl('/assets/img/ipms-icon2.png')) ?>"
-                    alt="<?= htmlspecialchars(APP_NAME) ?>"
-                >
+                <img class="brand-logo" src="<?= htmlspecialchars(appUrl('/assets/img/ipms-icon.png')) ?>" alt="<?= htmlspecialchars(APP_NAME) ?>">
             </div>
 
-            <div class="hero-copy">
-                <div class="eyebrow" id="eyebrowLabel">Employee access portal</div>
+            <div class="brand-copy">
+                <div class="eyebrow">Employee Access Portal</div>
                 <h1 id="login-title">One secure sign-in for infrastructure project teams.</h1>
                 <p>Track projects, coordinate field updates, and manage delivery records through the portal assigned to your account.</p>
+                <ul class="brand-features">
+                    <li><i class="fa-solid fa-diagram-project"></i>Manage the full project pipeline from registration to turnover</li>
+                    <li><i class="fa-solid fa-file-signature"></i>Handle approvals, bidding, and contractor coordination in one place</li>
+                    <li><i class="fa-solid fa-helmet-safety"></i>Post field updates, inspections, and payment records as work progresses</li>
+                </ul>
             </div>
 
             <div class="brand-footer">
-                <img
-                    class="city-seal"
-                    src="<?= htmlspecialchars(appUrl('/assets/img/logocityhall.png')) ?>"
-                    alt=""
-                    aria-hidden="true"
-                >
+                <img class="city-seal" src="<?= htmlspecialchars(appUrl('/assets/img/logocityhall.png')) ?>" alt="" aria-hidden="true">
                 <div>
                     <strong>LGU Infrastructure Office</strong>
                     <span>Protected access for authorized project personnel.</span>
@@ -563,24 +639,17 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
                 <input type="hidden" name="_csrf" value="<?= htmlspecialchars(getCsrfToken()) ?>">
 
                 <div class="field">
-                    <label>Portal</label>
-                    <div class="portal-options" role="radiogroup" aria-label="Portal role">
-                        <?php foreach ($portalRoles as $role => $portal): ?>
-                            <label class="portal-option">
-                                <input
-                                    type="radio"
-                                    name="portal_role"
+                    <label for="portal_role">Portal</label>
+                    <div class="select-wrap">
+                        <select id="portal_role" name="portal_role" required>
+                            <option value="" disabled <?= $selectedRole === '' ? 'selected' : '' ?>>Select your portal</option>
+                            <?php foreach ($portalRoles as $role => $portal): ?>
+                                <option
                                     value="<?= htmlspecialchars($role) ?>"
-                                    <?= $selectedRole === $role ? 'checked' : '' ?>
-                                    onchange="switchPortal(this)"
-                                    required
-                                >
-                                <span class="portal-option-content">
-                                    <strong><?= htmlspecialchars($portal['label']) ?></strong>
-                                    <span><?= htmlspecialchars($portal['description']) ?></span>
-                                </span>
-                            </label>
-                        <?php endforeach; ?>
+                                    <?= $selectedRole === $role ? 'selected' : '' ?>
+                                ><?= htmlspecialchars($portal['label']) ?> &mdash; <?= htmlspecialchars($portal['description']) ?></option>
+                            <?php endforeach; ?>
+                        </select>
                     </div>
                 </div>
 
@@ -593,6 +662,7 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
                         placeholder="Enter username or email"
                         required
                         autofocus
+                        autocomplete="username"
                         value="<?= htmlspecialchars($_POST['identifier'] ?? '') ?>"
                     >
                 </div>
@@ -605,114 +675,18 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
                         name="password"
                         placeholder="Enter password"
                         required
+                        autocomplete="current-password"
                     >
                 </div>
 
                 <button type="submit">Login</button>
             </form>
 
-            <div class="footer">
-                <a href="<?= htmlspecialchars(appUrl('/auth/forgot-password.php?from=staff')) ?>">Forgot your password?</a>
+            <div class="login-footer">
+                <p><a href="<?= htmlspecialchars(appUrl('/auth/forgot-password.php?from=staff')) ?>">Forgot your password?</a></p>
+                <p>&copy; <?= date('Y') ?> <?= htmlspecialchars(APP_NAME) ?></p>
             </div>
-            <div class="footer">&copy; <?= date('Y') ?> <?= htmlspecialchars(APP_NAME) ?></div>
         </section>
     </main>
-
-    <script>
-        const portalThemes = {
-            super_admin: {
-                bodyBg:       '#1a0d2e',
-                brandFrom:    '#1a0d2e',
-                brandTo:      '#4c1d95',
-                brandAccent:  'rgba(109,40,217,0.92)',
-                primary:      '#7c3aed',
-                secondary:    '#a78bfa',
-                accent:       '#c4b5fd',
-                eyebrow:      'Super Admin Portal',
-            },
-            admin: {
-                bodyBg:       '#0d0d0d',
-                brandFrom:    '#0a0a0a',
-                brandTo:      '#1c1c2e',
-                brandAccent:  'rgba(50,50,70,0.97)',
-                primary:      '#6366f1',
-                secondary:    '#818cf8',
-                accent:       '#a5b4fc',
-                eyebrow:      'Admin Portal',
-            },
-            bac: {
-                bodyBg:       '#3b0a0a',
-                brandFrom:    '#4a0e0e',
-                brandTo:      '#7f1d1d',
-                brandAccent:  'rgba(185,28,28,0.92)',
-                primary:      '#ef4444',
-                secondary:    '#f87171',
-                accent:       '#fca5a5',
-                eyebrow:      'BAC Portal',
-            },
-            engineer: {
-                bodyBg:       '#0a2e1a',
-                brandFrom:    '#052e16',
-                brandTo:      '#166534',
-                brandAccent:  'rgba(21,128,61,0.92)',
-                primary:      '#16a34a',
-                secondary:    '#22c55e',
-                accent:       '#86efac',
-                eyebrow:      'Engineer Portal',
-            },
-            contractor: {
-                bodyBg:       '#1a1500',
-                brandFrom:    '#1c1206',
-                brandTo:      '#92400e',
-                brandAccent:  'rgba(180,83,9,0.92)',
-                primary:      '#d97706',
-                secondary:    '#f59e0b',
-                accent:       '#fcd34d',
-                eyebrow:      'Contractor Portal',
-            },
-        };
-
-        const defaultTheme = {
-            bodyBg:      '#edf3f4',
-            brandFrom:   '#0f393a',
-            brandTo:     '#116466',
-            brandAccent: 'rgba(47,95,187,0.92)',
-            primary:     '#116466',
-            secondary:   '#2f5fbb',
-            accent:      '#d89c27',
-            eyebrow:     'Employee access portal',
-        };
-
-        function applyTheme(t) {
-            const root    = document.documentElement;
-            const body    = document.getElementById('pageBody');
-            const panel   = document.getElementById('brandPanel');
-            const eyebrow = document.getElementById('eyebrowLabel');
-
-            body.style.background  = t.bodyBg;
-            panel.style.background = `linear-gradient(145deg, ${t.brandFrom}, ${t.brandTo} 56%, ${t.brandAccent})`;
-
-            root.style.setProperty('--primary',   t.primary);
-            root.style.setProperty('--secondary', t.secondary);
-            root.style.setProperty('--accent',    t.accent);
-
-            if (eyebrow) {
-                eyebrow.textContent = t.eyebrow;
-            }
-        }
-
-        function switchPortal(radio) {
-            const theme = portalThemes[radio.value] || defaultTheme;
-            applyTheme(theme);
-        }
-
-        /* Restore theme on page load if a role was already POST-selected (PHP re-render) */
-        (function () {
-            const checked = document.querySelector('input[name="portal_role"]:checked');
-            if (checked) {
-                switchPortal(checked);
-            }
-        })();
-    </script>
 </body>
 </html>
