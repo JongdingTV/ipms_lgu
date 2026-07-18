@@ -1438,6 +1438,10 @@ async function engineerSubmitStatus(event) {
 
 function engineerWireShell() {
   document.getElementById('sidebarToggle')?.addEventListener('click', () => {
+    if (window.matchMedia('(min-width: 769px)').matches) {
+      document.body.classList.toggle('sidebar-collapsed');
+      return;
+    }
     document.getElementById('sidebar')?.classList.toggle('open');
   });
 

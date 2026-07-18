@@ -1036,6 +1036,10 @@ function hopeWireShell() {
 
   const sidebarToggle = document.getElementById('sidebarToggle');
   sidebarToggle?.addEventListener('click', () => {
+    if (window.matchMedia('(min-width: 769px)').matches) {
+      document.body.classList.toggle('sidebar-collapsed');
+      return;
+    }
     document.getElementById('sidebar')?.classList.toggle('open');
   });
 

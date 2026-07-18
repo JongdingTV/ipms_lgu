@@ -11,18 +11,21 @@
 const params = new URLSearchParams(location.search);
 const role = params.get('role') || 'admin';
 const nav = params.get('nav') || '';
+const btn = params.get('btn') || '';
 const theme = params.get('theme') || '';
 const fr = document.getElementById('fr');
 let navigated = false;
 fr.onload = () => {
-  if (navigated || !nav) return;
+  if (navigated || (!nav && !btn)) return;
   navigated = true;
   setTimeout(() => {
     try {
-      const item = fr.contentDocument.querySelector('.nav-item[data-page="' + nav + '"]');
+      const item = nav
+        ? fr.contentDocument.querySelector('.nav-item[data-page="' + nav + '"]')
+        : fr.contentDocument.getElementById(btn);
       if (item) item.click();
-      document.title = 'NAV ' + (item ? 'ok' : 'MISSING') + ' ' + nav;
-    } catch (e) { document.title = 'NAV ERR ' + e.message; }
+      document.title = 'CLICK ' + (item ? 'ok' : 'MISSING');
+    } catch (e) { document.title = 'CLICK ERR ' + e.message; }
   }, 2500);
 };
 fr.src = '../scripts/dev-autologin.php?role=' + encodeURIComponent(role) + (theme ? '&theme=' + theme : '');

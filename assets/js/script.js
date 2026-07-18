@@ -2327,8 +2327,13 @@ function renderPager(containerId, page, lastPage, onPage) {
   });
 }
 
-// ── Sidebar toggle ──
+// ── Sidebar toggle: desktop collapses the fixed sidebar (citizen behavior),
+//    mobile keeps the off-canvas drawer ──
 document.getElementById('sidebarToggle')?.addEventListener('click', () => {
+  if (window.matchMedia('(min-width: 769px)').matches) {
+    document.body.classList.toggle('sidebar-collapsed');
+    return;
+  }
   document.getElementById('sidebar')?.classList.toggle('open');
 });
 document.addEventListener('click', e => {

@@ -216,6 +216,15 @@ button { cursor: pointer; font-family: var(--font); }
 /* ── Main ── */
 .main-wrapper { margin-left: var(--sidebar-w); flex: 1; display: flex; flex-direction: column; min-height: 100vh; transition: margin-left .3s; }
 
+/* Desktop burger: body.sidebar-collapsed slides the sidebar away and gives
+   the content full width — same behavior as the citizen portal. On mobile
+   the burger keeps the off-canvas .open drawer instead. */
+@media (min-width: 769px) {
+  .sidebar { transition: transform .3s; }
+  body.sidebar-collapsed .sidebar { transform: translateX(-100%); }
+  body.sidebar-collapsed .main-wrapper { margin-left: 0; }
+}
+
 /* ── Topbar (glass) ── */
 .topbar {
   height: var(--topbar-h); background: var(--bg-sidebar);
@@ -989,10 +998,14 @@ input.search-pill {
   box-shadow: 0 10px 28px rgba(15,23,42,.06);
 }
 
+/* Topbar search controls sized to the citizen portal's "Search everything"
+   pill: equal 40px height, citizen type scale, no oversized bar. */
 .topbar-left .search-bar {
-  width: min(430px, 100%);
+  width: min(360px, 100%);
   min-height: 40px;
 }
+.topbar .search-bar input { font-size: .92rem; }
+.topbar .gsearch-trigger { min-height: 40px; padding: 8px 14px; font-size: .85rem; }
 
 .content {
   width: 100%;
