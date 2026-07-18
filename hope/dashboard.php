@@ -105,6 +105,37 @@ require_once __DIR__ . '/sidebar.php';
         </article>
       </section>
 
+      <section class="charts-row reveal">
+        <article class="chart-card chart-main">
+          <div class="chart-header">
+            <h2 class="chart-title">Approval Decisions — Last 6 Months</h2>
+            <div class="chart-legend">
+              <span><span class="legend-dot legend-green"></span>Approved</span>
+              <span><span class="legend-dot" style="background:#f97316;"></span>Returned</span>
+              <span><span class="legend-dot" style="background:#ef4444;"></span>Rejected</span>
+            </div>
+          </div>
+          <div class="chart-body">
+            <canvas id="hopeDecisionChart"></canvas>
+          </div>
+        </article>
+
+        <article class="chart-card">
+          <div class="chart-header">
+            <h2 class="chart-title">Portfolio by Stage</h2>
+          </div>
+          <div class="chart-body budget-body">
+            <div class="donut-wrapper">
+              <canvas id="hopeStageChart"></canvas>
+              <div class="donut-center">
+                <span class="donut-pct" id="hopeStageChartTotal">0</span>
+              </div>
+            </div>
+            <div class="budget-legend" id="hopeStageChartLegend"></div>
+          </div>
+        </article>
+      </section>
+
       <section class="lower-row reveal">
         <article class="info-card" style="grid-column: span 2;">
           <div class="hope-panel-head">

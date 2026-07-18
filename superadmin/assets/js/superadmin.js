@@ -288,9 +288,78 @@ async function saRenderDashboard() {
 
   try {
     saRenderRoleChart(byRole);
+    saRenderLoginTrendChart(saDashboardData.login_trend || []);
   } catch (error) {
-    console.error('Failed to render role chart:', error);
+    console.error('Failed to render dashboard charts:', error);
   }
+}
+
+let saLoginTrendChartInst = null;
+
+function saRenderLoginTrendChart(rows) {
+  const ctx = document.getElementById('saLoginTrendChart')?.getContext('2d');
+  if (!ctx) return;
+  if (saLoginTrendChartInst) saLoginTrendChartInst.destroy();
+
+  // Last seven days, oldest first, zero-filled from the query rows
+  // (rows carry MySQL DATE strings, e.g. "2026-07-19").
+  const days = [];
+  const now = new Date();
+  for (let i = 6; i >= 0; i--) {
+    const d = new Date(now.getFullYear(), now.getMonth(), now.getDate() - i);
+    days.push({
+      key: `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`,
+      label: d.toLocaleString('en', { weekday: 'short' }),
+    });
+  }
+  const success = days.map(() => 0);
+  const failed = days.map(() => 0);
+  rows.forEach(row => {
+    const index = days.findIndex(day => day.key === row.d);
+    if (index === -1) return;
+    success[index] = Number(row.success);
+    failed[index] = Number(row.failed);
+  });
+
+  const gridColor = document.documentElement.getAttribute('data-theme') === 'dark'
+    ? 'rgba(148,163,184,.18)' : 'rgba(100,116,139,.12)';
+
+  saLoginTrendChartInst = new Chart(ctx, {
+    type: 'line',
+    data: {
+      labels: days.map(day => day.label),
+      datasets: [
+        {
+          label: 'Successful',
+          data: success,
+          borderColor: '#22c55e', backgroundColor: 'rgba(34,197,94,.06)',
+          borderWidth: 2.5, tension: 0.4, fill: true,
+          pointBackgroundColor: '#22c55e', pointBorderColor: '#fff',
+          pointBorderWidth: 2, pointRadius: 4, pointHoverRadius: 6,
+        },
+        {
+          label: 'Failed',
+          data: failed,
+          borderColor: '#ef4444', backgroundColor: 'rgba(239,68,68,.06)',
+          borderWidth: 2.5, tension: 0.4, fill: true,
+          pointBackgroundColor: '#ef4444', pointBorderColor: '#fff',
+          pointBorderWidth: 2, pointRadius: 4, pointHoverRadius: 6,
+        },
+      ],
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      animation: { duration: 900, easing: 'easeOutQuart' },
+      plugins: {
+        legend: { display: false },
+        tooltip: { backgroundColor: '#1e2a3b' },
+      },
+      scales: {
+        x: { grid: { display: false }, ticks: { color: '#94a3b8', font: { size: 11 } }, border: { display: false } },
+        y: { beginAtZero: true, ticks: { precision: 0, color: '#94a3b8', font: { size: 11 } }, grid: { color: gridColor }, border: { display: false } },
+      },
+    },
+  });
 }
 
 let saRoleChartInst = null;

@@ -87,6 +87,17 @@ function superadminSummary(PDO $db): array
     $uploadsPath = dirname(__DIR__, 2) . '/uploads';
     $diskFree = is_dir($uploadsPath) ? @disk_free_space($uploadsPath) : false;
 
+    // Dashboard chart: successful vs failed logins per day, last 7 days.
+    $loginTrend = $db->query("
+        SELECT DATE(attempted_at) AS d,
+               SUM(successful = 1) AS success,
+               SUM(successful = 0) AS failed
+        FROM login_attempts
+        WHERE attempted_at >= (CURDATE() - INTERVAL 6 DAY)
+        GROUP BY d
+        ORDER BY d ASC
+    ")->fetchAll();
+
     return [
         'stats' => [
             'total_users' => $totalUsers,
@@ -97,6 +108,7 @@ function superadminSummary(PDO $db): array
             'failed_logins_24h' => $failedLogins24h,
         ],
         'activity' => $activityPreview,
+        'login_trend' => $loginTrend,
         'health' => [
             'db_ok' => $dbOk,
             'counts' => $healthCounts,

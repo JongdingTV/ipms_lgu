@@ -279,7 +279,72 @@ function contractorRenderDashboard() {
     console.error('Failed to render status chart:', error);
   }
 
+  contractorLoadProgressChart();
+
   contractorRenderStageWidgets();
+}
+
+let contractorProgressChartInst = null;
+
+/* Line chart of the progress % reported in accomplishment reports, oldest
+   first. Fetched separately from the summary since reports are paginated. */
+async function contractorLoadProgressChart() {
+  const canvas = document.getElementById('contractorProgressChart');
+  const emptyNote = document.getElementById('contractorProgressChartEmpty');
+  if (!canvas) return;
+
+  let reports = [];
+  try {
+    const result = await contractorGet('reports', { page: 1, per_page: 50 });
+    reports = (result.data || []).slice().reverse();
+  } catch (error) {
+    console.error('Failed to load reports for progress chart:', error);
+  }
+
+  if (!reports.length) {
+    canvas.style.display = 'none';
+    if (emptyNote) emptyNote.style.display = '';
+    return;
+  }
+  canvas.style.display = '';
+  if (emptyNote) emptyNote.style.display = 'none';
+
+  if (contractorProgressChartInst) contractorProgressChartInst.destroy();
+  const gridColor = document.documentElement.getAttribute('data-theme') === 'dark'
+    ? 'rgba(148,163,184,.18)' : 'rgba(100,116,139,.12)';
+
+  contractorProgressChartInst = new Chart(canvas.getContext('2d'), {
+    type: 'line',
+    data: {
+      labels: reports.map(r => contractorDate(r.report_date)),
+      datasets: [{
+        label: 'Reported progress',
+        data: reports.map(r => Number(r.progress_percent) || 0),
+        borderColor: '#3b82f6', backgroundColor: 'rgba(59,130,246,.08)',
+        borderWidth: 2.5, tension: 0.35, fill: true,
+        pointBackgroundColor: '#3b82f6', pointBorderColor: '#fff',
+        pointBorderWidth: 2, pointRadius: 4, pointHoverRadius: 6,
+      }],
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      animation: { duration: 900, easing: 'easeOutQuart' },
+      plugins: {
+        legend: { display: false },
+        tooltip: {
+          backgroundColor: '#1e2a3b',
+          callbacks: {
+            title: items => `${reports[items[0].dataIndex]?.project_code || ''} — ${items[0].label}`,
+            label: c => ` ${c.raw}% complete`,
+          },
+        },
+      },
+      scales: {
+        x: { grid: { display: false }, ticks: { color: '#94a3b8', font: { size: 11 }, maxTicksLimit: 8 }, border: { display: false } },
+        y: { min: 0, max: 100, ticks: { stepSize: 25, color: '#94a3b8', font: { size: 11 }, callback: v => v + '%' }, grid: { color: gridColor }, border: { display: false } },
+      },
+    },
+  });
 }
 
 /**

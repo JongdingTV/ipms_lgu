@@ -66,6 +66,19 @@ require_once __DIR__ . '/sidebar.php';
       </section>
 
       <section class="charts-row reveal">
+        <article class="chart-card chart-main">
+          <div class="chart-header">
+            <h2 class="chart-title">Login Activity — Last 7 Days</h2>
+            <div class="chart-legend">
+              <span><span class="legend-dot legend-green"></span>Successful</span>
+              <span><span class="legend-dot" style="background:#ef4444;"></span>Failed</span>
+            </div>
+          </div>
+          <div class="chart-body">
+            <canvas id="saLoginTrendChart"></canvas>
+          </div>
+        </article>
+
         <article class="chart-card">
           <div class="chart-header">
             <h2 class="chart-title">Users by Role</h2>

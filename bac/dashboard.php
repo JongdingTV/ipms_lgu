@@ -66,6 +66,19 @@ require_once __DIR__ . '/sidebar.php';
       </section>
 
       <section class="charts-row reveal">
+        <article class="chart-card chart-main">
+          <div class="chart-header">
+            <h2 class="chart-title">Bidding Activity — Last 6 Months</h2>
+            <div class="chart-legend">
+              <span><span class="legend-dot legend-blue"></span>Announcements Posted</span>
+              <span><span class="legend-dot legend-green"></span>Bids Received</span>
+            </div>
+          </div>
+          <div class="chart-body">
+            <canvas id="bacActivityChart"></canvas>
+          </div>
+        </article>
+
         <article class="chart-card">
           <div class="chart-header">
             <h2 class="chart-title">Procurement Pipeline</h2>

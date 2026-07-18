@@ -85,6 +85,14 @@ for ($m = 1; $m <= 12; $m++) {
 }
 $out['progress_chart'] = $progressChart;
 
+// ── Projects by status (bar chart) ──
+$out['status_mix'] = $db->query("
+    SELECT status, COUNT(*) AS total
+    FROM projects
+    GROUP BY status
+    ORDER BY total DESC, status ASC
+")->fetchAll();
+
 // ── Budget Status for donut ──
 $anomaly = (float) $db
     ->query("SELECT COALESCE(SUM(amount),0) FROM expenses WHERE flagged=1")

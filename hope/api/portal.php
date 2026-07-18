@@ -139,6 +139,21 @@ if ($method === 'GET') {
         usort($highRisk, static fn (array $a, array $b): int => $b['risk_factors'] <=> $a['risk_factors']);
         $highRisk = array_slice($highRisk, 0, 5);
 
+        // Dashboard charts: full portfolio by status, and HOPE decision
+        // volume over the last six months (same log actions the Decision
+        // History module lists).
+        $statusMix = $db->query("
+            SELECT status, COUNT(*) AS total FROM projects GROUP BY status
+        ")->fetchAll();
+
+        $monthlyDecisions = $db->query("
+            SELECT DATE_FORMAT(created_at, '%Y-%m') AS ym, action, COUNT(*) AS total
+            FROM bac_procurement_logs
+            WHERE action IN ('Project approved', 'Project returned', 'Project rejected')
+              AND created_at >= DATE_SUB(DATE_FORMAT(NOW(), '%Y-%m-01'), INTERVAL 5 MONTH)
+            GROUP BY ym, action
+        ")->fetchAll();
+
         respond([
             'stats' => [
                 'pending_project_approvals' => $pending,
@@ -152,6 +167,8 @@ if ($method === 'GET') {
             ],
             'pending_preview' => $pendingStmt->fetchAll(),
             'high_risk_projects' => $highRisk,
+            'status_mix' => $statusMix,
+            'monthly_decisions' => $monthlyDecisions,
         ]);
     }
 

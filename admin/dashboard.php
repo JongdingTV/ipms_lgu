@@ -106,6 +106,15 @@ require_once '../includes/sidebar.php';
       </article>
     </section>
 
+    <article class="chart-card chart-main reveal">
+      <div class="chart-header">
+        <h2 class="chart-title">Projects by Status</h2>
+      </div>
+      <div class="chart-body">
+        <canvas id="statusMixChart"></canvas>
+      </div>
+    </article>
+
     <section class="lower-row reveal">
       <article class="info-card">
         <h2 class="info-card-title">Top Delayed Projects</h2>
@@ -149,7 +158,7 @@ require_once '../includes/sidebar.php';
       </div>
     </section>
 
-    <section class="lower-row reveal" style="margin-top:18px; transition-delay:.16s;">
+    <section class="lower-row reveal" style="transition-delay:.16s;">
       <article class="info-card">
         <h2 class="info-card-title">Workflow Connections</h2>
         <div id="workflowConnectionList" class="anomaly-list">

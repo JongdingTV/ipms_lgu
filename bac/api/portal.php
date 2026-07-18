@@ -174,6 +174,20 @@ function bacPortalSummary(PDO $db): array
         ORDER BY l.created_at DESC, l.id DESC LIMIT 3
     ")->fetchAll();
 
+    // Dashboard chart: bid announcements posted vs. bids received per month
+    // over the last six months.
+    $monthlyActivity = $db->query("
+        SELECT DATE_FORMAT(published_at, '%Y-%m') AS ym, 'announcements' AS series, COUNT(*) AS total
+        FROM bac_bid_announcements
+        WHERE published_at >= DATE_SUB(DATE_FORMAT(NOW(), '%Y-%m-01'), INTERVAL 5 MONTH)
+        GROUP BY ym
+        UNION ALL
+        SELECT DATE_FORMAT(submitted_at, '%Y-%m') AS ym, 'bids' AS series, COUNT(*) AS total
+        FROM bac_bid_submissions
+        WHERE submitted_at >= DATE_SUB(DATE_FORMAT(NOW(), '%Y-%m-01'), INTERVAL 5 MONTH)
+        GROUP BY ym
+    ")->fetchAll();
+
     return [
         'stats' => $stats,
         'announcements_preview' => $announcements,
@@ -181,6 +195,7 @@ function bacPortalSummary(PDO $db): array
         'evaluations_preview' => array_map('bacPortalMapEvaluationRow', $evaluations),
         'bids_preview' => array_map('bacPortalMapBidRow', $bids),
         'logs_preview' => array_map('bacPortalMapLogRow', $logs),
+        'monthly_activity' => $monthlyActivity,
     ];
 }
 

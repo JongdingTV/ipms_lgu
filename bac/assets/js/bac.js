@@ -291,6 +291,59 @@ function bacRenderPipelineChart(stats) {
   `).join('');
 }
 
+let bacActivityChartInst = null;
+
+function bacRenderActivityChart(rows) {
+  const ctx = document.getElementById('bacActivityChart')?.getContext('2d');
+  if (!ctx) return;
+  if (bacActivityChartInst) bacActivityChartInst.destroy();
+
+  // Last six calendar months, oldest first, zero-filled from the query rows.
+  const months = [];
+  const now = new Date();
+  for (let i = 5; i >= 0; i--) {
+    const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+    months.push({
+      ym: `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`,
+      label: d.toLocaleString('en', { month: 'short' }),
+    });
+  }
+  const announcements = months.map(() => 0);
+  const bids = months.map(() => 0);
+  (rows || []).forEach(row => {
+    const index = months.findIndex(m => m.ym === row.ym);
+    if (index === -1) return;
+    if (row.series === 'announcements') announcements[index] = Number(row.total);
+    if (row.series === 'bids') bids[index] = Number(row.total);
+  });
+
+  const gridColor = document.documentElement.getAttribute('data-theme') === 'dark'
+    ? 'rgba(148,163,184,.18)' : 'rgba(100,116,139,.12)';
+
+  bacActivityChartInst = new Chart(ctx, {
+    type: 'bar',
+    data: {
+      labels: months.map(m => m.label),
+      datasets: [
+        { label: 'Announcements Posted', data: announcements, backgroundColor: 'rgba(59,130,246,.8)', borderRadius: 5, maxBarThickness: 28 },
+        { label: 'Bids Received', data: bids, backgroundColor: 'rgba(34,197,94,.8)', borderRadius: 5, maxBarThickness: 28 },
+      ],
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      animation: { duration: 900, easing: 'easeOutQuart' },
+      plugins: {
+        legend: { display: false },
+        tooltip: { backgroundColor: '#1e2a3b' },
+      },
+      scales: {
+        x: { grid: { display: false }, ticks: { color: '#94a3b8', font: { size: 11 } }, border: { display: false } },
+        y: { beginAtZero: true, ticks: { precision: 0, color: '#94a3b8', font: { size: 11 } }, grid: { color: gridColor }, border: { display: false } },
+      },
+    },
+  });
+}
+
 async function bacRenderDashboard() {
   try {
     bacDashboardData = await bacGet('summary');
@@ -307,8 +360,9 @@ async function bacRenderDashboard() {
 
   try {
     bacRenderPipelineChart(stats);
+    bacRenderActivityChart(bacDashboardData.monthly_activity);
   } catch (error) {
-    console.error('Failed to render pipeline chart:', error);
+    console.error('Failed to render dashboard charts:', error);
   }
 
   const announcements = bacDashboardData.announcements_preview || [];

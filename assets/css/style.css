@@ -309,6 +309,11 @@ button { cursor: pointer; font-family: var(--font); }
 /* ── Content ── */
 .content { padding: 24px; display: flex; flex-direction: column; gap: 20px; flex: 1; }
 
+/* Vertical rhythm: page sections toggle via display:block, so the .content
+   flex gap never applies inside them — space the stacked blocks here.
+   (Adjacent margins collapse, so blocks with their own margins keep them.) */
+.page-section > * + * { margin-top: 20px; }
+
 /* ── KPI ── */
 .kpi-grid { display: grid; grid-template-columns: repeat(4,1fr); gap: 16px; }
 .kpi-card {

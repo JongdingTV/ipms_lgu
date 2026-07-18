@@ -302,6 +302,51 @@ function engineerRenderStatusChart(stats) {
   `).join('');
 }
 
+let engineerProgressChartInst = null;
+
+function engineerRenderProgressChart(projects) {
+  const ctx = document.getElementById('engineerProgressChart')?.getContext('2d');
+  if (!ctx) return;
+  if (engineerProgressChartInst) engineerProgressChartInst.destroy();
+
+  const rows = (projects || []).slice(0, 8);
+  const barColor = progress => progress >= 90 ? 'rgba(34,197,94,.8)' : progress >= 40 ? 'rgba(59,130,246,.8)' : 'rgba(249,115,22,.8)';
+  const gridColor = document.documentElement.getAttribute('data-theme') === 'dark'
+    ? 'rgba(148,163,184,.18)' : 'rgba(100,116,139,.12)';
+
+  engineerProgressChartInst = new Chart(ctx, {
+    type: 'bar',
+    data: {
+      labels: rows.map(p => p.project_code),
+      datasets: [{
+        data: rows.map(p => Number(p.progress) || 0),
+        backgroundColor: rows.map(p => barColor(Number(p.progress) || 0)),
+        borderRadius: 5,
+        maxBarThickness: 22,
+      }],
+    },
+    options: {
+      indexAxis: 'y',
+      responsive: true, maintainAspectRatio: false,
+      animation: { duration: 900, easing: 'easeOutQuart' },
+      plugins: {
+        legend: { display: false },
+        tooltip: {
+          backgroundColor: '#1e2a3b',
+          callbacks: {
+            title: items => rows[items[0].dataIndex]?.name || items[0].label,
+            label: c => ` ${c.raw}% complete`,
+          },
+        },
+      },
+      scales: {
+        x: { min: 0, max: 100, ticks: { color: '#94a3b8', font: { size: 11 }, callback: v => v + '%' }, grid: { color: gridColor }, border: { display: false } },
+        y: { grid: { display: false }, ticks: { color: '#94a3b8', font: { size: 11 } }, border: { display: false } },
+      },
+    },
+  });
+}
+
 function engineerRenderDashboard() {
   const stats = engineerState.summary?.stats || {};
   document.getElementById('engineerAssignedCount').textContent = stats.assigned_projects || 0;
@@ -311,8 +356,9 @@ function engineerRenderDashboard() {
 
   try {
     engineerRenderStatusChart(stats);
+    engineerRenderProgressChart(engineerState.projects);
   } catch (error) {
-    console.error('Failed to render status chart:', error);
+    console.error('Failed to render dashboard charts:', error);
   }
 
   const projectPreview = document.getElementById('engineerProjectPreview');

@@ -158,6 +158,125 @@ async function hopeRenderDashboard() {
   document.getElementById('hopeHighRiskList').innerHTML = highRisk.length
     ? highRisk.map(p => hopeRow(p.name, `${p.project_code} — ${hopeEscape(p.status).replaceAll('_', ' ')}`, hopeBadge('high_risk'))).join('')
     : '<p class="empty-state">No high-risk projects detected right now.</p>';
+
+  try {
+    hopeRenderDecisionChart(data.monthly_decisions || []);
+    hopeRenderStageChart(data.status_mix || []);
+  } catch (error) {
+    console.error('Failed to render dashboard charts:', error);
+  }
+}
+
+/* ---- Dashboard charts ----------------------------------------------------- */
+
+let hopeDecisionChartInst = null;
+let hopeStageChartInst = null;
+
+const HOPE_CHART_GRID = () => document.documentElement.getAttribute('data-theme') === 'dark'
+  ? 'rgba(148,163,184,.18)' : 'rgba(100,116,139,.12)';
+
+function hopeRenderDecisionChart(rows) {
+  const ctx = document.getElementById('hopeDecisionChart')?.getContext('2d');
+  if (!ctx) return;
+  if (hopeDecisionChartInst) hopeDecisionChartInst.destroy();
+
+  // Last six calendar months, oldest first, zero-filled from the log rows.
+  const months = [];
+  const now = new Date();
+  for (let i = 5; i >= 0; i--) {
+    const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+    months.push({
+      ym: `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`,
+      label: d.toLocaleString('en', { month: 'short' }),
+    });
+  }
+  const series = {
+    'Project approved': months.map(() => 0),
+    'Project returned': months.map(() => 0),
+    'Project rejected': months.map(() => 0),
+  };
+  rows.forEach(row => {
+    const index = months.findIndex(m => m.ym === row.ym);
+    if (index !== -1 && series[row.action]) series[row.action][index] = Number(row.total);
+  });
+
+  hopeDecisionChartInst = new Chart(ctx, {
+    type: 'bar',
+    data: {
+      labels: months.map(m => m.label),
+      datasets: [
+        { label: 'Approved', data: series['Project approved'], backgroundColor: 'rgba(34,197,94,.8)', borderRadius: 5, maxBarThickness: 26 },
+        { label: 'Returned', data: series['Project returned'], backgroundColor: 'rgba(249,115,22,.8)', borderRadius: 5, maxBarThickness: 26 },
+        { label: 'Rejected', data: series['Project rejected'], backgroundColor: 'rgba(239,68,68,.8)', borderRadius: 5, maxBarThickness: 26 },
+      ],
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      animation: { duration: 900, easing: 'easeOutQuart' },
+      plugins: {
+        legend: { display: false },
+        tooltip: { backgroundColor: '#1e2a3b' },
+      },
+      scales: {
+        x: { grid: { display: false }, ticks: { color: '#94a3b8', font: { size: 11 } }, border: { display: false } },
+        y: { beginAtZero: true, ticks: { precision: 0, color: '#94a3b8', font: { size: 11 } }, grid: { color: HOPE_CHART_GRID() }, border: { display: false } },
+      },
+    },
+  });
+}
+
+function hopeRenderStageChart(statusMix) {
+  const ctx = document.getElementById('hopeStageChart')?.getContext('2d');
+  if (!ctx) return;
+  if (hopeStageChartInst) hopeStageChartInst.destroy();
+
+  const stageOf = status => {
+    if (['draft', 'endorsed', 'returned', 'planning'].includes(status)) return 'In Review';
+    if (['approved', 'bidding', 'awarded'].includes(status)) return 'Procurement';
+    if (['assigned', 'active', 'delayed', 'on_hold', 'completion_inspection'].includes(status)) return 'Execution';
+    if (['completed', 'turnover'].includes(status)) return 'Completed';
+    return 'Stopped';
+  };
+  const stages = [
+    { label: 'In Review', color: '#94a3b8' },
+    { label: 'Procurement', color: '#f97316' },
+    { label: 'Execution', color: '#3b82f6' },
+    { label: 'Completed', color: '#22c55e' },
+    { label: 'Stopped', color: '#ef4444' },
+  ].map(stage => ({ ...stage, value: 0 }));
+  statusMix.forEach(row => {
+    const stage = stages.find(s => s.label === stageOf(row.status));
+    if (stage) stage.value += Number(row.total);
+  });
+  const total = stages.reduce((sum, s) => sum + s.value, 0);
+
+  hopeStageChartInst = new Chart(ctx, {
+    type: 'doughnut',
+    data: {
+      labels: stages.map(s => s.label),
+      datasets: [{
+        data: stages.map(s => s.value),
+        backgroundColor: stages.map(s => s.color),
+        borderColor: stages.map(() => '#fff'), borderWidth: 3, hoverOffset: 6,
+      }],
+    },
+    options: {
+      responsive: false, cutout: '70%',
+      animation: { duration: 900 },
+      plugins: {
+        legend: { display: false },
+        tooltip: { backgroundColor: '#1e2a3b', callbacks: { label: c => ` ${c.label}: ${c.raw}` } },
+      },
+    },
+  });
+
+  document.getElementById('hopeStageChartTotal').textContent = total;
+  document.getElementById('hopeStageChartLegend').innerHTML = stages.map(s => `
+    <div class="budget-legend-item">
+      <span class="legend-dot" style="background:${s.color};"></span>
+      <span>${hopeEscape(s.label)} <strong>${s.value}</strong></span>
+    </div>
+  `).join('');
 }
 
 /* ---- Project Approvals ---------------------------------------------------- */

@@ -292,6 +292,9 @@ async function loadDashboard() {
     // Budget donut
     renderBudgetDonut(d.budget_donut, d.budget_pct);
 
+    // Projects by status bar
+    renderStatusMixChart(d.status_mix);
+
     // Top delayed
     renderTopDelayed(d.top_delayed);
 
@@ -398,6 +401,41 @@ function renderBudgetDonut(donut, pct) {
   const items = document.querySelectorAll('.budget-legend-item strong');
   if (items[0]) items[0].textContent = pct + '%';
   if (items[1]) items[1].textContent = (100 - pct) + '%';
+}
+
+let statusMixChartInst = null;
+function renderStatusMixChart(rows) {
+  const ctx = document.getElementById('statusMixChart')?.getContext('2d');
+  if (!ctx) return;
+  if (statusMixChartInst) statusMixChartInst.destroy();
+
+  const data = (rows || []).filter(r => Number(r.total) > 0);
+  statusMixChartInst = new Chart(ctx, {
+    type: 'bar',
+    data: {
+      labels: data.map(r => PROJECT_STATUS_LABELS[r.status] || r.status.replaceAll('_', ' ')),
+      datasets: [{
+        data: data.map(r => Number(r.total)),
+        backgroundColor: 'rgba(59,130,246,.75)',
+        hoverBackgroundColor: '#3b82f6',
+        borderRadius: 6,
+        maxBarThickness: 42,
+      }],
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      animation: { duration: 900, easing: 'easeOutQuart' },
+      plugins: {
+        legend: { display: false },
+        tooltip: { backgroundColor: '#1e2a3b', callbacks: { label: c => ` ${c.raw} project${c.raw === 1 ? '' : 's'}` } },
+      },
+      scales: {
+        x: { grid: { display: false }, ticks: { color: '#94a3b8', font: { size: 11 } }, border: { display: false } },
+        y: { beginAtZero: true, ticks: { precision: 0, color: '#94a3b8', font: { size: 11 } },
+             grid: { color: document.documentElement.getAttribute('data-theme') === 'dark' ? 'rgba(148,163,184,.18)' : 'rgba(100,116,139,.12)' }, border: { display: false } },
+      },
+    },
+  });
 }
 
 function renderTopDelayed(projects) {
@@ -507,9 +545,9 @@ async function loadWorkflowManagementPage() {
       <button class="btn-secondary" onclick="loadWorkflowManagementPage()">Refresh</button>
     </div>
     <section class="admin-summary-grid" id="workflowSummaryCards"></section>
-    <div class="table-card" id="workflowPaymentsTable" style="margin-top:12px;"></div>
-    <div class="table-card" id="workflowContractsTable" style="margin-top:12px;"></div>
-    <div class="table-card" id="workflowInspectionsTable" style="margin-top:12px;"></div>
+    <div class="table-card" id="workflowPaymentsTable"></div>
+    <div class="table-card" id="workflowContractsTable"></div>
+    <div class="table-card" id="workflowInspectionsTable"></div>
   `;
 
   try {
@@ -1039,7 +1077,7 @@ async function loadProjectApprovalPage() {
         <option value="cancelled">Rejected / Cancelled</option>
       </select>
     </div>
-    <div id="approvalTable" class="table-card" style="margin-top:12px;"></div>
+    <div id="approvalTable" class="table-card"></div>
     <div id="approvalPager" class="pager"></div>
   `;
 
@@ -1165,7 +1203,7 @@ async function loadStatusFilteredProjectsPage(containerId, title, statusParam) {
     <div class="filter-bar">
       <input class="filter-input" placeholder="Search projects..." id="${containerId}Search" />
     </div>
-    <div id="${containerId}Table" class="table-card" style="margin-top:12px;"></div>
+    <div id="${containerId}Table" class="table-card"></div>
     <div id="${containerId}Pager" class="pager"></div>
   `;
 
@@ -1253,7 +1291,7 @@ async function loadContractorAssignmentPage() {
       </select>
     </div>
     <div id="assignmentSummary" class="admin-summary-grid"></div>
-    <div id="assignmentTable" class="table-card" style="margin-top:12px;"></div>
+    <div id="assignmentTable" class="table-card"></div>
     <div id="assignmentPager" class="pager"></div>
   `;
 
@@ -1790,14 +1828,14 @@ async function loadBudgetPage(containerId = 'page-budget-monitoring', title = 'B
       <button class="btn-primary" onclick="showExpenseForm()">+ Log Expense</button>
     </div>
     <div id="budgetSummary" class="budget-summary-grid"></div>
-    <div class="filter-bar" style="margin-top:16px;">
+    <div class="filter-bar">
       <input class="filter-input" placeholder="Search expenses…" oninput="budgetState.search=this.value;budgetState.page=1;fetchExpenses()" />
       <label style="display:flex;align-items:center;gap:6px;font-size:.82rem;cursor:pointer;">
         <input type="checkbox" onchange="budgetState.flagged=this.checked;budgetState.page=1;fetchExpenses()" />
         Anomalies only
       </label>
     </div>
-    <div id="expensesTable" class="table-card" style="margin-top:12px;"></div>
+    <div id="expensesTable" class="table-card"></div>
     <div id="expensesPager" class="pager"></div>
   `;
 
@@ -2109,7 +2147,7 @@ async function loadFeedbackPage(containerId = 'page-citizen-feedback', title = '
         <option value="closed">Closed</option>
       </select>
     </div>
-    <div id="feedbackTable" class="table-card" style="margin-top:12px;"></div>
+    <div id="feedbackTable" class="table-card"></div>
     <div id="feedbackPager" class="pager"></div>
   `;
   fetchFeedback();
