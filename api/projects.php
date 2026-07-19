@@ -21,6 +21,19 @@ const PROJECT_ENGINEER_ACTIONS = ['engineering_review', 'completion_decide'];
 const PROJECT_ENGINEER_OR_ADMIN_ACTIONS = ['issue_ntp', 'request_completion_inspection', 'upload_document_version'];
 const PROJECT_ADMIN_ONLY_ACTIONS = ['turnover'];
 
+// Same QC bounding box (with a little slack) as citizen/api/submit-feedback.php
+// — keep both in sync if this ever changes. The GIS Map is Quezon-City-only,
+// so a project's pin must actually be inside the city, not just anywhere on Earth.
+function projectQcCoordinatesValid(float $lat, float $lng): bool
+{
+    return $lat >= 14.55 && $lat <= 14.82 && $lng >= 120.96 && $lng <= 121.16;
+}
+
+// Must match the ENUM values self-healed onto projects.category/funding_source
+// by projectCategoryEnumSql()/projectFundingSourceEnumSql() in includes/workflow.php.
+const PROJECT_CATEGORIES = ['Roads and Bridges', 'Drainage and Flood Control', 'Water Supply', 'Public Buildings and Facilities', 'Street Lighting', 'Parks and Recreation', 'Other'];
+const PROJECT_FUNDING_SOURCES = ['LGU General Fund', '20% Development Fund', 'National Government Fund', 'Grant/Donor Fund', 'Special Education Fund', 'Other'];
+
 if ($method === 'GET') {
     requireAnyRole(['super_admin', 'admin', 'bac', 'engineer', 'contractor', 'citizen', 'hope']);
 } elseif ($method === 'POST' && $action === 'decide') {
@@ -614,6 +627,18 @@ if ($method === 'POST') {
         }
     }
 
+    if (isset($b['latitude']) && $b['latitude'] !== '' && isset($b['longitude']) && $b['longitude'] !== ''
+        && !projectQcCoordinatesValid((float) $b['latitude'], (float) $b['longitude'])) {
+        respond(['error' => 'The pinned location must be within Quezon City.'], 422);
+    }
+
+    if (!empty($b['category']) && !in_array($b['category'], PROJECT_CATEGORIES, true)) {
+        respond(['error' => 'Invalid project category'], 422);
+    }
+    if (!empty($b['funding_source']) && !in_array($b['funding_source'], PROJECT_FUNDING_SOURCES, true)) {
+        respond(['error' => 'Invalid funding source'], 422);
+    }
+
     // Auto project code
     $last = (int) $db->query("SELECT COUNT(*) FROM projects")->fetchColumn() + 1;
     $code = 'PRJ-' . str_pad($last, 3, '0', STR_PAD_LEFT);
@@ -630,8 +655,9 @@ if ($method === 'POST') {
         $stmt = $db->prepare("
             INSERT INTO projects
                 (project_code, name, description, location, contractor_id,
-                 budget, start_date, end_date, progress, status, created_by, latitude, longitude)
-            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)
+                 budget, start_date, end_date, progress, status, created_by, latitude, longitude,
+                 category, funding_source, implementing_office, physical_target)
+            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
         ");
         $stmt->execute([
             $code,
@@ -647,6 +673,10 @@ if ($method === 'POST') {
             (int) ($user['user_id'] ?? 0) ?: null,
             isset($b['latitude']) && $b['latitude'] !== '' ? (float) $b['latitude'] : null,
             isset($b['longitude']) && $b['longitude'] !== '' ? (float) $b['longitude'] : null,
+            !empty($b['category']) ? $b['category'] : null,
+            !empty($b['funding_source']) ? $b['funding_source'] : null,
+            !empty($b['implementing_office']) ? trim($b['implementing_office']) : null,
+            !empty($b['physical_target']) ? trim($b['physical_target']) : null,
         ]);
 
         $newId = (int) $db->lastInsertId();
@@ -671,7 +701,7 @@ if ($method === 'POST') {
 if ($method === 'PUT') {
     if (!$id) respond(['error' => 'ID required'], 400);
     $b = requestBody();
-    $beforeStmt = $db->prepare("SELECT id, name, status, contractor_id FROM projects WHERE id = ?");
+    $beforeStmt = $db->prepare("SELECT id, name, status, contractor_id, latitude, longitude FROM projects WHERE id = ?");
     $beforeStmt->execute([$id]);
     $before = $beforeStmt->fetch();
     if (!$before) {
@@ -681,7 +711,8 @@ if ($method === 'PUT') {
     $fields = [];
     $params = [];
     $allowed = ['name','description','location','contractor_id','budget',
-                'start_date','end_date','progress','status','latitude','longitude'];
+                'start_date','end_date','progress','status','latitude','longitude',
+                'category','funding_source','implementing_office','physical_target'];
     foreach ($allowed as $f) {
         if (array_key_exists($f, $b)) {
             if ($f === 'status' && !in_array((string) $b[$f], projectWorkflowStatuses(), true)) {
@@ -689,6 +720,12 @@ if ($method === 'PUT') {
             }
             if ($f === 'status' && in_array((string) $b[$f], ['endorsed', 'approved', 'completion_inspection', 'completed', 'turnover'], true)) {
                 respond(['error' => 'This status can only be reached through its dedicated workflow action, not a direct edit.'], 422);
+            }
+            if ($f === 'category' && $b[$f] !== '' && !in_array($b[$f], PROJECT_CATEGORIES, true)) {
+                respond(['error' => 'Invalid project category'], 422);
+            }
+            if ($f === 'funding_source' && $b[$f] !== '' && !in_array($b[$f], PROJECT_FUNDING_SOURCES, true)) {
+                respond(['error' => 'Invalid funding source'], 422);
             }
 
             $fields[] = "$f = ?";
@@ -705,6 +742,19 @@ if ($method === 'PUT') {
             }
         }
     }
+    if (array_key_exists('latitude', $b) || array_key_exists('longitude', $b)) {
+        $effectiveLat = array_key_exists('latitude', $b)
+            ? ($b['latitude'] === '' || $b['latitude'] === null ? null : (float) $b['latitude'])
+            : (isset($before['latitude']) ? (float) $before['latitude'] : null);
+        $effectiveLng = array_key_exists('longitude', $b)
+            ? ($b['longitude'] === '' || $b['longitude'] === null ? null : (float) $b['longitude'])
+            : (isset($before['longitude']) ? (float) $before['longitude'] : null);
+
+        if ($effectiveLat !== null && $effectiveLng !== null && !projectQcCoordinatesValid($effectiveLat, $effectiveLng)) {
+            respond(['error' => 'The pinned location must be within Quezon City.'], 422);
+        }
+    }
+
     $engineerId = array_key_exists('engineer_id', $b) && $b['engineer_id'] !== ''
         ? (int) $b['engineer_id']
         : null;

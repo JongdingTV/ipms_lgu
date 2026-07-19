@@ -145,6 +145,7 @@ require_once __DIR__ . '/sidebar.php';
 <script>window.SIDEBAR_BADGES_PORTAL = 'contractor';</script>
 <script src="<?= htmlspecialchars(assetUrl('/assets/js/sidebar-badges.js')) ?>"></script>
 <script src="<?= htmlspecialchars(assetUrl('/assets/js/pagination.js')) ?>"></script>
+<script src="<?= htmlspecialchars(assetUrl('/assets/js/sidebar-toggle.js')) ?>"></script>
 <script src="<?= htmlspecialchars(assetUrl('/contractor/assets/js/contractor.js')) ?>"></script>
 </body>
 </html>

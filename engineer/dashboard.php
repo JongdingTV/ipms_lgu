@@ -144,6 +144,8 @@ require_once __DIR__ . '/sidebar.php';
     <section id="page-delay-report" class="page-section" style="display:none;"></section>
     <section id="page-issue-reporting" class="page-section" style="display:none;"></section>
     <section id="page-status-tracker" class="page-section" style="display:none;"></section>
+    <section id="page-urban-planning-inspection" class="page-section" style="display:none;"></section>
+    <section id="page-road-inspection-history" class="page-section" style="display:none;"></section>
   </main>
 </div>
 
@@ -163,6 +165,7 @@ require_once __DIR__ . '/sidebar.php';
 <script>window.SIDEBAR_BADGES_PORTAL = 'engineer';</script>
 <script src="<?= htmlspecialchars(assetUrl('/assets/js/sidebar-badges.js')) ?>"></script>
 <script src="<?= htmlspecialchars(assetUrl('/assets/js/pagination.js')) ?>"></script>
+<script src="<?= htmlspecialchars(assetUrl('/assets/js/sidebar-toggle.js')) ?>"></script>
 <script src="<?= htmlspecialchars(assetUrl('/engineer/assets/js/engineer.js')) ?>"></script>
 </body>
 </html>

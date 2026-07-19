@@ -214,13 +214,15 @@ button { cursor: pointer; font-family: var(--font); }
 :root[data-theme="dark"] .nav-badge-pill-urgent  { background: rgba(239,68,68,.18);  color: #f87171; }
 
 /* ── Main ── */
-.main-wrapper { margin-left: var(--sidebar-w); flex: 1; display: flex; flex-direction: column; min-height: 100vh; transition: margin-left .3s; }
+.main-wrapper { margin-left: var(--sidebar-w); flex: 1; min-width: 0; display: flex; flex-direction: column; min-height: 100vh; transition: margin-left .3s; }
 
 /* Desktop burger: body.sidebar-collapsed slides the sidebar away and gives
    the content full width — same behavior as the citizen portal. On mobile
-   the burger keeps the off-canvas .open drawer instead. */
+   the burger keeps the off-canvas .open drawer instead. No transition
+   override here anymore — the base .sidebar rule's own cubic-bezier timing
+   (which also covers background-color) already applies and is nicer than
+   the flat .3s this used to replace it with. */
 @media (min-width: 769px) {
-  .sidebar { transition: transform .3s; }
   body.sidebar-collapsed .sidebar { transform: translateX(-100%); }
   body.sidebar-collapsed .main-wrapper { margin-left: 0; }
 }
@@ -436,7 +438,11 @@ button { cursor: pointer; font-family: var(--font); }
 .ai-green  { background: #16a34a; color: white; }
 
 /* ── Modal ── */
-.modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,.45); z-index: 200; display: flex; align-items: center; justify-content: center; opacity: 0; pointer-events: none; transition: opacity .2s; backdrop-filter: blur(3px); }
+/* z-index 2100: comfortably above Leaflet's own default panes/controls
+   (tile/marker/popup panes up to 700, .leaflet-top/.leaflet-bottom controls
+   at 1000) — otherwise an open GIS Map's markers/popups/zoom buttons render
+   on top of this modal instead of being covered by it. */
+.modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,.45); z-index: 2100; display: flex; align-items: center; justify-content: center; opacity: 0; pointer-events: none; transition: opacity .2s; backdrop-filter: blur(3px); }
 .modal-overlay.open { opacity: 1; pointer-events: all; }
 .modal { background: var(--card-bg); color: var(--text-primary); border-radius: var(--radius); width: 560px; max-width: 94vw; max-height: 90vh; overflow-y: auto; box-shadow: 0 20px 60px rgba(0,0,0,.2); transform: scale(.94); transition: transform .2s, background-color .25s ease, color .25s ease; }
 .modal-overlay.open .modal { transform: scale(1); }
@@ -469,7 +475,7 @@ button { cursor: pointer; font-family: var(--font); }
 .gsearch-trigger kbd { background: var(--card-bg); border: 1px solid var(--border); border-radius: 4px; padding: 1px 6px; font-size: .68rem; font-family: var(--font); color: var(--text-muted); }
 .hide-tablet { display: inline; }
 
-.gsearch-overlay { position: fixed; inset: 0; background: rgba(15,23,42,.5); z-index: 300; display: flex; align-items: flex-start; justify-content: center; padding-top: 12vh; opacity: 0; pointer-events: none; transition: opacity .2s; backdrop-filter: blur(3px); }
+.gsearch-overlay { position: fixed; inset: 0; background: rgba(15,23,42,.5); z-index: 2000; display: flex; align-items: flex-start; justify-content: center; padding-top: 12vh; opacity: 0; pointer-events: none; transition: opacity .2s; backdrop-filter: blur(3px); }
 .gsearch-overlay.open { opacity: 1; pointer-events: all; }
 .gsearch-box { background: var(--card-bg); color: var(--text-primary); width: 560px; max-width: 92vw; max-height: 70vh; border-radius: var(--radius); box-shadow: 0 24px 70px rgba(0,0,0,.3); overflow: hidden; display: flex; flex-direction: column; transform: translateY(-12px) scale(.98); transition: transform .2s, background-color .25s ease, color .25s ease; }
 .gsearch-overlay.open .gsearch-box { transform: translateY(0) scale(1); }
@@ -902,7 +908,7 @@ input.search-pill {
    Same look as the citizen portal's modal-card dialogs; a separate class
    from .modal-overlay because these toggle display, not the .open class. */
 .confirm-overlay {
-  position: fixed; inset: 0; z-index: 400;
+  position: fixed; inset: 0; z-index: 2200; /* session-critical — must beat every other overlay, including .modal-overlay */
   display: flex; align-items: center; justify-content: center;
   padding: 16px;
   background: rgba(15,23,42,.5);
@@ -992,6 +998,12 @@ input.search-pill {
   color: var(--text-muted);
   opacity: .75;
 }
+/* Optional icon on a group label (e.g. Engineer Portal's "System
+   Integrations" section) — plain text labels elsewhere are unaffected
+   since they simply don't include a .nav-group-icon span. */
+.nav-group-label.has-icon { display: flex; align-items: center; gap: 6px; }
+.nav-group-icon { width: 13px; height: 13px; flex-shrink: 0; display: flex; }
+.nav-group-icon svg { width: 100%; height: 100%; }
 
 .topbar {
   padding: 0 clamp(16px, 3vw, 28px);
@@ -1008,6 +1020,12 @@ input.search-pill {
   max-width: 1500px;
   gap: 22px;
   padding: clamp(18px, 2.4vw, 30px);
+  /* Flex items default to min-width:auto, which lets a wide child (an
+     uncontained table, say) force this whole column wider than the
+     viewport instead of shrinking — pushing the topbar's right side out
+     of view along with it. min-width:0 hands overflow handling back to
+     the child itself (.table-card already scrolls internally). */
+  min-width: 0;
 }
 
 .page-header {
@@ -1120,7 +1138,7 @@ input.search-pill {
 }
 @media (max-width:768px) {
   .sidebar { transform: translateX(-100%); }
-  .sidebar.open { transform: translateX(0); }
+  .sidebar.open { transform: translateX(0); box-shadow: 0 0 44px rgba(2,8,23,.4); }
   .main-wrapper { margin-left: 0; }
   .menu-toggle { display: flex; }
   .kpi-grid { grid-template-columns: 1fr 1fr; }
@@ -1131,6 +1149,20 @@ input.search-pill {
   .gsearch-trigger kbd { display: none; }
   .budget-summary-grid { grid-template-columns: 1fr; }
   .admin-summary-grid { grid-template-columns: 1fr; }
+}
+
+/* Backdrop behind the off-canvas mobile drawer — same treatment as the
+   citizen portal's own sidebar, extended here to every other portal via
+   assets/js/sidebar-toggle.js. Hidden entirely on desktop, where there's
+   no overlay to dim anything behind. */
+.sidebar-backdrop { display: none; }
+@media (max-width:768px) {
+  .sidebar-backdrop {
+    display: block; position: fixed; inset: 0;
+    background: rgba(15,23,42,.45); z-index: 99; /* just under the sidebar's z-index 100 */
+    opacity: 0; pointer-events: none; transition: opacity .3s;
+  }
+  .sidebar-backdrop.show { opacity: 1; pointer-events: auto; }
 }
 @media (max-width:480px) {
   .topbar { gap: 8px; padding: 0 12px; }

@@ -150,6 +150,10 @@ const PROJECT_STATUS_LABELS = {
   cancelled: 'Cancelled',
 };
 
+// Must match PROJECT_CATEGORIES/PROJECT_FUNDING_SOURCES in api/projects.php.
+const PROJECT_CATEGORIES = ['Roads and Bridges', 'Drainage and Flood Control', 'Water Supply', 'Public Buildings and Facilities', 'Street Lighting', 'Parks and Recreation', 'Other'];
+const PROJECT_FUNDING_SOURCES = ['LGU General Fund', '20% Development Fund', 'National Government Fund', 'Grant/Donor Fund', 'Special Education Fund', 'Other'];
+
 function projectStatusOptions(selected = 'draft') {
   return PROJECT_STATUSES.map(status =>
     `<option value="${status}" ${selected === status ? 'selected' : ''}>${PROJECT_STATUS_LABELS[status] || formatStatus(status)}</option>`
@@ -950,25 +954,66 @@ async function showProjectForm(id = null) {
     if (id) p = await get(API.projects, { id });
   } catch {}
 
+  const districts = Object.keys(window.QC_DISTRICTS || {});
   const title = id ? `Edit Project #${id}` : 'New Project';
   openModal(title, `
     <form id="projectForm" onsubmit="submitProjectForm(event, ${id})">
       <div class="form-grid">
-        <div class="form-group">
+        <div class="form-group" style="grid-column: span 2;">
           <label>Project Name *</label>
           <input name="name" class="form-input" required value="${p?.name||''}" />
         </div>
-        <div class="form-group">
+      </div>
+
+      <div class="proj-location-fieldset" style="border:1px solid var(--border);border-radius:var(--radius);padding:14px;margin-top:8px;">
+        <p style="font-weight:700;font-size:.85rem;margin-bottom:10px;">Location in Quezon City *</p>
+        <div class="form-grid">
+          <div class="form-group">
+            <label for="projDistrict">District</label>
+            <select id="projDistrict" class="form-input">
+              <option value="">Select district</option>
+              ${districts.map(d => `<option value="${escapeHtml(d)}">${escapeHtml(d)}</option>`).join('')}
+            </select>
+          </div>
+          <div class="form-group">
+            <label for="projBarangay">Barangay</label>
+            <select id="projBarangay" class="form-input" disabled>
+              <option value="">Select a district first</option>
+            </select>
+          </div>
+        </div>
+        <p style="font-size:.75rem;color:var(--text-muted);margin:8px 0;">Tap the exact spot on the map to drop a pin — drag it to fine-tune. The location below fills in automatically; you can still edit it for more specific detail (e.g. a street or landmark).</p>
+        <div id="projQcMap" style="height:280px;border-radius:var(--radius);overflow:hidden;border:1px solid var(--border);"></div>
+        <div class="form-group" style="margin-top:10px;">
           <label>Location *</label>
-          <input name="location" class="form-input" required value="${p?.location||''}" />
+          <input name="location" id="projLocationText" class="form-input" required value="${escapeHtml(p?.location||'')}" />
+        </div>
+        <input type="hidden" name="latitude" id="projLat" value="${p?.latitude ?? ''}" />
+        <input type="hidden" name="longitude" id="projLng" value="${p?.longitude ?? ''}" />
+      </div>
+
+      <div class="form-grid" style="margin-top:8px;">
+        <div class="form-group">
+          <label>Project Category</label>
+          <select name="category" class="form-input">
+            <option value="">Select category</option>
+            ${PROJECT_CATEGORIES.map(c => `<option value="${c}" ${p?.category===c?'selected':''}>${c}</option>`).join('')}
+          </select>
         </div>
         <div class="form-group">
-          <label>Latitude <small>(for GIS map, optional)</small></label>
-          <input name="latitude" type="number" step="0.0000001" min="-90" max="90" class="form-input" placeholder="e.g. 14.6760" value="${p?.latitude ?? ''}" />
+          <label>Funding Source</label>
+          <select name="funding_source" class="form-input">
+            <option value="">Select funding source</option>
+            ${PROJECT_FUNDING_SOURCES.map(f => `<option value="${f}" ${p?.funding_source===f?'selected':''}>${f}</option>`).join('')}
+          </select>
         </div>
         <div class="form-group">
-          <label>Longitude <small>(for GIS map, optional)</small></label>
-          <input name="longitude" type="number" step="0.0000001" min="-180" max="180" class="form-input" placeholder="e.g. 121.0437" value="${p?.longitude ?? ''}" />
+          <label>Implementing Office</label>
+          <input name="implementing_office" class="form-input" placeholder="e.g. City Engineering Office" value="${escapeHtml(p?.implementing_office||'')}" />
+        </div>
+        <div class="form-group">
+          <label>Physical Target / Scope</label>
+          <input name="physical_target" class="form-input" placeholder="e.g. 2.5 km road rehabilitation" value="${escapeHtml(p?.physical_target||'')}" />
         </div>
         <div class="form-group">
           <label>Budget (₱) *</label>
@@ -1011,8 +1056,189 @@ async function showProjectForm(id = null) {
     </form>
   `);
 
+  setupProjectLocationPicker(p);
+
   if (!id) {
     wireProjectDocRows(document.getElementById('projectDocRows'), document.getElementById('projectDocAddBtn'));
+  }
+}
+
+/* ============================================================
+   PROJECT LOCATION PICKER — District -> Barangay -> map pin.
+   Same QC boundary geojson + interaction model as Citizen Feedback's own
+   picker (click a barangay or the map to drop a pin, dropdowns cascade),
+   adapted for this modal, which is destroyed/rebuilt each time the form
+   opens rather than being a persistent page like citizen's.
+   ============================================================ */
+let projectQcMap = null;
+let projectQcGeoLayer = null;
+const projectQcLayersByGeo = {};
+let projectQcPinMarker = null;
+
+function projectBarangayIndex() {
+  const index = {};
+  Object.keys(window.QC_DISTRICTS || {}).forEach(district => {
+    (window.QC_DISTRICTS[district] || []).forEach(entry => {
+      index[entry.geo || entry.name] = { district, name: entry.name };
+    });
+  });
+  return index;
+}
+
+async function setupProjectLocationPicker(existingProject) {
+  // Tear down any previous instance — the modal DOM is rebuilt each time,
+  // so a leftover map bound to a now-detached container would leak/error.
+  if (projectQcMap) {
+    projectQcMap.remove();
+    projectQcMap = null;
+    projectQcGeoLayer = null;
+    projectQcPinMarker = null;
+    Object.keys(projectQcLayersByGeo).forEach(k => delete projectQcLayersByGeo[k]);
+  }
+
+  const districtSel = document.getElementById('projDistrict');
+  const barangaySel = document.getElementById('projBarangay');
+  if (!districtSel || !barangaySel) return;
+
+  districtSel.addEventListener('change', () => {
+    populateProjectBarangayOptions(districtSel.value);
+    clearProjectPin();
+    updateProjectLocationText();
+    if (projectQcMap) focusProjectDistrictOnMap(districtSel.value);
+  });
+
+  barangaySel.addEventListener('change', () => {
+    updateProjectLocationText();
+    if (projectQcMap) focusProjectBarangayOnMap(districtSel.value, barangaySel.value);
+  });
+
+  try {
+    const geojson = await loadQcBoundaryGeoJson();
+    const container = document.getElementById('projQcMap');
+    if (!container) return; // modal was closed while the geojson was loading
+
+    projectQcMap = L.map('projQcMap', { minZoom: 11, maxZoom: 17 });
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      attribution: '&copy; OpenStreetMap contributors',
+    }).addTo(projectQcMap);
+
+    const barangayIndex = projectBarangayIndex();
+    projectQcGeoLayer = L.geoJSON(geojson, {
+      style: { color: '#fff', weight: 1, fillColor: '#94a3b8', fillOpacity: 0.35 },
+      onEachFeature: (feature, layer) => {
+        const geoName = feature.properties.adm4_en;
+        const info = barangayIndex[geoName];
+        projectQcLayersByGeo[geoName] = layer;
+        if (!info) return;
+
+        layer.on('click', (e) => {
+          districtSel.value = info.district;
+          populateProjectBarangayOptions(info.district);
+          barangaySel.value = info.name;
+          updateProjectLocationText();
+          focusProjectBarangayOnMap(info.district, info.name, false);
+          placeProjectPin(e.latlng);
+        });
+      },
+    }).addTo(projectQcMap);
+
+    projectQcMap.setMaxBounds(projectQcGeoLayer.getBounds().pad(0.3));
+
+    if (existingProject?.latitude && existingProject?.longitude) {
+      const latlng = L.latLng(Number(existingProject.latitude), Number(existingProject.longitude));
+      projectQcMap.setView(latlng, 15);
+      placeProjectPin(latlng);
+    } else {
+      projectQcMap.fitBounds(projectQcGeoLayer.getBounds());
+    }
+
+    setTimeout(() => projectQcMap.invalidateSize(), 100);
+  } catch {
+    // Map is a convenience layer on top of the dropdowns — the dropdowns
+    // and typed location text still work fine without it.
+  }
+}
+
+function populateProjectBarangayOptions(district) {
+  const barangaySel = document.getElementById('projBarangay');
+  if (!barangaySel) return;
+
+  if (!district || !(window.QC_DISTRICTS || {})[district]) {
+    barangaySel.innerHTML = '<option value="">Select a district first</option>';
+    barangaySel.disabled = true;
+    return;
+  }
+
+  barangaySel.innerHTML = '<option value="">Select barangay</option>' +
+    window.QC_DISTRICTS[district].map(entry => `<option value="${escapeHtml(entry.name)}">${escapeHtml(entry.name)}</option>`).join('');
+  barangaySel.disabled = false;
+}
+
+function focusProjectDistrictOnMap(district, zoom = true) {
+  if (!projectQcGeoLayer) return;
+  projectQcGeoLayer.eachLayer(layer => projectQcGeoLayer.resetStyle(layer));
+  if (!district) {
+    if (zoom) projectQcMap.fitBounds(projectQcGeoLayer.getBounds());
+    return;
+  }
+  const barangayIndex = projectBarangayIndex();
+  const districtLayers = Object.keys(barangayIndex)
+    .filter(geo => barangayIndex[geo].district === district)
+    .map(geo => projectQcLayersByGeo[geo])
+    .filter(Boolean);
+  if (zoom && districtLayers.length) {
+    projectQcMap.fitBounds(L.featureGroup(districtLayers).getBounds().pad(0.1));
+  }
+}
+
+function focusProjectBarangayOnMap(district, barangayName, zoom = true) {
+  if (!projectQcGeoLayer || !district || !barangayName) return;
+  focusProjectDistrictOnMap(district, false);
+
+  const entry = (window.QC_DISTRICTS[district] || []).find(e => e.name === barangayName);
+  if (!entry) return;
+  const geoName = entry.geo || entry.name;
+  const layer = projectQcLayersByGeo[geoName];
+  if (!layer) return;
+
+  layer.setStyle({ fillOpacity: 0.75, weight: 3, color: '#1e293b' });
+  if (layer.bringToFront) layer.bringToFront();
+  if (zoom) projectQcMap.fitBounds(layer.getBounds().pad(0.4), { maxZoom: 15 });
+}
+
+function placeProjectPin(latlng) {
+  if (!projectQcMap) return;
+  if (!projectQcPinMarker) {
+    projectQcPinMarker = L.marker(latlng, { draggable: true, title: 'Exact spot (drag to adjust)' }).addTo(projectQcMap);
+    projectQcPinMarker.on('dragend', () => setProjectPinInputs(projectQcPinMarker.getLatLng()));
+  } else {
+    projectQcPinMarker.setLatLng(latlng);
+  }
+  setProjectPinInputs(latlng);
+}
+
+function clearProjectPin() {
+  if (projectQcPinMarker && projectQcMap) {
+    projectQcMap.removeLayer(projectQcPinMarker);
+  }
+  projectQcPinMarker = null;
+  setProjectPinInputs(null);
+}
+
+function setProjectPinInputs(latlng) {
+  const latInput = document.getElementById('projLat');
+  const lngInput = document.getElementById('projLng');
+  if (latInput) latInput.value = latlng ? latlng.lat.toFixed(7) : '';
+  if (lngInput) lngInput.value = latlng ? latlng.lng.toFixed(7) : '';
+}
+
+function updateProjectLocationText() {
+  const districtSel = document.getElementById('projDistrict');
+  const barangaySel = document.getElementById('projBarangay');
+  const locationInput = document.getElementById('projLocationText');
+  if (!districtSel || !barangaySel || !locationInput) return;
+  if (districtSel.value && barangaySel.value) {
+    locationInput.value = `Barangay ${barangaySel.value}, ${districtSel.value}, Quezon City`;
   }
 }
 
@@ -1280,7 +1506,6 @@ async function loadContractorAssignmentPage() {
   container.innerHTML = `
     <div class="page-header">
       <h2 class="page-title">Contractor Assignment</h2>
-      <button class="btn-primary" onclick="showContractorForm()">+ Add Contractor</button>
     </div>
     <div class="filter-bar">
       <input class="filter-input" placeholder="Search projects..."
@@ -1538,6 +1763,26 @@ const GIS_STATUS_COLORS = {
   turnover: '#16a34a',
 };
 const GIS_DEFAULT_COLOR = '#3b82f6'; // everything still in progress (active, assigned, bidding, etc.)
+// Same QC bounding box (with a little slack) as api/projects.php's
+// projectQcCoordinatesValid() and citizen/api/submit-feedback.php — this map
+// is Quezon-City-only, so it neither pans/zooms elsewhere nor plots a pin
+// that's outside the city (old bad data included, since nothing here is
+// re-validated on the way out of the database).
+const QC_BOUNDS = [[14.55, 120.96], [14.82, 121.16]];
+function isWithinQc(lat, lng) {
+  return lat >= 14.55 && lat <= 14.82 && lng >= 120.96 && lng <= 121.16;
+}
+// Same boundary file the Citizen portal's Submit Feedback map uses (its own
+// Leaflet instance draws it per-barangay with district colors/interactivity
+// for picking a barangay; here it's just a plain outline for orientation).
+const QC_GEOJSON_URL = (window.BASE_PATH || '/') + 'citizen/assets/data/qc-barangays.geojson';
+let qcBoundaryGeoJsonCache = null;
+async function loadQcBoundaryGeoJson() {
+  if (qcBoundaryGeoJsonCache) return qcBoundaryGeoJsonCache;
+  const res = await fetch(QC_GEOJSON_URL);
+  qcBoundaryGeoJsonCache = await res.json();
+  return qcBoundaryGeoJsonCache;
+}
 let gisMapInstance = null;
 let gisMarkers = [];
 let gisFilterState = { status: '', contractor_id: '', search: '', min_budget: '', max_budget: '' };
@@ -1582,6 +1827,7 @@ async function loadGisMapPage() {
     </div>
     <div id="gisMapContainer" style="height:520px;border-radius:var(--radius);overflow:hidden;border:1px solid var(--border);"></div>
     <p id="gisEmptyState" class="empty-state" style="display:none;">No projects with map coordinates match this filter. Add latitude/longitude when registering or editing a project to place it here.</p>
+    <p id="gisOutOfBoundsWarning" class="empty-state" style="display:none;color:var(--orange);"></p>
   `;
 
   document.getElementById('gisApplyFilters').addEventListener('click', () => {
@@ -1602,20 +1848,36 @@ async function fetchGisProjects() {
   const emptyState = document.getElementById('gisEmptyState');
   try {
     const result = await get(API.projects, { ...gisFilterState, has_coordinates: 1, _limit: 100 });
-    renderGisMap(result.data || []);
+    await renderGisMap(result.data || []);
     emptyState.style.display = (result.data || []).length ? 'none' : 'block';
   } catch {
     toast('Failed to load projects for the map', 'error');
   }
 }
 
-function renderGisMap(projects) {
+async function renderGisMap(projects) {
+  let skippedOutOfBounds = 0;
+
   if (!gisMapInstance) {
-    gisMapInstance = L.map('gisMapContainer').setView([14.6760, 121.0437], 12); // Quezon City
+    gisMapInstance = L.map('gisMapContainer', {
+      maxBounds: QC_BOUNDS,
+      maxBoundsViscosity: 1.0, // hard stop — panning cannot drag the map past the city limits
+      minZoom: 11,             // roughly "all of QC visible" — zooming out further would just show ocean/other cities
+    }).setView([14.6760, 121.0437], 12); // Quezon City
     L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
       attribution: '&copy; OpenStreetMap contributors',
       maxZoom: 19,
     }).addTo(gisMapInstance);
+
+    try {
+      const geojson = await loadQcBoundaryGeoJson();
+      L.geoJSON(geojson, {
+        style: { color: '#2563eb', weight: 1.5, fill: false },
+        interactive: false, // outline only — clicks/hover should pass through to project markers underneath
+      }).addTo(gisMapInstance);
+    } catch {
+      // Purely decorative — the maxBounds restriction above already keeps the map QC-only either way.
+    }
   }
 
   gisMarkers.forEach(m => gisMapInstance.removeLayer(m));
@@ -1623,8 +1885,15 @@ function renderGisMap(projects) {
 
   projects.forEach(p => {
     if (p.latitude === null || p.longitude === null || p.latitude === undefined || p.longitude === undefined) return;
+    const lat = Number(p.latitude);
+    const lng = Number(p.longitude);
+    // Older rows saved before coordinate validation existed can still have
+    // stray non-QC values — skip them here rather than plot a wrong pin or
+    // force the map to zoom out past the city to fit an obviously bad point.
+    if (!isWithinQc(lat, lng)) { skippedOutOfBounds++; return; }
+
     const color = GIS_STATUS_COLORS[p.status] || GIS_DEFAULT_COLOR;
-    const marker = L.circleMarker([Number(p.latitude), Number(p.longitude)], {
+    const marker = L.circleMarker([lat, lng], {
       radius: 9,
       color: '#fff',
       weight: 2,
@@ -1643,7 +1912,15 @@ function renderGisMap(projects) {
 
   if (gisMarkers.length) {
     const group = L.featureGroup(gisMarkers);
-    gisMapInstance.fitBounds(group.getBounds().pad(0.2));
+    gisMapInstance.fitBounds(group.getBounds().pad(0.2)); // clamped to QC_BOUNDS automatically since maxBounds is already set
+  }
+
+  const warning = document.getElementById('gisOutOfBoundsWarning');
+  if (warning) {
+    warning.style.display = skippedOutOfBounds > 0 ? 'block' : 'none';
+    warning.textContent = skippedOutOfBounds === 1
+      ? '1 project has a pinned location outside Quezon City and is not shown. Edit its coordinates to fix this.'
+      : `${skippedOutOfBounds} projects have pinned locations outside Quezon City and are not shown. Edit their coordinates to fix this.`;
   }
 
   // Leaflet paints into a container that was just made visible; without this
@@ -2048,74 +2325,6 @@ async function loadStaffRequestsPage() {
 }
 
 /* ============================================================
-   CONTRACTOR FORM (used by the "+ Add Contractor" button on the
-   Contractor Assignment page — there is no standalone contractors
-   list page; that was removed as dead/unreachable code)
-   ============================================================ */
-
-async function showContractorForm(id = null) {
-  let c = null;
-  if (id) try { c = await get(API.contractors, { id }); } catch {}
-
-  openModal(id ? `Edit Contractor` : 'New Contractor', `
-    <form id="contractorForm" onsubmit="submitContractorForm(event, ${id})">
-      <div class="form-grid">
-        <div class="form-group">
-          <label>Company Name *</label>
-          <input name="name" class="form-input" required value="${c?.name||''}" />
-        </div>
-        <div class="form-group">
-          <label>Contact Person</label>
-          <input name="contact_person" class="form-input" value="${c?.contact_person||''}" />
-        </div>
-        <div class="form-group">
-          <label>Email</label>
-          <input name="email" type="email" class="form-input" value="${c?.email||''}" />
-        </div>
-        <div class="form-group">
-          <label>Phone</label>
-          <input name="phone" class="form-input" value="${c?.phone||''}" />
-        </div>
-        <div class="form-group">
-          <label>Performance Score</label>
-          <input class="form-input" disabled value="${id ? `${c?.performance_score||0} / 100 (computed from project history)` : 'Computed after first project assignment'}" />
-        </div>
-        <div class="form-group">
-          <label>Status</label>
-          <select name="status" class="form-input">
-            ${['active','inactive','blacklisted'].map(s =>
-              `<option value="${s}" ${c?.status===s?'selected':''}>${s}</option>`).join('')}
-          </select>
-        </div>
-      </div>
-      <div class="form-group">
-        <label>Address</label>
-        <textarea name="address" class="form-input" rows="2">${c?.address||''}</textarea>
-      </div>
-      <div class="form-actions">
-        <button type="button" class="btn-secondary" onclick="closeModal()">Cancel</button>
-        <button type="submit" class="btn-primary">${id ? 'Update' : 'Add'} Contractor</button>
-      </div>
-    </form>
-  `);
-}
-
-async function submitContractorForm(e, id) {
-  e.preventDefault();
-  const body = Object.fromEntries(new FormData(e.target).entries());
-  try {
-    const res = id ? await put(API.contractors, id, body) : await post(API.contractors, body);
-    if (res.error) { toast(res.error, 'error'); return; }
-    toast(id ? 'Contractor updated!' : 'Contractor added!');
-    closeModal();
-    if (document.getElementById('assignmentTable')) {
-      await loadAssignmentContractors();
-      fetchAssignmentProjects();
-    }
-  } catch { toast('Something went wrong', 'error'); }
-}
-
-/* ============================================================
    FEEDBACK PAGE
    ============================================================ */
 let feedbackState = { page: 1, search: '', status: '', priority: '' };
@@ -2327,23 +2536,7 @@ function renderPager(containerId, page, lastPage, onPage) {
   });
 }
 
-// ── Sidebar toggle: desktop collapses the fixed sidebar (citizen behavior),
-//    mobile keeps the off-canvas drawer ──
-document.getElementById('sidebarToggle')?.addEventListener('click', () => {
-  if (window.matchMedia('(min-width: 769px)').matches) {
-    document.body.classList.toggle('sidebar-collapsed');
-    return;
-  }
-  document.getElementById('sidebar')?.classList.toggle('open');
-});
-document.addEventListener('click', e => {
-  const sidebar = document.getElementById('sidebar');
-  const toggle  = document.getElementById('sidebarToggle');
-  if (window.innerWidth <= 768 && sidebar?.classList.contains('open')
-      && !sidebar.contains(e.target) && !toggle?.contains(e.target)) {
-    sidebar.classList.remove('open');
-  }
-});
+// ── Sidebar toggle (open/close + backdrop) is handled by assets/js/sidebar-toggle.js. ──
 
 // ── Nav ──
 document.querySelectorAll('.nav-item').forEach(item => {

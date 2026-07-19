@@ -107,8 +107,26 @@ function projectWorkflowEnsureProjectStatusSchema(PDO $db): void
         // uses for its own optional map pin.
         $db->exec("ALTER TABLE projects ADD COLUMN IF NOT EXISTS latitude DECIMAL(10,7) NULL AFTER turnover_notes");
         $db->exec("ALTER TABLE projects ADD COLUMN IF NOT EXISTS longitude DECIMAL(10,7) NULL AFTER latitude");
+
+        // Project classification, added to Project Registration — informational
+        // only (no workflow gate reads these), unrelated to the old fund_source
+        // column dropped above, which belonged to a removed approval step.
+        $db->exec("ALTER TABLE projects ADD COLUMN IF NOT EXISTS category " . projectCategoryEnumSql() . " NULL AFTER longitude");
+        $db->exec("ALTER TABLE projects ADD COLUMN IF NOT EXISTS funding_source " . projectFundingSourceEnumSql() . " NULL AFTER category");
+        $db->exec("ALTER TABLE projects ADD COLUMN IF NOT EXISTS implementing_office VARCHAR(150) NULL AFTER funding_source");
+        $db->exec("ALTER TABLE projects ADD COLUMN IF NOT EXISTS physical_target VARCHAR(255) NULL AFTER implementing_office");
     } catch (Throwable $e) {
     }
+}
+
+function projectCategoryEnumSql(): string
+{
+    return "ENUM('Roads and Bridges','Drainage and Flood Control','Water Supply','Public Buildings and Facilities','Street Lighting','Parks and Recreation','Other')";
+}
+
+function projectFundingSourceEnumSql(): string
+{
+    return "ENUM('LGU General Fund','20% Development Fund','National Government Fund','Grant/Donor Fund','Special Education Fund','Other')";
 }
 
 /**

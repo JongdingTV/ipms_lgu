@@ -1574,13 +1574,7 @@ window.GLOBAL_SEARCH_SOURCES = [
 ];
 
 function contractorWireShell() {
-  document.getElementById('sidebarToggle')?.addEventListener('click', () => {
-    if (window.matchMedia('(min-width: 769px)').matches) {
-      document.body.classList.toggle('sidebar-collapsed');
-      return;
-    }
-    document.getElementById('sidebar')?.classList.toggle('open');
-  });
+  // Sidebar toggle (open/close + backdrop) is handled by assets/js/sidebar-toggle.js.
 
   document.querySelectorAll('.nav-item').forEach(item => {
     item.addEventListener('click', event => {

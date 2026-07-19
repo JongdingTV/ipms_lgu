@@ -3,10 +3,16 @@ require_once '../auth/session.php';
 $user = requireLogin(['admin']);
 require_once '../includes/header.php';
 require_once '../includes/sidebar.php';
+// Pure geography data (district/barangay names), no citizen-session
+// dependency — reused here so Project Registration's location picker can
+// share the exact same District -> Barangay data as Citizen Feedback's.
+require_once '../citizen/includes/qc-locations.php';
 ?>
 
 <div class="main-wrapper">
   <?php require_once '../includes/topbar.php'; ?>
+
+  <script>window.QC_DISTRICTS = <?= json_encode(qcDistricts(), JSON_UNESCAPED_UNICODE) ?>;</script>
 
   <main class="content">
     <section class="kpi-grid">

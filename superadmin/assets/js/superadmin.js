@@ -1274,14 +1274,7 @@ function saWireShell() {
     });
   });
 
-  const sidebarToggle = document.getElementById('sidebarToggle');
-  sidebarToggle?.addEventListener('click', () => {
-    if (window.matchMedia('(min-width: 769px)').matches) {
-      document.body.classList.toggle('sidebar-collapsed');
-      return;
-    }
-    document.getElementById('sidebar')?.classList.toggle('open');
-  });
+  // Sidebar toggle (open/close + backdrop) is handled by assets/js/sidebar-toggle.js.
 
   const userMenuBtn = document.getElementById('userMenuBtn');
   const userMenu = document.getElementById('userMenu');
@@ -1291,13 +1284,6 @@ function saWireShell() {
   });
 
   document.addEventListener('click', event => {
-    if (window.innerWidth <= 768) {
-      const sidebar = document.getElementById('sidebar');
-      if (sidebar?.classList.contains('open') && !sidebar.contains(event.target) && event.target !== sidebarToggle) {
-        sidebar.classList.remove('open');
-      }
-    }
-
     if (userMenu && !userMenu.contains(event.target) && event.target !== userMenuBtn) {
       userMenu.classList.remove('open');
     }
