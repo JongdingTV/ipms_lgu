@@ -1,6 +1,3 @@
--- CIMMS integration: track concern type + outbound sync status on feedback.
--- Run against the IPMS database (e.g. lgu_infrastructure).
-
 USE lgu_infrastructure;
 
 ALTER TABLE feedback
