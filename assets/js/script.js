@@ -748,7 +748,7 @@ async function openProjectModal(id) {
         </div>` : ''}
         <div>
           <p class="modal-label">SUPPORTING DOCUMENTS</p>
-          <div id="projectDocList" style="display:flex;flex-direction:column;gap:6px;margin-top:6px;">
+          <div id="projectDocList" class="doc-list-scroll" style="display:flex;flex-direction:column;gap:6px;margin-top:6px;">
             ${p.documents?.length ? p.documents.map(d => `
               <div style="display:flex;align-items:center;gap:8px;font-size:.8rem;padding:8px 10px;background:#f8fafc;border-radius:6px;">
                 <a href="${window.BASE_PATH || ''}${d.file_path}" target="_blank" rel="noopener" style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${escapeHtml(d.title)}</a>
@@ -847,17 +847,33 @@ function projectDocRowHtml(index) {
   `;
 }
 
+const PROJECT_DOC_ROW_LIMIT = 3;
+
 function wireProjectDocRows(container, addBtn) {
   let nextIndex = 1;
+
+  const syncAddBtn = () => {
+    const atLimit = container.querySelectorAll('.doc-row').length >= PROJECT_DOC_ROW_LIMIT;
+    addBtn.disabled = atLimit;
+    addBtn.textContent = atLimit ? `Limit reached (${PROJECT_DOC_ROW_LIMIT} documents max)` : '+ Add another document';
+  };
+
   addBtn.addEventListener('click', () => {
+    if (container.querySelectorAll('.doc-row').length >= PROJECT_DOC_ROW_LIMIT) return;
     container.insertAdjacentHTML('beforeend', projectDocRowHtml(nextIndex));
     nextIndex += 1;
+    syncAddBtn();
   });
   container.addEventListener('click', event => {
     if (event.target.classList.contains('doc-row-remove')) {
+      // Always keep at least one row so the form never submits with none.
+      if (container.querySelectorAll('.doc-row').length <= 1) return;
       event.target.closest('.doc-row')?.remove();
+      syncAddBtn();
     }
   });
+
+  syncAddBtn();
 }
 
 async function loadProjectsPage(containerId = 'page-project-registration', title = 'Project Registration') {
@@ -938,7 +954,7 @@ function renderProjectsTable(rows) {
               <div class="action-btns">
                 <button class="btn-icon" title="View" onclick="openProjectModal(${p.id})"><svg viewBox="0 0 20 20" fill="currentColor" width="14" height="14"><path d="M10 12.5a2.5 2.5 0 100-5 2.5 2.5 0 000 5z"/><path fill-rule="evenodd" d="M.664 10.59a1.651 1.651 0 010-1.186A10.004 10.004 0 0110 3c4.257 0 7.893 2.66 9.336 6.41.147.381.146.804 0 1.186A10.004 10.004 0 0110 17c-4.257 0-7.893-2.66-9.336-6.41zM14 10a4 4 0 11-8 0 4 4 0 018 0z" clip-rule="evenodd"/></svg></button>
                 <button class="btn-icon" title="Edit" onclick="showProjectForm(${p.id})"><svg viewBox="0 0 20 20" fill="currentColor" width="14" height="14"><path d="M13.586 3.586a2 2 0 112.828 2.828l-.793.793-2.828-2.828.793-.793z"/><path d="M11.379 5.793L3 14.172V17h2.828l8.38-8.379-2.83-2.828z"/></svg></button>
-                <button class="btn-icon btn-danger" title="Delete" onclick="deleteProject(${p.id})"><svg viewBox="0 0 20 20" fill="currentColor" width="14" height="14"><path fill-rule="evenodd" d="M9 2a1 1 0 00-.894.553L7.382 4H4a1 1 0 000 2v10a2 2 0 002 2h8a2 2 0 002-2V6a1 1 0 100-2h-3.382l-.724-1.447A1 1 0 0011 2H9zM7 8a1 1 0 012 0v6a1 1 0 11-2 0V8zm5-1a1 1 0 00-1 1v6a1 1 0 102 0V8a1 1 0 00-1-1z" clip-rule="evenodd"/></svg></button>
+                <button class="btn-icon btn-danger" title="Request Deletion (requires HOPE approval)" onclick="deleteProject(${p.id})"><svg viewBox="0 0 20 20" fill="currentColor" width="14" height="14"><path fill-rule="evenodd" d="M9 2a1 1 0 00-.894.553L7.382 4H4a1 1 0 000 2v10a2 2 0 002 2h8a2 2 0 002-2V6a1 1 0 100-2h-3.382l-.724-1.447A1 1 0 0011 2H9zM7 8a1 1 0 012 0v6a1 1 0 11-2 0V8zm5-1a1 1 0 00-1 1v6a1 1 0 102 0V8a1 1 0 00-1-1z" clip-rule="evenodd"/></svg></button>
               </div>
             </td>
           </tr>`;
@@ -1044,7 +1060,7 @@ async function showProjectForm(id = null) {
       </div>
       ${!id ? `
         <div class="form-group" style="margin-top:8px;">
-          <label>Supporting Documents * <small>(at least one required — feasibility study, site assessment, budget justification, etc.)</small></label>
+          <label>Supporting Documents * <small>(1–3 documents — feasibility study, site assessment, budget justification, etc. Max 10MB each.)</small></label>
           <div class="doc-rows" id="projectDocRows">${projectDocRowHtml(0)}</div>
           <button type="button" class="doc-add-btn" id="projectDocAddBtn">+ Add another document</button>
         </div>
@@ -1260,14 +1276,39 @@ async function submitProjectForm(e, id) {
   } catch { toast('Something went wrong', 'error'); }
 }
 
-async function deleteProject(id) {
-  if (!confirm('Delete this project? This will also delete related expenses and milestones.')) return;
-  try {
-    const res = await del(API.projects, id);
-    if (res.error) { toast(res.error, 'error'); return; }
-    toast('Project deleted');
-    fetchProjects();
-  } catch { toast('Delete failed', 'error'); }
+function deleteProject(id) {
+  openModal('Request Project Deletion', `
+    <form id="deleteProjectForm">
+      <p class="empty-state" style="margin-bottom:10px;">Deleting a project now requires HOPE's approval. Submit a reason below — the project (and its related expenses/milestones) is only removed once HOPE approves the request.</p>
+      <div class="form-group">
+        <label>Reason for Deletion *</label>
+        <textarea name="reason" class="form-input" rows="4" required placeholder="Explain why this project should be permanently deleted"></textarea>
+      </div>
+      <div class="form-actions">
+        <button type="button" class="btn-secondary" onclick="closeModal()">Cancel</button>
+        <button type="submit" class="btn-primary">Submit Deletion Request</button>
+      </div>
+    </form>
+  `);
+
+  document.getElementById('deleteProjectForm').addEventListener('submit', async event => {
+    event.preventDefault();
+    const reason = new FormData(event.target).get('reason') || '';
+    try {
+      const res = await fetch(`${API.projects}?action=request_deletion&id=${id}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...CSRF_HEADERS },
+        body: JSON.stringify({ reason }),
+      });
+      const result = await res.json();
+      if (!res.ok || result.error) { toast(result.error || 'Failed to submit deletion request', 'error'); return; }
+      toast('Deletion request submitted for HOPE review.');
+      closeModal();
+      fetchProjects();
+    } catch {
+      toast('Failed to submit deletion request', 'error');
+    }
+  });
 }
 
 /* ============================================================
@@ -1932,6 +1973,12 @@ async function renderGisMap(projects) {
 /* ============================================================
    REPORTS
    ============================================================ */
+let reportsPageData = null; // cached last-loaded payload, reused by exportReportsCsv()
+let reportsDelayedChartInst = null;
+let reportsContractorsChartInst = null;
+let reportsUsageChartInst = null;
+let reportsFundingChartInst = null;
+
 async function loadReportsPage() {
   const container = document.getElementById('page-reports');
   if (!container) return;
@@ -1939,7 +1986,10 @@ async function loadReportsPage() {
   container.innerHTML = `
     <div class="page-header">
       <h2 class="page-title">Reports</h2>
-      <button class="btn-secondary" onclick="window.print()">Print</button>
+      <div style="display:flex;gap:10px;">
+        <button class="btn-secondary" onclick="exportReportsCsv()">Export CSV</button>
+        <button class="btn-secondary" onclick="window.print()">Print</button>
+      </div>
     </div>
     <div id="reportsContent" class="reports-layout"></div>
   `;
@@ -1954,6 +2004,7 @@ async function loadReportsPage() {
       get(API.feedback, { status: 'open' }),
       get(API.expenses, { summary: 1 }),
     ]);
+    reportsPageData = { dashboard, contractors: contractors.data || [], openFeedback, expenseSummary: expenseSummary.data || [] };
     renderReports(dashboard, contractors.data || [], openFeedback, expenseSummary.data || []);
   } catch {
     wrap.innerHTML = '<p class="empty-state">Failed to build reports.</p>';
@@ -1969,6 +2020,8 @@ function renderReports(dashboard, contractors, openFeedback, expenseSummary) {
   const delayed = dashboard.top_delayed || [];
   const topContractors = contractors.slice(0, 5);
   const highestSpend = expenseSummary.slice(0, 5);
+  const fundingSources = dashboard.funding_source_breakdown || [];
+  const recentActivity = (dashboard.recent_workflow || []).slice(0, 5);
 
   wrap.innerHTML = `
     <section class="admin-summary-grid">
@@ -1981,36 +2034,190 @@ function renderReports(dashboard, contractors, openFeedback, expenseSummary) {
     <section class="report-columns">
       <article class="report-panel">
         <h3>Delayed Projects</h3>
-        ${delayed.length ? delayed.map(p => `
-          <div class="report-row">
-            <span>${escapeHtml(p.name)}</span>
-            <strong>${p.days_overdue || 0} days</strong>
-          </div>
-        `).join('') : '<p class="empty-state">No delayed projects.</p>'}
+        ${delayed.length ? '<div class="chart-body report-chart-body"><canvas id="reportsDelayedChart"></canvas></div>' : '<p class="empty-state">No delayed projects.</p>'}
       </article>
       <article class="report-panel">
         <h3>Top Contractors</h3>
-        ${topContractors.length ? topContractors.map(c => `
-          <div class="report-row">
-            <span>${escapeHtml(c.name)}</span>
-            <strong>${c.performance_score}</strong>
-          </div>
-        `).join('') : '<p class="empty-state">No contractor data.</p>'}
+        ${topContractors.length ? '<div class="chart-body report-chart-body"><canvas id="reportsContractorsChart"></canvas></div>' : '<p class="empty-state">No contractor data.</p>'}
       </article>
       <article class="report-panel">
         <h3>Highest Budget Usage</h3>
-        ${highestSpend.length ? highestSpend.map(r => {
-          const pct = r.budget > 0 ? Math.round((r.total_spent / r.budget) * 100) : 0;
-          return `
-            <div class="report-row">
-              <span>${r.project_name}</span>
-              <strong>${pct}%</strong>
-            </div>
-          `;
-        }).join('') : '<p class="empty-state">No budget data.</p>'}
+        ${highestSpend.length ? '<div class="chart-body report-chart-body"><canvas id="reportsUsageChart"></canvas></div>' : '<p class="empty-state">No budget data.</p>'}
+      </article>
+    </section>
+
+    <section class="report-columns-2">
+      <article class="report-panel">
+        <h3>Funding Source Breakdown</h3>
+        ${fundingSources.length ? '<div class="chart-body report-chart-body"><canvas id="reportsFundingChart"></canvas></div>' : '<p class="empty-state">No funding source data.</p>'}
+      </article>
+      <article class="report-panel">
+        <h3>Recent Workflow Activity</h3>
+        ${recentActivity.length ? recentActivity.map(r => `
+          <div class="report-row">
+            <span>${escapeHtml(r.record_type)} · ${escapeHtml(r.project_name)}</span>
+            <strong>${formatStatus(r.status)}</strong>
+          </div>
+        `).join('') : '<p class="empty-state">No recent activity.</p>'}
       </article>
     </section>
   `;
+
+  renderReportsCharts(dashboard, topContractors, highestSpend);
+}
+
+function renderReportsCharts(dashboard, topContractors, highestSpend) {
+  const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
+  const gridColor = isDark ? 'rgba(148,163,184,.18)' : 'rgba(100,116,139,.12)';
+
+  const delayedCtx = document.getElementById('reportsDelayedChart')?.getContext('2d');
+  if (delayedCtx) {
+    if (reportsDelayedChartInst) reportsDelayedChartInst.destroy();
+    const rows = dashboard.top_delayed || [];
+    reportsDelayedChartInst = new Chart(delayedCtx, {
+      type: 'bar',
+      data: {
+        labels: rows.map(p => p.name.length > 22 ? p.name.slice(0, 20) + '…' : p.name),
+        datasets: [{ data: rows.map(p => Number(p.days_overdue) || 0), backgroundColor: 'rgba(239,68,68,.75)', hoverBackgroundColor: '#ef4444', borderRadius: 6, maxBarThickness: 26 }],
+      },
+      options: {
+        indexAxis: 'y',
+        responsive: true, maintainAspectRatio: false,
+        animation: { duration: 900, easing: 'easeOutQuart' },
+        plugins: { legend: { display: false }, tooltip: { backgroundColor: '#1e2a3b', callbacks: { label: c => ` ${c.raw} days overdue` } } },
+        scales: {
+          x: { beginAtZero: true, ticks: { color: '#94a3b8', precision: 0 }, grid: { color: gridColor }, border: { display: false } },
+          y: { grid: { display: false }, ticks: { color: '#94a3b8', font: { size: 10.5 } }, border: { display: false } },
+        },
+      },
+    });
+  }
+
+  const contractorsCtx = document.getElementById('reportsContractorsChart')?.getContext('2d');
+  if (contractorsCtx) {
+    if (reportsContractorsChartInst) reportsContractorsChartInst.destroy();
+    const rows = topContractors || [];
+    reportsContractorsChartInst = new Chart(contractorsCtx, {
+      type: 'bar',
+      data: {
+        labels: rows.map(c => c.name.length > 22 ? c.name.slice(0, 20) + '…' : c.name),
+        datasets: [{ data: rows.map(c => Number(c.performance_score) || 0), backgroundColor: 'rgba(34,197,94,.75)', hoverBackgroundColor: '#22c55e', borderRadius: 6, maxBarThickness: 26 }],
+      },
+      options: {
+        indexAxis: 'y',
+        responsive: true, maintainAspectRatio: false,
+        animation: { duration: 900, easing: 'easeOutQuart' },
+        plugins: { legend: { display: false }, tooltip: { backgroundColor: '#1e2a3b', callbacks: { label: c => ` Score: ${c.raw}/100` } } },
+        scales: {
+          x: { beginAtZero: true, max: 100, ticks: { color: '#94a3b8', precision: 0 }, grid: { color: gridColor }, border: { display: false } },
+          y: { grid: { display: false }, ticks: { color: '#94a3b8', font: { size: 10.5 } }, border: { display: false } },
+        },
+      },
+    });
+  }
+
+  const usageCtx = document.getElementById('reportsUsageChart')?.getContext('2d');
+  if (usageCtx) {
+    if (reportsUsageChartInst) reportsUsageChartInst.destroy();
+    const rows = highestSpend || [];
+    reportsUsageChartInst = new Chart(usageCtx, {
+      type: 'bar',
+      data: {
+        labels: rows.map(r => String(r.project_name).length > 22 ? String(r.project_name).slice(0, 20) + '…' : r.project_name),
+        datasets: [{
+          data: rows.map(r => r.budget > 0 ? Math.round((r.total_spent / r.budget) * 100) : 0),
+          backgroundColor: 'rgba(249,115,22,.75)', hoverBackgroundColor: '#f97316', borderRadius: 6, maxBarThickness: 26,
+        }],
+      },
+      options: {
+        indexAxis: 'y',
+        responsive: true, maintainAspectRatio: false,
+        animation: { duration: 900, easing: 'easeOutQuart' },
+        plugins: { legend: { display: false }, tooltip: { backgroundColor: '#1e2a3b', callbacks: { label: c => ` ${c.raw}% of budget used` } } },
+        scales: {
+          x: { beginAtZero: true, ticks: { color: '#94a3b8', callback: v => v + '%' }, grid: { color: gridColor }, border: { display: false } },
+          y: { grid: { display: false }, ticks: { color: '#94a3b8', font: { size: 10.5 } }, border: { display: false } },
+        },
+      },
+    });
+  }
+
+  const fundingCtx = document.getElementById('reportsFundingChart')?.getContext('2d');
+  if (fundingCtx) {
+    if (reportsFundingChartInst) reportsFundingChartInst.destroy();
+    const rows = (dashboard.funding_source_breakdown || []).filter(r => Number(r.total) > 0);
+    reportsFundingChartInst = new Chart(fundingCtx, {
+      type: 'doughnut',
+      data: {
+        labels: rows.map(r => r.label),
+        datasets: [{
+          data: rows.map(r => Number(r.total_budget)),
+          backgroundColor: ['#14b8a6', '#3b82f6', '#a855f7', '#f97316', '#22c55e', '#ef4444', '#94a3b8'],
+          borderColor: '#fff', borderWidth: 3, hoverOffset: 6,
+        }],
+      },
+      options: {
+        responsive: true, maintainAspectRatio: false, animation: { duration: 900 },
+        plugins: {
+          legend: { position: 'bottom', labels: { color: '#94a3b8', boxWidth: 10, boxHeight: 10, font: { size: 11 } } },
+          tooltip: { backgroundColor: '#1e2a3b', callbacks: { label: c => ` ${c.label}: ${formatMoney(c.raw)}` } },
+        },
+      },
+    });
+  }
+}
+
+function exportReportsCsv() {
+  if (!reportsPageData) {
+    toast('Reports data is still loading.', 'error');
+    return;
+  }
+  const { dashboard, contractors, expenseSummary } = reportsPageData;
+  const lines = [];
+  const addSection = (title, header, rows) => {
+    lines.push([title]);
+    lines.push(header);
+    rows.forEach(r => lines.push(r));
+    lines.push([]);
+  };
+
+  addSection('Summary', ['Metric', 'Value'], [
+    ['Active Projects', dashboard.active_projects],
+    ['Delayed Projects', dashboard.delayed_projects],
+    ['Budget Used %', dashboard.budget_pct],
+    ['Total Budget', dashboard.total_budget],
+    ['Total Spent', dashboard.total_spent],
+  ]);
+
+  addSection('Projects by Status', ['Status', 'Total'],
+    (dashboard.status_mix || []).map(r => [PROJECT_STATUS_LABELS[r.status] || r.status, r.total]));
+
+  addSection('Projects by Category', ['Category', 'Total Projects', 'Total Budget'],
+    (dashboard.category_breakdown || []).map(r => [r.label, r.total, r.total_budget]));
+
+  addSection('Funding Source Breakdown', ['Funding Source', 'Total Projects', 'Total Budget'],
+    (dashboard.funding_source_breakdown || []).map(r => [r.label, r.total, r.total_budget]));
+
+  addSection('Monthly Spending', ['Month', 'Total'],
+    (dashboard.monthly_spending || []).map(r => [r.month, r.total]));
+
+  addSection('Delayed Projects', ['Project', 'Days Overdue', 'Contractor'],
+    (dashboard.top_delayed || []).map(p => [p.name, p.days_overdue || 0, p.contractor_name || '']));
+
+  addSection('Top Contractors', ['Contractor', 'Performance Score'],
+    contractors.slice(0, 10).map(c => [c.name, c.performance_score]));
+
+  addSection('Highest Budget Usage', ['Project', 'Budget', 'Spent'],
+    expenseSummary.slice(0, 10).map(r => [r.project_name, r.budget, r.total_spent]));
+
+  const csv = lines.map(row => row.map(v => `"${String(v ?? '').replace(/"/g, '""')}"`).join(',')).join('\n');
+  const blob = new Blob([csv], { type: 'text/csv' });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = `ipms-reports-${new Date().toISOString().slice(0, 10)}.csv`;
+  link.click();
+  URL.revokeObjectURL(url);
 }
 
 /* ============================================================

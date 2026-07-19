@@ -581,3 +581,38 @@ function projectWorkflowLog(PDO $db, string $action, ?int $projectId = null, str
     } catch (Throwable $e) {
     }
 }
+
+// Maker-checker gate for permanent project deletion: Admin (api/projects.php's
+// request_deletion) submits a reason, HOPE (hope/api/portal.php's
+// decide_deletion) approves or rejects it, and only an approval actually runs
+// DELETE FROM projects. project_code/project_name are snapshotted here so the
+// request row still reads meaningfully after the project itself is gone
+// (project_id then goes NULL via the FK below, same ON DELETE SET NULL
+// pattern bac_procurement_logs already uses for the same reason).
+function projectDeletionEnsureSchema(PDO $db): void
+{
+    try {
+        $db->exec("
+            CREATE TABLE IF NOT EXISTS project_deletion_requests (
+                id INT AUTO_INCREMENT PRIMARY KEY,
+                project_id INT NULL,
+                project_code VARCHAR(20) NOT NULL,
+                project_name VARCHAR(200) NOT NULL,
+                reason TEXT NOT NULL,
+                status ENUM('pending','approved','rejected') NOT NULL DEFAULT 'pending',
+                requested_by INT NULL,
+                decided_by INT NULL,
+                decided_at DATETIME NULL,
+                decision_remarks TEXT NULL,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+                INDEX idx_pdr_status (status),
+                INDEX idx_pdr_project (project_id),
+                CONSTRAINT fk_pdr_project FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE SET NULL,
+                CONSTRAINT fk_pdr_requested_by FOREIGN KEY (requested_by) REFERENCES users(id) ON DELETE SET NULL,
+                CONSTRAINT fk_pdr_decided_by FOREIGN KEY (decided_by) REFERENCES users(id) ON DELETE SET NULL
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+        ");
+    } catch (Throwable $e) {
+    }
+}

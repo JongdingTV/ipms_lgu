@@ -127,6 +127,32 @@ $out['budget_anomalies'] = $db->query("
     ORDER BY e.expense_date DESC
 ")->fetchAll();
 
+// ── Projects by category / funding source (Reports page breakdowns) ──
+$out['category_breakdown'] = $db->query("
+    SELECT COALESCE(category, 'Uncategorized') AS label, COUNT(*) AS total, COALESCE(SUM(budget),0) AS total_budget
+    FROM projects
+    WHERE status NOT IN ('draft','returned','cancelled')
+    GROUP BY label
+    ORDER BY total DESC
+")->fetchAll();
+
+$out['funding_source_breakdown'] = $db->query("
+    SELECT COALESCE(funding_source, 'Unspecified') AS label, COUNT(*) AS total, COALESCE(SUM(budget),0) AS total_budget
+    FROM projects
+    WHERE status NOT IN ('draft','returned','cancelled')
+    GROUP BY label
+    ORDER BY total DESC
+")->fetchAll();
+
+// ── Monthly spending trend, last 12 calendar months with any expense ──
+$out['monthly_spending'] = $db->query("
+    SELECT DATE_FORMAT(expense_date, '%Y-%m') AS ym, DATE_FORMAT(expense_date, '%b %Y') AS month, SUM(amount) AS total
+    FROM expenses
+    GROUP BY ym
+    ORDER BY ym ASC
+    LIMIT 12
+")->fetchAll();
+
 // ── Recent citizen feedback ──
 $out['recent_feedback'] = $db->query("
     SELECT f.id, f.citizen_name, f.message, f.priority, f.status,

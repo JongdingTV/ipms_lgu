@@ -138,6 +138,7 @@ async function hopeRenderDashboard() {
   const stats = data.stats || {};
   document.getElementById('hopePendingCount').textContent = stats.pending_project_approvals || 0;
   document.getElementById('hopePendingAwardsCount').textContent = stats.pending_award_approvals || 0;
+  document.getElementById('hopePendingDeletionsCount').textContent = stats.pending_deletion_requests || 0;
   document.getElementById('hopeApprovedCount').textContent = stats.approved_this_month || 0;
   document.getElementById('hopeReturnedCount').textContent = stats.returned || 0;
   document.getElementById('hopeRejectedCount').textContent = stats.rejected || 0;
@@ -635,6 +636,125 @@ function hopeOpenAwardDecisionModal(recId, decision) {
   });
 }
 
+/* ---- Deletion Requests ---------------------------------------------------- */
+
+let hopeDeletionRequestsById = {};
+
+async function hopeRenderDeletionRequests() {
+  const container = document.getElementById('page-deletion-requests');
+  if (!container) return;
+
+  container.innerHTML = `
+    <div class="page-header">
+      <div>
+        <h2 class="page-title">Deletion Requests</h2>
+        <p class="hope-decision-note">Review Admin's request to permanently delete a project, including the stated reason, then approve or reject it. A remark is required to reject.</p>
+      </div>
+    </div>
+    ${listToolbarHtml('hopeDeletionSearch', 'Search project...', 'hopeDeletionPager')}
+    <div class="table-card">
+      <table class="data-table">
+        <thead><tr><th>Project</th><th>Requested By</th><th>Reason</th><th>Requested</th><th>Actions</th></tr></thead>
+        <tbody id="hopeDeletionBody"><tr><td colspan="5" class="table-empty">Loading...</td></tr></tbody>
+      </table>
+    </div>
+  `;
+
+  initClientList('hopeDeletions', {
+    bodyId: 'hopeDeletionBody', searchId: 'hopeDeletionSearch', pagerId: 'hopeDeletionPager',
+    columns: 5, emptyText: 'No project deletion requests are awaiting your review.',
+    searchText: r => `${r.project_code} ${r.project_name} ${r.requested_by_name || ''}`,
+    rowHtml: r => `
+      <tr>
+        <td><span class="proj-id">${hopeEscape(r.project_code)}</span><br><strong>${hopeEscape(r.project_name)}</strong></td>
+        <td>${hopeEscape(r.requested_by_name || 'Unknown')}</td>
+        <td style="max-width:260px;">${hopeEscape(r.reason)}</td>
+        <td class="cell-nowrap">${hopeDate(r.created_at)}</td>
+        <td><button class="btn-primary btn-compact" onclick="hopeOpenDeletionDetailModal(${r.id})">Review</button></td>
+      </tr>`,
+  });
+
+  await hopeLoadDeletionRequests();
+}
+
+async function hopeLoadDeletionRequests() {
+  const body = document.getElementById('hopeDeletionBody');
+  if (!body) return;
+
+  try {
+    const result = await hopeGet('list_deletion_requests');
+    result.data.forEach(r => { hopeDeletionRequestsById[r.id] = r; });
+    setClientListData('hopeDeletions', result.data);
+  } catch (error) {
+    body.innerHTML = '<tr><td colspan="5" class="table-empty">Failed to load deletion requests.</td></tr>';
+  }
+}
+
+function hopeOpenDeletionDetailModal(requestId) {
+  const r = hopeDeletionRequestsById[requestId];
+  if (!r) return;
+
+  hopeOpenModal(`Deletion Request — ${hopeEscape(r.project_code)}`, `
+    <div style="display:flex;flex-direction:column;gap:14px;">
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">
+        <div><p class="modal-label">PROJECT</p><p class="modal-val">${hopeEscape(r.project_name)}</p></div>
+        <div><p class="modal-label">LOCATION</p><p class="modal-val">${hopeEscape(r.location || '-')}</p></div>
+        <div><p class="modal-label">CURRENT STATUS</p><p class="modal-val">${r.project_status ? hopeBadge(r.project_status) : 'Project already removed'}</p></div>
+        <div><p class="modal-label">BUDGET</p><p class="modal-val">${r.budget != null ? hopeMoney(r.budget) : '-'}</p></div>
+        <div><p class="modal-label">REQUESTED BY</p><p class="modal-val">${hopeEscape(r.requested_by_name || 'Unknown')}</p></div>
+        <div><p class="modal-label">REQUESTED</p><p class="modal-val">${hopeDate(r.created_at)}</p></div>
+      </div>
+      <div>
+        <p class="modal-label">REASON FOR DELETION</p>
+        <p class="modal-val" style="font-weight:400;">${hopeEscape(r.reason)}</p>
+      </div>
+      <div class="form-actions">
+        <button class="btn-secondary" type="button" onclick="hopeOpenDeletionDecisionModal(${requestId}, 'reject')">Reject Request</button>
+        <button class="btn-primary" type="button" onclick="hopeOpenDeletionDecisionModal(${requestId}, 'approve')">Approve — Permanently Delete</button>
+      </div>
+    </div>
+  `);
+}
+
+function hopeOpenDeletionDecisionModal(requestId, decision) {
+  const labels = { approve: 'Approve Deletion', reject: 'Reject Request' };
+  const remarksRequired = decision !== 'approve';
+
+  hopeOpenModal(labels[decision], `
+    <form id="hopeDeletionDecisionForm">
+      ${decision === 'approve' ? '<p class="empty-state" style="color:#ef4444;">This permanently deletes the project and all its related records. This cannot be undone.</p>' : ''}
+      <div class="form-group">
+        <label>Remarks${remarksRequired ? ' *' : ' (optional)'}</label>
+        <textarea name="remarks" class="form-input" rows="4" placeholder="Explain the decision" ${remarksRequired ? 'required' : ''}></textarea>
+      </div>
+      <div class="form-actions">
+        <button type="button" class="btn-secondary" onclick="hopeCloseModal()">Cancel</button>
+        <button type="submit" class="btn-primary">Confirm ${labels[decision]}</button>
+      </div>
+    </form>
+  `);
+
+  document.getElementById('hopeDeletionDecisionForm').addEventListener('submit', async event => {
+    event.preventDefault();
+    const remarks = new FormData(event.target).get('remarks') || '';
+    try {
+      const response = await fetch(`${HOPE_API}?action=decide_deletion`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...HOPE_CSRF_HEADERS },
+        body: JSON.stringify({ request_id: requestId, decision, remarks }),
+      });
+      const result = await response.json();
+      if (!response.ok || result.error) throw hopeErrorFrom(result, response);
+      hopeToast(`Deletion request ${result.status}.`);
+      hopeCloseModal();
+      await hopeLoadDeletionRequests();
+      await hopeRenderDashboard();
+    } catch (error) {
+      hopeToast(error.message || 'Failed to record decision.', 'error');
+    }
+  });
+}
+
 /* ---- Returned Projects / Decision History ----------------------------------- */
 
 async function hopeRenderReturnedProjects() {
@@ -987,6 +1107,7 @@ const hopeRenderers = {
   'project-approvals': hopeRenderProjectApprovals,
   'award-approvals': hopeRenderAwardApprovals,
   'returned-projects': hopeRenderReturnedProjects,
+  'deletion-requests': hopeRenderDeletionRequests,
   'decision-history': hopeRenderDecisionHistory,
   'approved-projects': hopeRenderApprovedProjects,
   'ongoing-projects': hopeRenderOngoingProjects,

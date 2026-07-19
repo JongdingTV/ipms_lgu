@@ -60,6 +60,7 @@ $db     = getDB();
 engineerScopeEnsureTables($db);
 projectWorkflowEnsureProjectStatusSchema($db);
 documentsEnsureVersioningSchema($db);
+projectDeletionEnsureSchema($db);
 $id     = isset($_GET['id']) ? (int) $_GET['id'] : null;
 $user   = currentUser();
 $isContractor = ($user['role'] ?? '') === 'contractor';
@@ -67,6 +68,10 @@ $contractorScopeId = null;
 
 const PROJECT_DOC_MAX_SIZE = 10 * 1024 * 1024;
 const PROJECT_DOC_EXTENSIONS = ['pdf', 'doc', 'docx', 'xls', 'xlsx', 'png', 'jpg', 'jpeg'];
+// Keeps per-project file storage bounded — matches the client-side row cap in
+// assets/js/script.js's wireProjectDocRows(), enforced again here since a raw
+// API call could otherwise submit more rows than the form allows.
+const PROJECT_DOC_ROW_LIMIT = 3;
 
 /** Same dynamic documents[N][document_type]/[title] + flat document_files[N] convention used in superadmin/api/accounts.php. */
 function projectCollectDocumentRows(array $textRows, array $filesField): array
@@ -609,6 +614,45 @@ if ($method === 'POST' && $action === 'upload_document_version') {
     respond(['success' => true, 'id' => $newDocId], 201);
 }
 
+// ── POST action=request_deletion (Admin/super_admin — submits a reasoned
+//    request; HOPE reviews it via hope/api/portal.php's decide_deletion) ──
+if ($method === 'POST' && $action === 'request_deletion') {
+    if (!$id) respond(['error' => 'Project ID is required.'], 400);
+
+    $body = requestBody();
+    $reason = trim((string) ($body['reason'] ?? ''));
+    if ($reason === '') {
+        respond(['error' => 'A reason is required to request project deletion.'], 422);
+    }
+
+    $stmt = $db->prepare("SELECT id, project_code, name FROM projects WHERE id = ?");
+    $stmt->execute([$id]);
+    $project = $stmt->fetch();
+    if (!$project) {
+        respond(['error' => 'Project not found.'], 404);
+    }
+
+    $existing = $db->prepare("SELECT id FROM project_deletion_requests WHERE project_id = ? AND status = 'pending'");
+    $existing->execute([$id]);
+    if ($existing->fetchColumn()) {
+        respond(['error' => 'A deletion request for this project is already pending HOPE review.'], 409);
+    }
+
+    $db->prepare("
+        INSERT INTO project_deletion_requests (project_id, project_code, project_name, reason, requested_by)
+        VALUES (?, ?, ?, ?, ?)
+    ")->execute([$id, $project['project_code'], $project['name'], $reason, (int) ($user['user_id'] ?? 0) ?: null]);
+
+    projectWorkflowLog($db, 'Project deletion requested', (int) $id, $project['name'] . ' (' . $project['project_code'] . ') — ' . $reason, (int) ($user['user_id'] ?? 0) ?: null);
+
+    $hopeUserIds = $db->query("SELECT id FROM users WHERE role = 'hope' AND status = 'active'")->fetchAll(PDO::FETCH_COLUMN);
+    foreach ($hopeUserIds as $hopeUserId) {
+        notifyUser((int) $hopeUserId, 'info', 'Project deletion requested', $project['name'] . ' (' . $project['project_code'] . ') has a pending deletion request awaiting your review.');
+    }
+
+    respond(['success' => true, 'message' => 'Deletion request submitted for HOPE review.']);
+}
+
 // ── POST (create) ──────────────────────────────────────────
 if ($method === 'POST') {
     $b = $_POST;
@@ -620,6 +664,9 @@ if ($method === 'POST') {
     $documentRows = projectCollectDocumentRows($_POST['documents'] ?? [], $_FILES['document_files'] ?? []);
     if ($documentRows === []) {
         respond(['error' => 'At least one supporting document (e.g. feasibility study, site assessment, budget justification) is required.'], 422);
+    }
+    if (count($documentRows) > PROJECT_DOC_ROW_LIMIT) {
+        respond(['error' => 'A maximum of ' . PROJECT_DOC_ROW_LIMIT . ' supporting documents is allowed per project.'], 422);
     }
     foreach ($documentRows as $i => $row) {
         if ($row['error'] !== null) {
@@ -838,9 +885,7 @@ if ($method === 'PUT') {
 
 // ── DELETE ─────────────────────────────────────────────────
 if ($method === 'DELETE') {
-    if (!$id) respond(['error' => 'ID required'], 400);
-    $db->prepare("DELETE FROM projects WHERE id = ?")->execute([$id]);
-    respond(['success' => true]);
+    respond(['error' => 'Direct project deletion is disabled. Submit a deletion request (action=request_deletion) for HOPE review instead.'], 410);
 }
 
 respond(['error' => 'Method not allowed'], 405);
