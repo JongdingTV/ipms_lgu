@@ -119,6 +119,50 @@ function projectWorkflowEnsureProjectStatusSchema(PDO $db): void
     }
 }
 
+// The feedback table's category ENUM widening, infrastructure_type column,
+// and district/barangay/latitude/longitude columns were all added directly
+// on the dev database (when CIMMS integration and the QC map picker were
+// built) and only ever captured in database/migrations/feedback_schema_
+// catchup.sql — a hand-run .sql file nobody actually ran against the live
+// database. A fresh/production database never gets any of it, so every
+// query touching these (submit-feedback.php, my-feedback.php, citizen/api/
+// dashboard.php) fatals with an unknown-column or truncated-enum SQL error
+// instead of returning JSON. Self-healing this closes that gap for good,
+// consistent with how every other schema drift in this app is handled.
+function feedbackEnsureSchema(PDO $db): void
+{
+    try {
+        $stmt = $db->query("
+            SELECT COLUMN_TYPE FROM INFORMATION_SCHEMA.COLUMNS
+            WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'feedback' AND COLUMN_NAME = 'category'
+        ");
+        $columnType = (string) $stmt->fetchColumn();
+        if (strpos($columnType, "'road_damage'") === false) {
+            $db->exec("ALTER TABLE feedback MODIFY COLUMN category ENUM('complaint','road_damage','drainage_flooding','streetlight','sidewalk_accessibility','safety_hazard','project_delay','suggestion','inquiry','commendation') DEFAULT 'complaint'");
+        }
+
+        $db->exec("ALTER TABLE feedback ADD COLUMN IF NOT EXISTS infrastructure_type VARCHAR(100) NULL AFTER category");
+        $db->exec("ALTER TABLE feedback ADD COLUMN IF NOT EXISTS district VARCHAR(20) NULL AFTER contact_email");
+        $db->exec("ALTER TABLE feedback ADD COLUMN IF NOT EXISTS barangay VARCHAR(100) NULL AFTER district");
+        $db->exec("ALTER TABLE feedback ADD COLUMN IF NOT EXISTS latitude DECIMAL(10,7) NULL AFTER barangay");
+        $db->exec("ALTER TABLE feedback ADD COLUMN IF NOT EXISTS longitude DECIMAL(10,7) NULL AFTER latitude");
+        $db->exec("ALTER TABLE feedback ADD INDEX IF NOT EXISTS idx_feedback_concern_type (concern_type)");
+        $db->exec("ALTER TABLE feedback ADD INDEX IF NOT EXISTS idx_feedback_cimm_sync (cimm_sync_status)");
+
+        $db->exec("
+            CREATE TABLE IF NOT EXISTS feedback_photos (
+                id INT AUTO_INCREMENT PRIMARY KEY,
+                feedback_id INT NOT NULL,
+                photo_path VARCHAR(255) NOT NULL,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                INDEX idx_feedback_photos_feedback (feedback_id),
+                CONSTRAINT fk_feedback_photos_feedback FOREIGN KEY (feedback_id) REFERENCES feedback(id) ON DELETE CASCADE
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+        ");
+    } catch (Throwable $e) {
+    }
+}
+
 function projectCategoryEnumSql(): string
 {
     return "ENUM('Roads and Bridges','Drainage and Flood Control','Water Supply','Public Buildings and Facilities','Street Lighting','Parks and Recreation','Other')";

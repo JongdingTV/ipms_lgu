@@ -3,6 +3,7 @@ require_once __DIR__ . '/../../auth/session.php';
 require_once __DIR__ . '/../includes/qc-locations.php';
 require_once __DIR__ . '/../includes/feedback-categories.php';
 require_once __DIR__ . '/../../includes/CimmClient.php';
+require_once __DIR__ . '/../../includes/workflow.php';
 
 header('Content-Type: application/json');
 
@@ -14,6 +15,7 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
 
 $user = requireLogin(['citizen']);
 $pdo = getDB();
+feedbackEnsureSchema($pdo);
 
 const FEEDBACK_MAX_PHOTOS = 4; // matches the CIMMS request form's evidence limit
 const FEEDBACK_MAX_PHOTO_BYTES = 3 * 1024 * 1024; // 3MB, must match the client-side limit
