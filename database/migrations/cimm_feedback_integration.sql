@@ -1,4 +1,4 @@
-USE ipms_infra;
+USE lgu_infrastructure;
 
 ALTER TABLE feedback
   ADD COLUMN concern_type ENUM('project','maintenance') NOT NULL DEFAULT 'project'
