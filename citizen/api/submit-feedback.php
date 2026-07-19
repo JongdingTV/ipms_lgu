@@ -264,16 +264,33 @@ try {
     // outage never rolls back the citizen's IPMS submission.
     if ($concernType === 'maintenance') {
         if (CimmClient::isEnabled()) {
+            // CIMMS' own request form only offers 6 fixed infrastructure
+            // types (see ipms-requests.php's $allowedInfra) — it has no
+            // "Other" option and rejects anything outside that enum with a
+            // 422. Our replica form adds an "Other" free-text option for
+            // IPMS's own records, so only forward the value when it's one
+            // CIMMS actually recognizes; otherwise let CimmClient derive a
+            // safe fallback from the category and keep the citizen's exact
+            // wording in the issue text instead of silently losing it.
+            $cimmInfrastructure = in_array($infrastructureType, CimmClient::ALLOWED_INFRASTRUCTURE, true)
+                ? $infrastructureType
+                : '';
+            $cimmMessage = $message;
+            if ($cimmInfrastructure === '' && $infrastructureType !== '') {
+                $cimmMessage = '[' . $infrastructureType . '] ' . $message;
+            }
+
             $result = CimmClient::submitRequest([
                 'feedback_id' => $feedbackId,
                 'category' => $category,
                 'priority' => $priority,
-                'message' => $message,
+                'message' => $cimmMessage,
                 'district' => $district,
                 'barangay' => $barangay,
-                // The replica form already collects the exact CIMMS values —
-                // pass them through instead of re-deriving from category.
-                'infrastructure' => $infrastructureType,
+                // Pass through only when it matches CIMMS' closed enum;
+                // otherwise leave it blank so CimmClient falls back to
+                // mapInfrastructure($category).
+                'infrastructure' => $cimmInfrastructure,
                 'location' => $maintenanceLocation,
                 'latitude' => $latitude,
                 'longitude' => $longitude,
