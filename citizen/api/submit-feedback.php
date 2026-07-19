@@ -15,7 +15,7 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
 $user = requireLogin(['citizen']);
 $pdo = getDB();
 
-const FEEDBACK_MAX_PHOTOS = 3;
+const FEEDBACK_MAX_PHOTOS = 4; // matches the CIMMS request form's evidence limit
 const FEEDBACK_MAX_PHOTO_BYTES = 3 * 1024 * 1024; // 3MB, must match the client-side limit
 const FEEDBACK_ALLOWED_PHOTO_MIME = [
     'image/jpeg' => 'jpg',
@@ -25,7 +25,6 @@ const FEEDBACK_ALLOWED_PHOTO_MIME = [
 ];
 
 // Get citizen ID + verification status + contact defaults for CIMMS sync
-$stmt = $pdo->prepare("\n    SELECT id, verification_status, first_name, middle_name, last_name, phone, email\n    FROM citizens WHERE user_id = ?\n");
 $stmt = $pdo->prepare("
     SELECT id, verification_status, first_name, middle_name, last_name, phone, email
     FROM citizens WHERE user_id = ?
@@ -69,6 +68,30 @@ $errors = [];
 if (!in_array($concernType, ['project', 'maintenance'], true)) {
     $errors[] = 'Invalid concern type';
 }
+
+// Maintenance reports mirror the CIMMS request form: the affected
+// infrastructure is required ("specify" text wins over the dropdown).
+$infrastructureType = null;
+$maintenanceLocation = '';
+if ($concernType === 'maintenance') {
+    $infraOther = trim($_POST['infrastructure_other'] ?? '');
+    $infrastructureType = $infraOther !== '' ? $infraOther : trim($_POST['infrastructure'] ?? '');
+    if ($infrastructureType === '') {
+        $errors[] = 'Please select the affected infrastructure type';
+    } elseif (mb_strlen($infrastructureType) > 100) {
+        $errors[] = 'Infrastructure type must be 100 characters or fewer';
+    }
+
+    // The CIMMS form uses a single free-text location instead of the IPMS
+    // district/barangay pair. It travels in the existing barangay column;
+    // district stays NULL for maintenance reports.
+    $maintenanceLocation = trim($_POST['location'] ?? '');
+    if ($maintenanceLocation === '') {
+        $errors[] = 'Location is required';
+    }
+    $district = '';
+    $barangay = mb_substr($maintenanceLocation, 0, 100);
+}
 if (empty($category) || !array_key_exists($category, feedbackCategories())) {
     $errors[] = 'Invalid category';
 }
@@ -78,11 +101,13 @@ if (empty($priority) || !in_array($priority, ['low', 'medium', 'high', 'urgent']
 if (empty($message) || strlen($message) < 10) {
     $errors[] = 'Message must be at least 10 characters';
 }
-if ($district === '' || $barangay === '') {
-    $errors[] = 'Please select your district and barangay';
-} elseif (!qcIsValidLocation($district, $barangay)) {
-    // Rejects mismatched pairs (e.g. a D1 barangay submitted with D3) and unknown names.
-    $errors[] = 'The selected barangay does not belong to the selected district';
+if ($concernType !== 'maintenance') {
+    if ($district === '' || $barangay === '') {
+        $errors[] = 'Please select your district and barangay';
+    } elseif (!qcIsValidLocation($district, $barangay)) {
+        // Rejects mismatched pairs (e.g. a D1 barangay submitted with D3) and unknown names.
+        $errors[] = 'The selected barangay does not belong to the selected district';
+    }
 }
 
 // Optional exact pin: both coordinates or neither, and roughly within Quezon City.
@@ -109,7 +134,7 @@ if ($contactEmail !== '' && !filter_var($contactEmail, FILTER_VALIDATE_EMAIL)) {
 $resolvedPhone = preg_replace('/\D+/', '', $contactPhone !== '' ? $contactPhone : (string) ($citizen['phone'] ?? ''));
 if ($concernType === 'maintenance') {
     if ($resolvedPhone === '' || !preg_match('/^09\d{9}$/', $resolvedPhone)) {
-        $errors[] = 'A valid Philippine mobile number (09XXXXXXXXX) is required for maintenance reports forwarded to CIMMS';
+        $errors[] = 'Contact number must be 11 digits (09XX-XXX-XXXX) and start with 09';
     }
 }
 
@@ -123,7 +148,7 @@ $resolvedName = $isAnonymous
     : ($contactName !== '' ? $contactName : ($citizenFullName !== '' ? $citizenFullName : null));
 $resolvedEmail = $contactEmail !== '' ? $contactEmail : (string) ($citizen['email'] ?? '');
 
-// Validate proof photos (optional, up to 3, 3MB each, real images only)
+// Validate proof photos (optional, 3MB each, real images only)
 $photoFiles = [];
 if (!empty($_FILES['photos']) && is_array($_FILES['photos']['name'])) {
     $count = count($_FILES['photos']['name']);
@@ -187,15 +212,13 @@ try {
     $cimmStatus = $concernType === 'maintenance' ? 'pending' : 'none';
     $citizenNameForRow = $isAnonymous ? null : $resolvedName;
 
-    $stmt = $pdo->prepare("\n        INSERT INTO feedback (\n            project_id, citizen_id, citizen_name, message, category, concern_type,\n            anonymous, contact_name, contact_phone, contact_email,\n            cimm_sync_status, priority, district, barangay, latitude, longitude, status\n        ) VALUES (\n            NULL, ?, ?, ?, ?, ?,\n            ?, ?, ?, ?,\n            ?, ?, ?, ?, ?, ?, 'open'\n        )\n    ");
-
     $stmt = $pdo->prepare("
         INSERT INTO feedback (
-            project_id, citizen_id, citizen_name, message, category, concern_type,
+            project_id, citizen_id, citizen_name, message, category, infrastructure_type, concern_type,
             anonymous, contact_name, contact_phone, contact_email,
             cimm_sync_status, priority, district, barangay, latitude, longitude, status
         ) VALUES (
-            NULL, ?, ?, ?, ?, ?,
+            NULL, ?, ?, ?, ?, ?, ?,
             ?, ?, ?, ?,
             ?, ?, ?, ?, ?, ?, 'open'
         )
@@ -205,6 +228,7 @@ try {
         $citizenNameForRow,
         $message,
         $category,
+        $infrastructureType,
         $concernType,
         $isAnonymous ? 1 : 0,
         $contactName !== '' ? $contactName : null,
@@ -212,8 +236,8 @@ try {
         $resolvedEmail !== '' ? $resolvedEmail : null,
         $cimmStatus,
         $priority,
-        $district,
-        $barangay,
+        $district ?: null,
+        $barangay ?: null,
         $latitude,
         $longitude,
     ]);
@@ -226,7 +250,7 @@ try {
             $fileName = 'feedback_' . $feedbackId . '_' . time() . '_' . bin2hex(random_bytes(6)) . '.' . $photo['ext'];
             $filePath = $uploadDir . $fileName;
             if (!move_uploaded_file($photo['tmp'], $filePath)) {
-                throw new RuntimeException('Failed to save feedback photo #' . ($i + 1));
+                throw new RuntimeException(sprintf('Failed to save feedback photo #%d', $i + 1));
             }
             $savedPaths[] = $filePath;
             $absolutePhotoPaths[] = $filePath;
@@ -240,13 +264,34 @@ try {
     // outage never rolls back the citizen's IPMS submission.
     if ($concernType === 'maintenance') {
         if (CimmClient::isEnabled()) {
+            // CIMMS' own request form only offers 6 fixed infrastructure
+            // types (see ipms-requests.php's $allowedInfra) — it has no
+            // "Other" option and rejects anything outside that enum with a
+            // 422. Our replica form adds an "Other" free-text option for
+            // IPMS's own records, so only forward the value when it's one
+            // CIMMS actually recognizes; otherwise let CimmClient derive a
+            // safe fallback from the category and keep the citizen's exact
+            // wording in the issue text instead of silently losing it.
+            $cimmInfrastructure = in_array($infrastructureType, CimmClient::ALLOWED_INFRASTRUCTURE, true)
+                ? $infrastructureType
+                : '';
+            $cimmMessage = $message;
+            if ($cimmInfrastructure === '' && $infrastructureType !== '') {
+                $cimmMessage = '[' . $infrastructureType . '] ' . $message;
+            }
+
             $result = CimmClient::submitRequest([
                 'feedback_id' => $feedbackId,
                 'category' => $category,
                 'priority' => $priority,
-                'message' => $message,
+                'message' => $cimmMessage,
                 'district' => $district,
                 'barangay' => $barangay,
+                // Pass through only when it matches CIMMS' closed enum;
+                // otherwise leave it blank so CimmClient falls back to
+                // mapInfrastructure($category).
+                'infrastructure' => $cimmInfrastructure,
+                'location' => $maintenanceLocation,
                 'latitude' => $latitude,
                 'longitude' => $longitude,
                 'name' => $resolvedName,
@@ -262,7 +307,6 @@ try {
                 'message' => $result['message'],
             ];
 
-            $upd = $pdo->prepare("\n                UPDATE feedback\n                SET cimm_sync_status = ?,\n                    cimm_request_id = ?,\n                    cimm_reference = ?,\n                    cimm_synced_at = CASE WHEN ? = 'synced' THEN NOW() ELSE NULL END,\n                    cimm_last_error = ?\n                WHERE id = ?\n            ");
             $upd = $pdo->prepare("
                 UPDATE feedback
                 SET cimm_sync_status = ?,
@@ -282,13 +326,11 @@ try {
             ]);
         } else {
             $cimmSync = [
-                'status' => 'failed',
                 'status' => 'pending',
                 'request_id' => null,
                 'reference' => null,
                 'message' => 'CIMMS integration is not configured on this server',
             ];
-            $upd = $pdo->prepare("\n                UPDATE feedback\n                SET cimm_sync_status = 'failed', cimm_last_error = ?\n                WHERE id = ?\n            ");
             $upd = $pdo->prepare("
                 UPDATE feedback
                 SET cimm_sync_status = 'pending', cimm_last_error = ?
@@ -322,4 +364,3 @@ try {
     http_response_code(500);
     echo json_encode(['success' => false, 'message' => 'Error submitting feedback']);
 }
-
