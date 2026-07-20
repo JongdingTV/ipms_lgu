@@ -159,7 +159,8 @@ $resolvedName = $isAnonymous
     : ($contactName !== '' ? $contactName : ($citizenFullName !== '' ? $citizenFullName : null));
 $resolvedEmail = $contactEmail !== '' ? $contactEmail : (string) ($citizen['email'] ?? '');
 
-// Validate proof photos (optional, 3MB each, real images only)
+// Proof photos: required for maintenance reports (CIMMS needs evidence to
+// act on), optional for regular project feedback — 3MB each, real images only.
 $photoFiles = [];
 if (!empty($_FILES['photos']) && is_array($_FILES['photos']['name'])) {
     $count = count($_FILES['photos']['name']);
@@ -196,6 +197,9 @@ if (!empty($_FILES['photos']) && is_array($_FILES['photos']['name'])) {
 
         $photoFiles[] = ['tmp' => $tmp, 'ext' => FEEDBACK_ALLOWED_PHOTO_MIME[$imageInfo['mime']]];
     }
+}
+if ($concernType === 'maintenance' && $photoFiles === []) {
+    $errors[] = 'Please attach at least one photo as evidence.';
 }
 
 if (!empty($errors)) {

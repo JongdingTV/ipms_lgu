@@ -2318,15 +2318,10 @@ function setupCimmsMaintenanceForm() {
             return false;
         }
 
-        // Photos stay optional (CIMMS accepts reports without evidence), but a
-        // citizen who forgot to attach one should get a chance to go back and
-        // add it before the request is actually sent, rather than it just
-        // going out silently with no evidence.
-        const alertDesc = document.getElementById('cimmsAlertDesc');
-        if (alertDesc) {
-            alertDesc.textContent = cimmsSelectedFiles.length === 0
-                ? "You haven't attached any evidence photos. Photos help our team verify and act on your report faster. You can still submit without one, or cancel to add a photo first."
-                : 'Are you sure you want to submit this maintenance request?';
+        if (cimmsSelectedFiles.length === 0) {
+            cimmsNotify('error', 'Please attach at least one photo as evidence.');
+            dropzone?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            return false;
         }
 
         if (backdrop) {
