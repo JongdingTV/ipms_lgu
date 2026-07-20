@@ -708,7 +708,7 @@ $statusChip = [
             <span class="cimms-icon">✅</span>
           </div>
           <div class="cimms-alert-title">Confirm Submission</div>
-          <div class="cimms-alert-desc">Are you sure you want to submit this maintenance request?</div>
+          <div class="cimms-alert-desc" id="cimmsAlertDesc">Are you sure you want to submit this maintenance request?</div>
           <div class="cimms-alert-btns">
             <button class="cimms-alert-btn cancel" type="button" id="cimmsAlertCancel">Cancel</button>
             <button class="cimms-alert-btn confirm" type="button" id="cimmsAlertConfirm">Submit</button>
