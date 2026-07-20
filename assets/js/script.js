@@ -24,6 +24,7 @@ const API = {
   users:       window.BASE_PATH + 'api/users.php',
   workflow:    window.BASE_PATH + 'api/workflow.php',
   staffAccounts: window.BASE_PATH + 'superadmin/api/accounts.php',
+  publicFacilities: window.BASE_PATH + 'api/public-facilities.php',
 };
 
 const CSRF_HEADERS = window.CSRF_TOKEN ? { 'X-CSRF-Token': window.CSRF_TOKEN } : {};
@@ -239,6 +240,7 @@ function navigate(page) {
     'staff-requests': loadStaffRequestsPage,
     'completed-projects': () => loadStatusFilteredProjectsPage('page-completed-projects', 'Completed Projects', 'turnover'),
     'cancelled-projects': () => loadStatusFilteredProjectsPage('page-cancelled-projects', 'Cancelled Projects', 'cancelled'),
+    'public-facilities-integration': loadPublicFacilitiesPage,
   };
   if (loaders[page]) loaders[page]();
 }
@@ -1534,6 +1536,307 @@ function renderStatusFilteredTable(containerId, rows) {
 }
 
 /* ============================================================
+   PUBLIC FACILITIES INTEGRATION — read-only, Barangay Culiat only.
+   Not a core IPMS module: this is a filtered lens over IPMS's own projects,
+   standing in for what would be synchronized to the separate "Public
+   Facilities Management System" capstone project. Everything here is
+   GET-only against api/public-facilities.php, which has no write actions
+   at all — there is nothing on this page that can create, edit, delete,
+   approve, assign, or otherwise mutate a project.
+   ============================================================ */
+const PUBLIC_FACILITIES_VIEWS = [
+  { key: 'planned', label: 'Planned Projects', badge: 'pf-badge-planned', badgeLabel: 'PLANNED' },
+  { key: 'ongoing', label: 'Ongoing Projects', badge: 'pf-badge-ongoing', badgeLabel: 'ONGOING' },
+  { key: 'completed', label: 'Completed Projects', badge: 'pf-badge-completed', badgeLabel: 'COMPLETED' },
+  { key: 'cancelled', label: 'Cancelled Projects', badge: 'pf-badge-cancelled', badgeLabel: 'CANCELLED' },
+];
+let publicFacilitiesState = { view: 'planned', page: 1, search: '', engineer: '', contractor: '', year: '', min_budget: '', max_budget: '' };
+
+function publicFacilitiesViewBadge(viewKey) {
+  const v = PUBLIC_FACILITIES_VIEWS.find(x => x.key === viewKey);
+  return v ? `<span class="pf-badge ${v.badge}">${v.badgeLabel}</span>` : '';
+}
+
+function publicFacilitiesSyncBadge() {
+  return `<span class="pf-sync-badge" title="This is a read-only view of IPMS's own project data.">Synced from IPMS</span>`;
+}
+
+async function loadPublicFacilitiesPage() {
+  const container = document.getElementById('page-public-facilities-integration');
+  if (!container) return;
+
+  container.innerHTML = `
+    <div class="page-header">
+      <div>
+        <h2 class="page-title">Public Facilities Integration</h2>
+        <p style="font-size:.8rem;color:var(--text-muted);margin-top:4px;max-width:640px;">
+          Read-only view for the Public Facilities Management System capstone integration — Barangay Culiat only.
+          IPMS is the source of truth; nothing here can create, edit, delete, approve, assign, or otherwise change a project.
+        </p>
+      </div>
+      ${publicFacilitiesSyncBadge()}
+    </div>
+
+    <div class="pf-tabs" id="pfTabs">
+      ${PUBLIC_FACILITIES_VIEWS.map(v => `
+        <button type="button" class="pf-tab${v.key === publicFacilitiesState.view ? ' active' : ''}" data-view="${v.key}">${v.label}</button>
+      `).join('')}
+    </div>
+
+    <div class="filter-bar" style="flex-wrap:wrap;">
+      <input class="filter-input" id="pfSearch" placeholder="Search project name, ID, or category..." value="${escapeHtml(publicFacilitiesState.search)}">
+      <input class="filter-input" id="pfEngineer" placeholder="Engineer..." value="${escapeHtml(publicFacilitiesState.engineer)}" style="max-width:160px;">
+      <input class="filter-input" id="pfContractor" placeholder="Contractor..." value="${escapeHtml(publicFacilitiesState.contractor)}" style="max-width:160px;">
+      <input class="filter-input" id="pfYear" placeholder="Year..." value="${escapeHtml(publicFacilitiesState.year)}" style="max-width:100px;">
+      <input class="filter-input" id="pfMinBudget" type="number" placeholder="Min budget" value="${escapeHtml(publicFacilitiesState.min_budget)}" style="max-width:130px;">
+      <input class="filter-input" id="pfMaxBudget" type="number" placeholder="Max budget" value="${escapeHtml(publicFacilitiesState.max_budget)}" style="max-width:130px;">
+      <input class="filter-input" disabled value="Barangay: Culiat" title="Locked — Future Ready: additional barangays can be enabled later" style="max-width:160px;opacity:.7;">
+    </div>
+
+    <div id="pfTable" class="table-card"></div>
+    <div id="pfPager" class="pager"></div>
+  `;
+
+  document.getElementById('pfTabs').addEventListener('click', e => {
+    const btn = e.target.closest('.pf-tab');
+    if (!btn) return;
+    publicFacilitiesState.view = btn.dataset.view;
+    publicFacilitiesState.page = 1;
+    document.querySelectorAll('#pfTabs .pf-tab').forEach(t => t.classList.toggle('active', t === btn));
+    fetchPublicFacilities();
+  });
+
+  const bindFilter = (id, key, transform = v => v) => {
+    document.getElementById(id)?.addEventListener('input', e => {
+      publicFacilitiesState[key] = transform(e.target.value);
+      publicFacilitiesState.page = 1;
+      fetchPublicFacilities();
+    });
+  };
+  bindFilter('pfSearch', 'search');
+  bindFilter('pfEngineer', 'engineer');
+  bindFilter('pfContractor', 'contractor');
+  bindFilter('pfYear', 'year');
+  bindFilter('pfMinBudget', 'min_budget');
+  bindFilter('pfMaxBudget', 'max_budget');
+
+  await fetchPublicFacilities();
+}
+
+async function fetchPublicFacilities() {
+  const wrap = document.getElementById('pfTable');
+  if (!wrap) return;
+  setLoading(wrap, true);
+  const s = publicFacilitiesState;
+
+  try {
+    const result = await get(API.publicFacilities, {
+      action: 'list', view: s.view, page: s.page, search: s.search,
+      engineer: s.engineer, contractor: s.contractor, year: s.year,
+      min_budget: s.min_budget, max_budget: s.max_budget,
+    });
+    renderPublicFacilitiesTable(s.view, result.data || []);
+    renderPager('pfPager', result.page, result.last_page, p => {
+      publicFacilitiesState.page = p;
+      fetchPublicFacilities();
+    });
+  } catch {
+    wrap.innerHTML = '<p class="empty-state">Failed to load Public Facilities Integration data.</p>';
+  } finally {
+    setLoading(wrap, false);
+  }
+}
+
+function renderPublicFacilitiesTable(view, rows) {
+  const wrap = document.getElementById('pfTable');
+  if (!wrap) return;
+  if (!rows.length) {
+    wrap.innerHTML = '<p class="empty-state">No Barangay Culiat projects found for this view.</p>';
+    return;
+  }
+
+  const columnsByView = {
+    planned: {
+      head: ['Project', 'Category', 'District / Barangay', 'Budget', 'Start Date', 'Expected Completion', 'Status', ''],
+      row: p => `
+        <td><span class="proj-id">${p.project_code}</span><br><strong>${escapeHtml(p.name)}</strong></td>
+        <td>${escapeHtml(p.category || '-')}</td>
+        <td>${escapeHtml(p.barangay)}</td>
+        <td>${formatMoney(p.budget)}</td>
+        <td>${formatDate(p.start_date)}</td>
+        <td>${formatDate(p.end_date)}</td>
+        <td>${statusBadge(p.status)}</td>
+      `,
+    },
+    ongoing: {
+      head: ['Project', 'Progress', 'Engineer', 'Contractor', 'Budget Utilization', 'Inspection Status', 'Expected Completion', ''],
+      row: p => {
+        const util = p.budget > 0 ? Math.round((p.total_spent / p.budget) * 100) : 0;
+        return `
+          <td><span class="proj-id">${p.project_code}</span><br><strong>${escapeHtml(p.name)}</strong></td>
+          <td>${p.progress}%</td>
+          <td>${escapeHtml(p.engineer_name || 'Unassigned')}</td>
+          <td>${escapeHtml(p.contractor_name || 'Unassigned')}</td>
+          <td>${util}%</td>
+          <td>${p.inspection_status ? formatStatus(p.inspection_status.recommendation) : 'No inspection yet'}</td>
+          <td>${formatDate(p.end_date)}</td>
+        `;
+      },
+    },
+    completed: {
+      head: ['Project', 'Completion Date', 'Final Budget', 'Duration', 'Status', ''],
+      row: p => `
+        <td><span class="proj-id">${p.project_code}</span><br><strong>${escapeHtml(p.name)}</strong></td>
+        <td>${formatDate(p.end_date)}</td>
+        <td>${formatMoney(p.budget)}</td>
+        <td>${formatDate(p.start_date)} — ${formatDate(p.end_date)}</td>
+        <td>${statusBadge(p.status)}</td>
+      `,
+    },
+    cancelled: {
+      head: ['Project', 'Reason', 'Cancelled Date', 'Previous Status', ''],
+      row: p => `
+        <td><span class="proj-id">${p.project_code}</span><br><strong>${escapeHtml(p.name)}</strong></td>
+        <td>${escapeHtml(p.rejection_reason || '-')}</td>
+        <td>${formatDate(p.cancelled_date)}</td>
+        <td>${p.previous_status ? formatStatus(p.previous_status) : '-'}</td>
+      `,
+    },
+  };
+  const cfg = columnsByView[view];
+
+  wrap.innerHTML = `
+    <table class="data-table">
+      <thead><tr>${cfg.head.map(h => `<th>${h}</th>`).join('')}</tr></thead>
+      <tbody>
+        ${rows.map(p => `
+          <tr>
+            ${cfg.row(p)}
+            <td><button class="btn-secondary btn-compact" onclick="openPublicFacilitiesDetailModal(${p.id})">View Details</button></td>
+          </tr>
+        `).join('')}
+      </tbody>
+    </table>
+  `;
+}
+
+async function openPublicFacilitiesDetailModal(id) {
+  try {
+    const p = await get(API.publicFacilities, { action: 'detail', id });
+
+    const photos = p.photos || [];
+    const docs = p.documents || [];
+    const fb = p.feedback_summary || {};
+
+    openModal(`${escapeHtml(p.name)} ${publicFacilitiesSyncBadge()}`, `
+      <div style="display:flex;flex-direction:column;gap:14px;">
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">
+          <div><p class="modal-label">PROJECT ID</p><p class="modal-val">${p.project_code}</p></div>
+          <div><p class="modal-label">STATUS</p><p class="modal-val">${statusBadge(p.status)}</p></div>
+          <div><p class="modal-label">CATEGORY</p><p class="modal-val">${escapeHtml(p.category || '-')}</p></div>
+          <div><p class="modal-label">BARANGAY</p><p class="modal-val">${escapeHtml(p.barangay)}</p></div>
+          <div><p class="modal-label">LOCATION</p><p class="modal-val">${escapeHtml(p.location || '-')}</p></div>
+          <div><p class="modal-label">BUDGET</p><p class="modal-val">${formatMoney(p.budget)}</p></div>
+          <div><p class="modal-label">START DATE</p><p class="modal-val">${formatDate(p.start_date)}</p></div>
+          <div><p class="modal-label">EXPECTED COMPLETION</p><p class="modal-val">${formatDate(p.end_date)}</p></div>
+          <div><p class="modal-label">PROGRESS</p><p class="modal-val">${p.progress}%</p></div>
+          <div><p class="modal-label">BUDGET UTILIZATION</p><p class="modal-val">${p.budget > 0 ? Math.round((p.total_spent / p.budget) * 100) : 0}%</p></div>
+        </div>
+
+        <div><p class="modal-label">DESCRIPTION</p><p class="modal-val" style="font-weight:400;">${escapeHtml(p.description || 'No description on file.')}</p></div>
+
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">
+          <div><p class="modal-label">ENGINEER ASSIGNED</p><p class="modal-val">${p.engineer ? escapeHtml(p.engineer.full_name) : 'Unassigned'}</p></div>
+          <div><p class="modal-label">CONTRACTOR</p><p class="modal-val">${escapeHtml(p.contractor_name || 'Unassigned')}${p.contractor_name ? ` (score ${p.performance_score}/100)` : ''}</p></div>
+        </div>
+
+        ${p.status === 'cancelled' ? `
+          <div class="pf-cancel-box">
+            <p class="modal-label">CANCELLATION</p>
+            <p class="modal-val" style="font-weight:400;">
+              Reason: ${escapeHtml(p.rejection_reason || '-')}<br>
+              Cancelled: ${formatDate(p.approved_at)}${p.approved_by_name ? ' by ' + escapeHtml(p.approved_by_name) : ''}<br>
+              ${p.previous_status ? 'Previous status: ' + formatStatus(p.previous_status) : ''}
+            </p>
+          </div>
+        ` : ''}
+
+        <div>
+          <p class="modal-label">PROJECT TIMELINE / MILESTONES</p>
+          <div style="display:flex;flex-direction:column;gap:4px;margin-top:6px;">
+            ${(p.milestones || []).length ? p.milestones.map(m => `
+              <div style="display:flex;align-items:center;gap:8px;font-size:.8rem;">
+                <span style="color:${m.completed ? '#22c55e' : '#94a3b8'};">${m.completed ? '✓' : '○'}</span>
+                <span>${escapeHtml(m.title)}</span>
+                <span style="margin-left:auto;color:#94a3b8;">${formatDate(m.due_date)}</span>
+              </div>
+            `).join('') : '<p class="empty-state">No milestones on file.</p>'}
+          </div>
+        </div>
+
+        <div>
+          <p class="modal-label">INSPECTION HISTORY</p>
+          <div style="display:flex;flex-direction:column;gap:4px;margin-top:6px;">
+            ${(p.inspection_history || []).length ? p.inspection_history.map(i => `
+              <div style="font-size:.8rem;display:flex;justify-content:space-between;gap:8px;">
+                <span>${formatDate(i.inspection_date)} — ${formatStatus(i.recommendation)} (${i.actual_progress_percent}%)</span>
+              </div>
+            `).join('') : '<p class="empty-state">No inspections on file.</p>'}
+          </div>
+        </div>
+
+        <div>
+          <p class="modal-label">PROGRESS HISTORY</p>
+          <div style="display:flex;flex-direction:column;gap:4px;margin-top:6px;">
+            ${(p.progress_history || []).length ? p.progress_history.map(r => `
+              <div style="font-size:.8rem;">${formatDate(r.report_date)} — ${r.progress_percent}%: ${escapeHtml(r.accomplishments || '')}</div>
+            `).join('') : '<p class="empty-state">No progress reports on file.</p>'}
+          </div>
+        </div>
+
+        <div>
+          <p class="modal-label">SUPPORTING DOCUMENTS</p>
+          <div style="display:flex;flex-direction:column;gap:4px;margin-top:6px;">
+            ${docs.length ? docs.map(d => `
+              <div style="display:flex;align-items:center;gap:8px;font-size:.8rem;">
+                <a href="${window.BASE_PATH || ''}${d.file_path}" target="_blank" rel="noopener">${escapeHtml(d.title)}</a>
+                <span style="color:#94a3b8;">${escapeHtml(d.document_type)}</span>
+              </div>
+            `).join('') : '<p class="empty-state">No documents attached.</p>'}
+          </div>
+        </div>
+
+        <div>
+          <p class="modal-label">PROJECT PHOTOS</p>
+          ${photos.length ? `
+            <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(90px,1fr));gap:6px;margin-top:6px;">
+              ${photos.map(ph => `<a href="${window.BASE_PATH || ''}${ph.file_path}" target="_blank" rel="noopener"><img src="${window.BASE_PATH || ''}${ph.file_path}" alt="${escapeHtml(ph.title || '')}" style="width:100%;height:70px;object-fit:cover;border-radius:6px;"></a>`).join('')}
+            </div>
+          ` : '<p class="empty-state">No photos on file.</p>'}
+        </div>
+
+        <div>
+          <p class="modal-label">GIS LOCATION</p>
+          <p class="modal-val" style="font-weight:400;">${p.latitude && p.longitude ? `${p.latitude}, ${p.longitude}` : 'No pinned location on file.'}</p>
+        </div>
+
+        <div>
+          <p class="modal-label">CITIZEN FEEDBACK SUMMARY</p>
+          <p class="modal-val" style="font-weight:400;">${fb.total > 0 ? `${fb.total} total (${fb.open_count || 0} open, ${fb.resolved_count || 0} resolved)` : 'No citizen feedback on file for this project.'}</p>
+        </div>
+
+        <div>
+          <p class="modal-label">LATEST UPDATE</p>
+          <p class="modal-val" style="font-weight:400;">${p.latest_update ? `${p.latest_update.action}${p.latest_update.details ? ' — ' + escapeHtml(p.latest_update.details) : ''} (${formatDate(p.latest_update.created_at)})` : 'No workflow history on file.'}</p>
+        </div>
+      </div>
+    `);
+  } catch {
+    toast('Failed to load project details', 'error');
+  }
+}
+
+/* ============================================================
    CONTRACTOR ASSIGNMENT
    ============================================================ */
 let assignmentState = { page: 1, search: '', contractor_id: '' };
@@ -2811,6 +3114,7 @@ document.addEventListener('DOMContentLoaded', () => {
     <div id="page-staff-requests" class="page-section" style="display:none;"></div>
     <div id="page-completed-projects" class="page-section" style="display:none;"></div>
     <div id="page-cancelled-projects" class="page-section" style="display:none;"></div>
+    <div id="page-public-facilities-integration" class="page-section" style="display:none;"></div>
   `;
 
   // The re-wrap above just replaced every node scroll-reveal.js observed at

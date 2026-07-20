@@ -112,7 +112,16 @@ if ($concernType !== 'maintenance') {
     }
 }
 
-// Optional exact pin: both coordinates or neither, and roughly within Quezon City.
+// Maintenance reports forward straight to CIMMS, which either uses the exact
+// pin we send or has to geocode the free-text location itself — the latter
+// can resolve to a different spot each time the request is viewed, which is
+// exactly the "pin moves around" bug this required pin fixes. Regular
+// project feedback keeps the pin optional, same as before.
+if ($concernType === 'maintenance' && ($latitudeRaw === '' || $longitudeRaw === '')) {
+    $errors[] = 'Please tap the exact spot on the map to pin your location.';
+}
+
+// Both coordinates or neither, and roughly within Quezon City.
 $latitude = null;
 $longitude = null;
 if ($latitudeRaw !== '' || $longitudeRaw !== '') {

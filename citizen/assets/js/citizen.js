@@ -2026,6 +2026,8 @@ function setupCimmsMaintenanceForm() {
     let cimmsMap = null;
     let cimmsMapMarker = null;
     let cimmsPickedAddress = '';
+    let cimmsPickedLat = null;
+    let cimmsPickedLng = null;
     let debounceTimer = null;
 
     function cimmsSetAddress(address) {
@@ -2049,10 +2051,17 @@ function setupCimmsMaintenanceForm() {
         if (!cimmsMap) return;
         if (!cimmsMapMarker) {
             cimmsMapMarker = L.marker(latlng, { draggable: true }).addTo(cimmsMap);
-            cimmsMapMarker.on('dragend', () => cimmsReverseGeocode(cimmsMapMarker.getLatLng()));
+            cimmsMapMarker.on('dragend', () => {
+                const dragged = cimmsMapMarker.getLatLng();
+                cimmsPickedLat = dragged.lat;
+                cimmsPickedLng = dragged.lng;
+                cimmsReverseGeocode(dragged);
+            });
         } else {
             cimmsMapMarker.setLatLng(latlng);
         }
+        cimmsPickedLat = latlng.lat;
+        cimmsPickedLng = latlng.lng;
         if (knownAddress) cimmsSetAddress(knownAddress);
         else cimmsReverseGeocode(latlng);
     }
@@ -2291,6 +2300,16 @@ function setupCimmsMaintenanceForm() {
             openCimmsMap();
             return false;
         }
+        // A typed/suggested address alone isn't enough — CIMMS needs a real
+        // pinned coordinate, or it has to geocode the free-text address
+        // itself on its end, which can resolve to a different spot each time
+        // the request is viewed. Requiring the pin here is what actually
+        // fixes that instability, not just a stricter validation message.
+        if (cimmsPickedLat === null || cimmsPickedLng === null) {
+            cimmsNotify('error', 'Please tap the exact spot on the map to pin your location.');
+            openCimmsMap();
+            return false;
+        }
 
         const val = (phoneInput?.value || '').replace(/\D/g, '');
         if (!/^09\d{9}$/.test(val)) {
@@ -2325,6 +2344,8 @@ function setupCimmsMaintenanceForm() {
         formData.append('infrastructure', infraSelect?.value || '');
         formData.append('infrastructure_other', (infraOther && infraOther.style.display !== 'none') ? infraOther.value.trim() : '');
         formData.append('location', document.getElementById('cimmsLocationInput')?.value.trim() || '');
+        formData.append('latitude', cimmsPickedLat !== null ? String(cimmsPickedLat) : '');
+        formData.append('longitude', cimmsPickedLng !== null ? String(cimmsPickedLng) : '');
         formData.append('contact_name', document.getElementById('cimmsName')?.value.trim() || '');
         formData.append('contact_phone', phoneInput?.value.trim() || '');
         formData.append('contact_email', document.getElementById('cimmsEmail')?.value.trim() || '');

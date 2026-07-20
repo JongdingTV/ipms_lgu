@@ -844,6 +844,35 @@ input.search-pill {
   gap: 16px;
 }
 
+/* ── Public Facilities Integration (read-only, Barangay Culiat) ── */
+.pf-tabs { display: flex; gap: 6px; margin: 4px 0 16px; flex-wrap: wrap; }
+.pf-tab {
+  padding: 8px 16px; border-radius: 999px; border: 1px solid var(--border);
+  background: var(--card-bg); color: var(--text-muted); font-size: .82rem; font-weight: 600;
+  cursor: pointer; transition: background .15s, color .15s, border-color .15s;
+}
+.pf-tab:hover { color: var(--text-primary); }
+.pf-tab.active { background: var(--accent); border-color: var(--accent); color: #fff; }
+.pf-badge { display: inline-block; padding: 2px 10px; border-radius: 999px; font-size: .68rem; font-weight: 700; letter-spacing: .03em; }
+.pf-badge-planned { background: #dbeafe; color: #1d4ed8; }
+.pf-badge-ongoing { background: #dcfce7; color: #15803d; }
+.pf-badge-completed { background: #e2e8f0; color: #475569; }
+.pf-badge-cancelled { background: #fee2e2; color: #b91c1c; }
+.pf-sync-badge {
+  display: inline-flex; align-items: center; gap: 5px; padding: 4px 12px;
+  border-radius: 999px; background: var(--accent-light); color: var(--accent);
+  font-size: .72rem; font-weight: 700; white-space: nowrap; height: fit-content;
+}
+.pf-sync-badge::before { content: ''; width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
+.pf-cancel-box { background: #fee2e2; border: 1px solid #fecaca; border-radius: var(--radius-sm); padding: 12px 14px; }
+.pf-cancel-box .modal-label { color: #b91c1c; }
+:root[data-theme="dark"] .pf-cancel-box { background: rgba(239,68,68,.14); border-color: rgba(239,68,68,.35); }
+:root[data-theme="dark"] .pf-cancel-box .modal-label { color: #f87171; }
+:root[data-theme="dark"] .pf-badge-planned { background: rgba(59,130,246,.18); color: #93c5fd; }
+:root[data-theme="dark"] .pf-badge-ongoing { background: rgba(34,197,94,.18); color: #86efac; }
+:root[data-theme="dark"] .pf-badge-completed { background: rgba(148,163,184,.18); color: #cbd5e1; }
+:root[data-theme="dark"] .pf-badge-cancelled { background: rgba(239,68,68,.18); color: #fca5a5; }
+
 .risk-grid {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
