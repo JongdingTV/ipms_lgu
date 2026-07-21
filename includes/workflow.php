@@ -616,3 +616,53 @@ function projectDeletionEnsureSchema(PDO $db): void
     } catch (Throwable $e) {
     }
 }
+
+// Road Geometry — conditional module on Project Registration, visible only
+// when category = 'Roads and Bridges'. One row per project (UNIQUE on
+// project_id, upserted). This is the data IPMS shares with the separate
+// Urban Planning System capstone project via integrations/urban-planning/
+// road-geometry-feed.php — that system only ever reads this, never writes
+// it; IPMS remains the owner of the project and its geometry.
+function projectRoadGeometryEnsureSchema(PDO $db): void
+{
+    try {
+        $db->exec("
+            CREATE TABLE IF NOT EXISTS project_road_geometry (
+                id INT AUTO_INCREMENT PRIMARY KEY,
+                project_id INT NOT NULL,
+                road_name VARCHAR(200) NOT NULL,
+                road_type VARCHAR(50) NULL,
+                road_status VARCHAR(50) NULL,
+                start_latitude DECIMAL(10,7) NULL,
+                start_longitude DECIMAL(10,7) NULL,
+                start_address VARCHAR(255) NULL,
+                start_barangay VARCHAR(100) NULL,
+                start_district VARCHAR(100) NULL,
+                end_latitude DECIMAL(10,7) NULL,
+                end_longitude DECIMAL(10,7) NULL,
+                end_address VARCHAR(255) NULL,
+                end_barangay VARCHAR(100) NULL,
+                end_district VARCHAR(100) NULL,
+                polyline_coordinates TEXT NULL COMMENT 'JSON array of [lat,lng] pairs',
+                estimated_length_meters DECIMAL(10,2) NULL,
+                num_segments INT NULL,
+                bounding_box TEXT NULL COMMENT 'JSON {min_lat,min_lng,max_lat,max_lng}',
+                barangays_covered TEXT NULL COMMENT 'JSON array of barangay names',
+                districts_covered TEXT NULL COMMENT 'JSON array of district names',
+                road_width DECIMAL(6,2) NULL,
+                num_lanes INT NULL,
+                road_surface VARCHAR(30) NULL,
+                bridge_included TINYINT(1) NOT NULL DEFAULT 0,
+                drainage_included TINYINT(1) NOT NULL DEFAULT 0,
+                bike_lane TINYINT(1) NOT NULL DEFAULT 0,
+                sidewalk TINYINT(1) NOT NULL DEFAULT 0,
+                streetlights TINYINT(1) NOT NULL DEFAULT 0,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+                UNIQUE KEY idx_road_geometry_project (project_id),
+                CONSTRAINT fk_road_geometry_project FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+        ");
+    } catch (Throwable $e) {
+    }
+}

@@ -361,6 +361,18 @@ button { cursor: pointer; font-family: var(--font); }
 .chart-title { font-size: .9rem; font-weight: 700; }
 .chart-legend { display: flex; align-items: center; gap: 14px; font-size: .75rem; color: var(--text-muted); }
 .legend-dot { display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-right: 4px; }
+
+/* ── GIS Map legend: each status gets its own pill so it stays readable
+   against the map/photo backdrop, instead of plain text floating on it ── */
+.gis-legend { display: flex; flex-wrap: wrap; gap: 8px; margin: 14px 0; }
+.gis-legend-item {
+  display: inline-flex; align-items: center; gap: 7px;
+  padding: 6px 14px; border-radius: 999px;
+  background: var(--card-bg); border: 1px solid var(--border); box-shadow: var(--card-shadow);
+  font-size: .8rem; font-weight: 600; color: var(--text-primary); white-space: nowrap;
+}
+.gis-legend-dot { display: inline-block; width: 11px; height: 11px; border-radius: 50%; flex-shrink: 0; box-shadow: 0 0 0 2px rgba(255,255,255,.5); }
+:root[data-theme="dark"] .gis-legend-dot { box-shadow: 0 0 0 2px rgba(0,0,0,.35); }
 .legend-blue  { background: #3b82f6; }
 .legend-green { background: #22c55e; }
 .chart-body { position: relative; }
@@ -722,6 +734,47 @@ input.search-pill {
 .doc-add-btn:disabled { cursor: not-allowed; opacity: .55; border-color: var(--border); background: var(--bg-body); color: var(--text-muted); }
 .doc-add-btn:disabled:hover { background: var(--bg-body); }
 @media (max-width: 640px) { .doc-row { grid-template-columns: 1fr; } }
+
+/* ── Road Geometry (conditional module — Project Category = Roads and Bridges) ── */
+.road-geometry-card {
+  border: 1px solid var(--border); border-radius: var(--radius); background: var(--bg-body);
+  padding: 16px; margin-top: 14px;
+}
+.road-geometry-header { margin-bottom: 12px; }
+.road-geometry-header h3 { font-size: .95rem; margin: 0 0 2px; }
+.road-geometry-header small { color: var(--text-muted); font-size: .75rem; }
+.road-map-toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 10px; position: relative; }
+.road-map-toolbar .filter-input { flex: 1; min-width: 180px; }
+.road-point-count { font-size: .78rem; font-weight: 700; color: var(--text-muted); white-space: nowrap; margin-left: auto; }
+.road-map-suggestions {
+  display: none; position: absolute; top: 100%; left: 0; width: 100%; max-width: 320px; z-index: 20;
+  background: var(--card-bg); border: 1px solid var(--border); border-radius: var(--radius-sm);
+  box-shadow: var(--card-shadow); max-height: 200px; overflow-y: auto; margin-top: 4px;
+}
+.road-map-suggestions div { padding: 8px 12px; font-size: .8rem; cursor: pointer; border-bottom: 1px solid var(--border); }
+.road-map-suggestions div:last-child { border-bottom: none; }
+.road-map-suggestions div:hover { background: var(--bg-sidebar-hover); }
+.road-geometry-readouts {
+  display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; margin-top: 12px;
+}
+.road-geometry-readouts > div {
+  background: var(--card-bg); border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 10px 12px;
+}
+.road-summary-card {
+  margin-top: 12px; padding: 14px; border-radius: var(--radius-sm);
+  background: var(--accent-light); border: 1px solid var(--border);
+}
+.road-summary-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; margin-top: 8px; }
+.road-toggle-grid { display: flex; flex-wrap: wrap; gap: 16px 24px; margin-top: 10px; }
+.road-toggle { font-size: .8rem; }
+@media (max-width: 900px) {
+  .road-geometry-readouts { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .road-summary-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+@media (max-width: 560px) {
+  .road-geometry-readouts { grid-template-columns: 1fr; }
+  .road-summary-grid { grid-template-columns: 1fr; }
+}
 
 /* ── Toggle switch (e.g. Settings' maintenance_mode) ── */
 .form-checkbox-label { display: flex; align-items: center; gap: 10px; font-size: .83rem; font-weight: 600; color: var(--text-primary); cursor: pointer; }

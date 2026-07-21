@@ -238,7 +238,7 @@ function navigate(page) {
     'ai-risk-insights': loadAIRiskInsightsPage,
     'citizen-feedback': () => loadFeedbackPage('page-citizen-feedback', 'Citizen Feedback Review', false),
     'staff-requests': loadStaffRequestsPage,
-    'completed-projects': () => loadStatusFilteredProjectsPage('page-completed-projects', 'Completed Projects', 'turnover'),
+    'completed-projects': () => loadStatusFilteredProjectsPage('page-completed-projects', 'Completed Projects', 'completed,turnover'),
     'cancelled-projects': () => loadStatusFilteredProjectsPage('page-cancelled-projects', 'Cancelled Projects', 'cancelled'),
     'public-facilities-integration': loadPublicFacilitiesPage,
   };
@@ -1056,6 +1056,9 @@ async function showProjectForm(id = null) {
           </div>
         ` : '<input type="hidden" name="status" value="draft" />'}
       </div>
+
+      ${roadGeometrySectionHtml(p)}
+
       <div class="form-group" style="margin-top:8px;">
         <label>Description *</label>
         <textarea name="description" class="form-input" rows="3" required>${p?.description||''}</textarea>
@@ -1075,6 +1078,7 @@ async function showProjectForm(id = null) {
   `);
 
   setupProjectLocationPicker(p);
+  setupRoadGeometryModule(p);
 
   if (!id) {
     wireProjectDocRows(document.getElementById('projectDocRows'), document.getElementById('projectDocAddBtn'));
@@ -1260,8 +1264,526 @@ function updateProjectLocationText() {
   }
 }
 
+/* ============================================================
+   ROAD GEOMETRY — conditional module on Project Registration/Edit, visible
+   only when Project Category = 'Roads and Bridges'. Every other category's
+   form and submission flow is completely untouched by this module.
+   Shared with the Urban Planning System via integrations/urban-planning/
+   road-geometry-feed.php (read-only on their side — IPMS remains the owner
+   of the project and its geometry).
+   ============================================================ */
+const ROAD_TYPES = ['National Road', 'City Road', 'Barangay Road', 'Secondary Road', 'Bridge', 'Intersection'];
+const ROAD_STATUSES = ['Existing Road', 'Road Widening', 'New Road', 'Rehabilitation', 'Bridge Construction'];
+const ROAD_SURFACES = ['Concrete', 'Asphalt', 'Gravel', 'Mixed'];
+
+function roadToggleHtml(id, label, checked) {
+  return `
+    <label class="form-checkbox-label road-toggle">
+      <span class="toggle-switch">
+        <input type="checkbox" id="${id}" ${checked ? 'checked' : ''}>
+        <span class="toggle-slider"></span>
+      </span>
+      ${label}
+    </label>
+  `;
+}
+
+function roadGeometrySectionHtml(p) {
+  const g = p?.road_geometry || null;
+  return `
+    <div class="road-geometry-card" id="roadGeometrySection" style="display:none;">
+      <div class="road-geometry-header">
+        <h3>Road Geometry</h3>
+        <small>Visible only for Roads and Bridges — this data is shared with the Urban Planning System integration.</small>
+      </div>
+      <div class="form-grid">
+        <div class="form-group">
+          <label>Road Name *</label>
+          <input id="roadName" class="form-input" placeholder="e.g. Commonwealth Avenue Extension" value="${escapeHtml(g?.road_name || '')}" />
+        </div>
+        <div class="form-group">
+          <label>Road Type</label>
+          <select id="roadType" class="form-input">
+            <option value="">Select road type</option>
+            ${ROAD_TYPES.map(t => `<option value="${t}" ${g?.road_type === t ? 'selected' : ''}>${t}</option>`).join('')}
+          </select>
+        </div>
+        <div class="form-group">
+          <label>Road Status</label>
+          <select id="roadStatus" class="form-input">
+            <option value="">Select road status</option>
+            ${ROAD_STATUSES.map(s => `<option value="${s}" ${g?.road_status === s ? 'selected' : ''}>${s}</option>`).join('')}
+          </select>
+        </div>
+      </div>
+
+      <div class="road-map-toolbar">
+        <input class="filter-input" id="roadMapSearch" placeholder="Search a location..." autocomplete="off">
+        <div id="roadMapSuggestions" class="road-map-suggestions"></div>
+        <button type="button" class="btn-secondary btn-compact" id="roadMapUndo">Undo Last Point</button>
+        <button type="button" class="btn-secondary btn-compact" id="roadMapClear">Clear Road</button>
+        <span class="road-point-count" id="roadPointCount">0 points</span>
+      </div>
+      <p style="font-size:.75rem;color:var(--text-muted);margin:6px 0;">Click the map to place points along the road, in order from start to end — they connect automatically into one continuous line.</p>
+      <div id="roadGeometryMap" style="height:340px;border-radius:var(--radius);overflow:hidden;border:1px solid var(--border);"></div>
+
+      <div class="road-geometry-readouts">
+        <div><span class="modal-label">START</span><p class="modal-val" id="roadStartReadout">Not set</p></div>
+        <div><span class="modal-label">END</span><p class="modal-val" id="roadEndReadout">Not set</p></div>
+        <div><span class="modal-label">LENGTH</span><p class="modal-val" id="roadLengthReadout">—</p></div>
+        <div><span class="modal-label">SEGMENTS</span><p class="modal-val" id="roadSegmentsReadout">0</p></div>
+      </div>
+
+      <div id="roadGeometrySummary" class="road-summary-card" style="display:none;"></div>
+
+      <p style="font-weight:700;font-size:.85rem;margin:14px 0 8px;">Optional Details</p>
+      <div class="form-grid">
+        <div class="form-group"><label>Road Width (meters)</label><input id="roadWidth" type="number" step="0.1" min="0" class="form-input" value="${g?.road_width ?? ''}" /></div>
+        <div class="form-group"><label>Number of Lanes</label><input id="roadLanes" type="number" min="0" class="form-input" value="${g?.num_lanes ?? ''}" /></div>
+        <div class="form-group">
+          <label>Road Surface</label>
+          <select id="roadSurface" class="form-input">
+            <option value="">Select surface</option>
+            ${ROAD_SURFACES.map(s => `<option value="${s}" ${g?.road_surface === s ? 'selected' : ''}>${s}</option>`).join('')}
+          </select>
+        </div>
+      </div>
+      <div class="road-toggle-grid">
+        ${roadToggleHtml('roadBridgeIncluded', 'Bridge Included', g?.bridge_included == 1)}
+        ${roadToggleHtml('roadDrainageIncluded', 'Drainage Included', g?.drainage_included == 1)}
+        ${roadToggleHtml('roadBikeLane', 'Bike Lane', g?.bike_lane == 1)}
+        ${roadToggleHtml('roadSidewalk', 'Sidewalk', g?.sidewalk == 1)}
+        ${roadToggleHtml('roadStreetlights', 'Streetlights', g?.streetlights == 1)}
+      </div>
+
+      <input type="hidden" name="road_geometry" id="roadGeometryJson" />
+    </div>
+  `;
+}
+
+// Mutable drawing state — reset each time the map (re)initializes.
+let roadGeoMap = null;
+let roadGeoGeoLayer = null;
+const roadGeoLayersByGeo = {};
+let roadGeoPoints = []; // [[lat,lng], ...] in click order
+let roadGeoPointMarkers = [];
+let roadGeoPolyline = null;
+let roadGeoStartMarker = null;
+let roadGeoEndMarker = null;
+let roadGeoStartInfo = null; // {lat,lng,address,barangay,district}
+let roadGeoEndInfo = null;
+
+function roadGeoBarangayIndex() {
+  const index = {};
+  Object.keys(window.QC_DISTRICTS || {}).forEach(district => {
+    (window.QC_DISTRICTS[district] || []).forEach(entry => {
+      index[entry.geo || entry.name] = { district, name: entry.name };
+    });
+  });
+  return index;
+}
+
+/** Standard ray-casting point-in-polygon test against a single [lng,lat] ring. */
+function roadGeoPointInRing(lat, lng, ring) {
+  let inside = false;
+  for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
+    const xi = ring[i][0], yi = ring[i][1];
+    const xj = ring[j][0], yj = ring[j][1];
+    const intersect = ((yi > lat) !== (yj > lat)) &&
+      (lng < (xj - xi) * (lat - yi) / (yj - yi) + xi);
+    if (intersect) inside = !inside;
+  }
+  return inside;
+}
+
+function roadGeoPointInGeometry(lat, lng, geometry) {
+  if (!geometry) return false;
+  const polygons = geometry.type === 'Polygon' ? [geometry.coordinates]
+    : geometry.type === 'MultiPolygon' ? geometry.coordinates : [];
+  return polygons.some(rings => rings.length && roadGeoPointInRing(lat, lng, rings[0]));
+}
+
+/** Finds which QC barangay/district a lat/lng falls in, using our own boundary
+    data — more reliable than a third-party geocoder's approximate guess,
+    and it's already loaded for the map anyway. */
+function roadGeoLocateBarangay(lat, lng) {
+  const index = roadGeoBarangayIndex();
+  for (const geoName of Object.keys(roadGeoLayersByGeo)) {
+    const feature = roadGeoLayersByGeo[geoName]?.feature;
+    if (feature && roadGeoPointInGeometry(lat, lng, feature.geometry)) {
+      const info = index[geoName];
+      if (info) return { barangay: info.name, district: info.district };
+    }
+  }
+  return { barangay: null, district: null };
+}
+
+function roadGeoHaversineMeters(a, b) {
+  const R = 6371000;
+  const dLat = (b[0] - a[0]) * Math.PI / 180;
+  const dLng = (b[1] - a[1]) * Math.PI / 180;
+  const lat1 = a[0] * Math.PI / 180, lat2 = b[0] * Math.PI / 180;
+  const h = Math.sin(dLat / 2) ** 2 + Math.cos(lat1) * Math.cos(lat2) * Math.sin(dLng / 2) ** 2;
+  return R * 2 * Math.atan2(Math.sqrt(h), Math.sqrt(1 - h));
+}
+
+function roadGeoTotalLengthMeters(points) {
+  let total = 0;
+  for (let i = 1; i < points.length; i++) total += roadGeoHaversineMeters(points[i - 1], points[i]);
+  return total;
+}
+
+function roadGeoFormatLength(meters) {
+  return meters >= 1000 ? (meters / 1000).toFixed(2) + ' km' : Math.round(meters) + ' m';
+}
+
+async function roadGeoReverseGeocode(lat, lng) {
+  try {
+    const res = await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}&addressdetails=1`);
+    const data = await res.json();
+    return data.display_name || `${lat.toFixed(5)}, ${lng.toFixed(5)}`;
+  } catch {
+    return `${lat.toFixed(5)}, ${lng.toFixed(5)}`;
+  }
+}
+
+function roadGeoUpdatePointCount() {
+  const el = document.getElementById('roadPointCount');
+  if (el) el.textContent = `${roadGeoPoints.length} point${roadGeoPoints.length === 1 ? '' : 's'}`;
+}
+
+function roadGeoRenderPolyline() {
+  if (!roadGeoMap) return;
+  if (roadGeoPolyline) { roadGeoMap.removeLayer(roadGeoPolyline); roadGeoPolyline = null; }
+  if (roadGeoPoints.length >= 2) {
+    roadGeoPolyline = L.polyline(roadGeoPoints, { color: '#2563eb', weight: 4 }).addTo(roadGeoMap);
+  }
+}
+
+function roadGeoRenderStartEndMarkers() {
+  if (!roadGeoMap) return;
+  if (roadGeoStartMarker) { roadGeoMap.removeLayer(roadGeoStartMarker); roadGeoStartMarker = null; }
+  if (roadGeoEndMarker) { roadGeoMap.removeLayer(roadGeoEndMarker); roadGeoEndMarker = null; }
+
+  if (roadGeoPoints.length >= 1) {
+    roadGeoStartMarker = L.circleMarker(roadGeoPoints[0], { radius: 8, color: '#1e40af', fillColor: '#3b82f6', fillOpacity: 1, weight: 2 })
+      .bindTooltip('Start', { permanent: false }).addTo(roadGeoMap);
+  }
+  if (roadGeoPoints.length >= 2) {
+    roadGeoEndMarker = L.circleMarker(roadGeoPoints[roadGeoPoints.length - 1], { radius: 8, color: '#991b1b', fillColor: '#ef4444', fillOpacity: 1, weight: 2 })
+      .bindTooltip('End', { permanent: false }).addTo(roadGeoMap);
+  }
+}
+
+function roadGeoBarangaysCovered() {
+  const set = new Set();
+  roadGeoPoints.forEach(pt => {
+    const loc = roadGeoLocateBarangay(pt[0], pt[1]);
+    if (loc.barangay) set.add(loc.barangay);
+  });
+  return Array.from(set);
+}
+
+function roadGeoDistrictsCovered() {
+  const set = new Set();
+  roadGeoPoints.forEach(pt => {
+    const loc = roadGeoLocateBarangay(pt[0], pt[1]);
+    if (loc.district) set.add(loc.district);
+  });
+  return Array.from(set);
+}
+
+/** Recomputes start (first point, set once) and end (last point, changes as
+    points are added/removed) — avoids re-geocoding points that haven't moved. */
+async function roadGeoRecomputeEndpoints() {
+  if (roadGeoPoints.length === 0) {
+    roadGeoStartInfo = null;
+    roadGeoEndInfo = null;
+    return;
+  }
+  const startPt = roadGeoPoints[0];
+  const endPt = roadGeoPoints[roadGeoPoints.length - 1];
+
+  if (!roadGeoStartInfo || roadGeoStartInfo.lat !== startPt[0] || roadGeoStartInfo.lng !== startPt[1]) {
+    const loc = roadGeoLocateBarangay(startPt[0], startPt[1]);
+    roadGeoStartInfo = { lat: startPt[0], lng: startPt[1], address: `${startPt[0].toFixed(5)}, ${startPt[1].toFixed(5)}`, ...loc };
+    roadGeoReverseGeocode(startPt[0], startPt[1]).then(addr => {
+      if (roadGeoStartInfo && roadGeoStartInfo.lat === startPt[0] && roadGeoStartInfo.lng === startPt[1]) {
+        roadGeoStartInfo.address = addr;
+        roadGeoRefresh();
+      }
+    });
+  }
+
+  if (roadGeoPoints.length >= 2) {
+    if (!roadGeoEndInfo || roadGeoEndInfo.lat !== endPt[0] || roadGeoEndInfo.lng !== endPt[1]) {
+      const loc = roadGeoLocateBarangay(endPt[0], endPt[1]);
+      roadGeoEndInfo = { lat: endPt[0], lng: endPt[1], address: `${endPt[0].toFixed(5)}, ${endPt[1].toFixed(5)}`, ...loc };
+      roadGeoReverseGeocode(endPt[0], endPt[1]).then(addr => {
+        if (roadGeoEndInfo && roadGeoEndInfo.lat === endPt[0] && roadGeoEndInfo.lng === endPt[1]) {
+          roadGeoEndInfo.address = addr;
+          roadGeoRefresh();
+        }
+      });
+    }
+  } else {
+    roadGeoEndInfo = null;
+  }
+}
+
+function roadGeoRenderReadouts() {
+  const startEl = document.getElementById('roadStartReadout');
+  const endEl = document.getElementById('roadEndReadout');
+  const lengthEl = document.getElementById('roadLengthReadout');
+  const segEl = document.getElementById('roadSegmentsReadout');
+  const summaryEl = document.getElementById('roadGeometrySummary');
+
+  if (startEl) startEl.textContent = roadGeoStartInfo ? roadGeoStartInfo.address : 'Not set';
+  if (endEl) endEl.textContent = roadGeoEndInfo ? roadGeoEndInfo.address : 'Not set';
+
+  const length = roadGeoTotalLengthMeters(roadGeoPoints);
+  if (lengthEl) lengthEl.textContent = roadGeoPoints.length >= 2 ? roadGeoFormatLength(length) : '—';
+  if (segEl) segEl.textContent = String(Math.max(0, roadGeoPoints.length - 1));
+
+  if (!summaryEl) return;
+  if (roadGeoPoints.length >= 2 && roadGeoStartInfo && roadGeoEndInfo) {
+    const barangays = roadGeoBarangaysCovered();
+    const districts = roadGeoDistrictsCovered();
+    const roadNameVal = document.getElementById('roadName')?.value || '(unnamed road)';
+    summaryEl.style.display = 'block';
+    summaryEl.innerHTML = `
+      <p class="modal-label">ROAD SUMMARY</p>
+      <div class="road-summary-grid">
+        <div><span class="modal-label">ROAD NAME</span><p class="modal-val">${escapeHtml(roadNameVal)}</p></div>
+        <div><span class="modal-label">LENGTH</span><p class="modal-val">${roadGeoFormatLength(length)}</p></div>
+        <div><span class="modal-label">START</span><p class="modal-val">${escapeHtml(roadGeoStartInfo.address)}</p></div>
+        <div><span class="modal-label">END</span><p class="modal-val">${escapeHtml(roadGeoEndInfo.address)}</p></div>
+        <div><span class="modal-label">BARANGAYS COVERED</span><p class="modal-val">${barangays.length ? barangays.map(escapeHtml).join(', ') : '-'}</p></div>
+        <div><span class="modal-label">DISTRICTS COVERED</span><p class="modal-val">${districts.length ? districts.map(escapeHtml).join(', ') : '-'}</p></div>
+      </div>
+    `;
+  } else {
+    summaryEl.style.display = 'none';
+  }
+}
+
+function roadGeoSyncHiddenInput() {
+  const input = document.getElementById('roadGeometryJson');
+  if (!input) return;
+  if (roadGeoPoints.length < 2 || !roadGeoStartInfo || !roadGeoEndInfo) {
+    input.value = '';
+    return;
+  }
+  const payload = {
+    road_name: document.getElementById('roadName')?.value.trim() || '',
+    road_type: document.getElementById('roadType')?.value || '',
+    road_status: document.getElementById('roadStatus')?.value || '',
+    points: roadGeoPoints,
+    start: roadGeoStartInfo,
+    end: roadGeoEndInfo,
+    barangays_covered: roadGeoBarangaysCovered(),
+    districts_covered: roadGeoDistrictsCovered(),
+    estimated_length_meters: roadGeoTotalLengthMeters(roadGeoPoints),
+    num_segments: roadGeoPoints.length - 1,
+    road_width: document.getElementById('roadWidth')?.value || null,
+    num_lanes: document.getElementById('roadLanes')?.value || null,
+    road_surface: document.getElementById('roadSurface')?.value || '',
+    bridge_included: document.getElementById('roadBridgeIncluded')?.checked || false,
+    drainage_included: document.getElementById('roadDrainageIncluded')?.checked || false,
+    bike_lane: document.getElementById('roadBikeLane')?.checked || false,
+    sidewalk: document.getElementById('roadSidewalk')?.checked || false,
+    streetlights: document.getElementById('roadStreetlights')?.checked || false,
+  };
+  input.value = JSON.stringify(payload);
+}
+
+function roadGeoRefresh() {
+  roadGeoRenderReadouts();
+  roadGeoSyncHiddenInput();
+}
+
+async function roadGeoAddPoint(latlng) {
+  roadGeoPoints.push([latlng.lat, latlng.lng]);
+  const marker = L.circleMarker(latlng, { radius: 5, color: '#1e293b', fillColor: '#fff', fillOpacity: 1, weight: 2 }).addTo(roadGeoMap);
+  roadGeoPointMarkers.push(marker);
+
+  roadGeoRenderPolyline();
+  roadGeoRenderStartEndMarkers();
+  roadGeoUpdatePointCount();
+  await roadGeoRecomputeEndpoints();
+  roadGeoRefresh();
+}
+
+async function roadGeoUndoLastPoint() {
+  if (!roadGeoPoints.length) return;
+  roadGeoPoints.pop();
+  const marker = roadGeoPointMarkers.pop();
+  if (marker && roadGeoMap) roadGeoMap.removeLayer(marker);
+
+  roadGeoRenderPolyline();
+  roadGeoRenderStartEndMarkers();
+  roadGeoUpdatePointCount();
+  roadGeoEndInfo = null; // the "last point" just changed — force a fresh lookup
+  await roadGeoRecomputeEndpoints();
+  roadGeoRefresh();
+}
+
+function roadGeoClearAll() {
+  roadGeoPoints = [];
+  roadGeoPointMarkers.forEach(m => roadGeoMap?.removeLayer(m));
+  roadGeoPointMarkers = [];
+  if (roadGeoPolyline) { roadGeoMap?.removeLayer(roadGeoPolyline); roadGeoPolyline = null; }
+  if (roadGeoStartMarker) { roadGeoMap?.removeLayer(roadGeoStartMarker); roadGeoStartMarker = null; }
+  if (roadGeoEndMarker) { roadGeoMap?.removeLayer(roadGeoEndMarker); roadGeoEndMarker = null; }
+  roadGeoStartInfo = null;
+  roadGeoEndInfo = null;
+  roadGeoUpdatePointCount();
+  roadGeoRefresh();
+}
+
+async function initRoadGeometryMap(existingGeometry) {
+  if (roadGeoMap) {
+    roadGeoMap.remove();
+    roadGeoMap = null;
+    roadGeoGeoLayer = null;
+    Object.keys(roadGeoLayersByGeo).forEach(k => delete roadGeoLayersByGeo[k]);
+  }
+  roadGeoPoints = [];
+  roadGeoPointMarkers = [];
+  roadGeoPolyline = null;
+  roadGeoStartMarker = null;
+  roadGeoEndMarker = null;
+  roadGeoStartInfo = null;
+  roadGeoEndInfo = null;
+
+  if (!document.getElementById('roadGeometryMap')) return;
+
+  try {
+    const geojson = await loadQcBoundaryGeoJson();
+    if (!document.getElementById('roadGeometryMap')) return; // modal closed while loading
+
+    roadGeoMap = L.map('roadGeometryMap', { minZoom: 11, maxZoom: 18 });
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      attribution: '&copy; OpenStreetMap contributors',
+    }).addTo(roadGeoMap);
+
+    roadGeoGeoLayer = L.geoJSON(geojson, {
+      style: { color: '#94a3b8', weight: 1, fillColor: '#94a3b8', fillOpacity: 0.06 },
+      onEachFeature: (feature, layer) => {
+        roadGeoLayersByGeo[feature.properties.adm4_en] = layer;
+      },
+    }).addTo(roadGeoMap);
+    roadGeoMap.setMaxBounds(roadGeoGeoLayer.getBounds().pad(0.3));
+    roadGeoMap.fitBounds(roadGeoGeoLayer.getBounds());
+
+    roadGeoMap.on('click', (e) => { roadGeoAddPoint(e.latlng); });
+
+    setTimeout(() => roadGeoMap.invalidateSize(), 100);
+
+    if (existingGeometry?.polyline_coordinates?.length) {
+      existingGeometry.polyline_coordinates.forEach(pt => {
+        const marker = L.circleMarker(pt, { radius: 5, color: '#1e293b', fillColor: '#fff', fillOpacity: 1, weight: 2 }).addTo(roadGeoMap);
+        roadGeoPointMarkers.push(marker);
+        roadGeoPoints.push(pt);
+      });
+      roadGeoRenderPolyline();
+      roadGeoRenderStartEndMarkers();
+      roadGeoUpdatePointCount();
+      roadGeoStartInfo = {
+        lat: existingGeometry.start_latitude, lng: existingGeometry.start_longitude,
+        address: existingGeometry.start_address, barangay: existingGeometry.start_barangay, district: existingGeometry.start_district,
+      };
+      roadGeoEndInfo = {
+        lat: existingGeometry.end_latitude, lng: existingGeometry.end_longitude,
+        address: existingGeometry.end_address, barangay: existingGeometry.end_barangay, district: existingGeometry.end_district,
+      };
+      roadGeoRefresh();
+      roadGeoMap.fitBounds(L.polyline(roadGeoPoints).getBounds().pad(0.3));
+    }
+  } catch {
+    // The map is a convenience layer for drawing; if it fails to load there's
+    // nothing meaningful to draw with, but this must not crash the whole form.
+  }
+}
+
+function setupRoadGeometryModule(p) {
+  const form = document.getElementById('projectForm');
+  const categorySelect = form?.querySelector('select[name="category"]');
+  const section = document.getElementById('roadGeometrySection');
+  if (!categorySelect || !section) return;
+
+  const applyVisibility = async () => {
+    const isRoads = categorySelect.value === 'Roads and Bridges';
+    section.style.display = isRoads ? 'block' : 'none';
+    if (isRoads && !roadGeoMap) {
+      await initRoadGeometryMap(p?.road_geometry || null);
+    } else if (isRoads && roadGeoMap) {
+      setTimeout(() => roadGeoMap.invalidateSize(), 50);
+    }
+  };
+
+  categorySelect.addEventListener('change', applyVisibility);
+  applyVisibility(); // pre-fill case: editing an existing Roads and Bridges project
+
+  ['roadName', 'roadType', 'roadStatus', 'roadWidth', 'roadLanes', 'roadSurface',
+    'roadBridgeIncluded', 'roadDrainageIncluded', 'roadBikeLane', 'roadSidewalk', 'roadStreetlights']
+    .forEach(fieldId => {
+      const el = document.getElementById(fieldId);
+      el?.addEventListener('input', roadGeoRefresh);
+      el?.addEventListener('change', roadGeoRefresh);
+    });
+
+  document.getElementById('roadMapUndo')?.addEventListener('click', roadGeoUndoLastPoint);
+  document.getElementById('roadMapClear')?.addEventListener('click', roadGeoClearAll);
+
+  // Search box — jumps the map to a place, same Nominatim pattern as the
+  // CIMMS map picker. Navigation only; clicking the map is still what places
+  // a road point, so a search never accidentally adds one.
+  const searchInput = document.getElementById('roadMapSearch');
+  const suggestionBox = document.getElementById('roadMapSuggestions');
+  let roadSearchDebounce = null;
+  searchInput?.addEventListener('input', () => {
+    const query = searchInput.value.trim();
+    clearTimeout(roadSearchDebounce);
+    if (query.length < 3 || !suggestionBox) {
+      if (suggestionBox) suggestionBox.style.display = 'none';
+      return;
+    }
+    roadSearchDebounce = setTimeout(() => {
+      fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(query + ', Quezon City')}&limit=6`)
+        .then(res => res.json())
+        .then(results => {
+          suggestionBox.innerHTML = '';
+          if (!results.length) { suggestionBox.style.display = 'none'; return; }
+          results.forEach(place => {
+            const div = document.createElement('div');
+            div.textContent = place.display_name;
+            div.onclick = () => {
+              suggestionBox.style.display = 'none';
+              searchInput.value = place.display_name;
+              if (roadGeoMap) roadGeoMap.setView([parseFloat(place.lat), parseFloat(place.lon)], 16);
+            };
+            suggestionBox.appendChild(div);
+          });
+          suggestionBox.style.display = 'block';
+        })
+        .catch(() => { suggestionBox.style.display = 'none'; });
+    }, 350);
+  });
+}
+
 async function submitProjectForm(e, id) {
   e.preventDefault();
+
+  const categoryValue = e.target.querySelector('select[name="category"]')?.value;
+  if (categoryValue === 'Roads and Bridges') {
+    const roadName = document.getElementById('roadName')?.value.trim();
+    if (!roadName) { toast('Road Name is required for Roads and Bridges projects.', 'error'); return; }
+    if (roadGeoPoints.length < 2) { toast('Draw at least two points (a start and an end) to define the road.', 'error'); return; }
+    if (!roadGeoStartInfo || !roadGeoEndInfo) { toast('Please wait a moment for the road\'s start/end location to finish loading before submitting.', 'error'); return; }
+    roadGeoSyncHiddenInput();
+  }
+
   try {
     let res;
     if (id) {
@@ -1492,7 +2014,7 @@ async function fetchStatusFilteredProjects(containerId, statusParam) {
   const state = statusListState[containerId] || { page: 1, search: '' };
 
   try {
-    const d = await get(API.projects, { page: state.page, search: state.search, status: statusParam });
+    const d = await get(API.projects, { page: state.page, search: state.search, status_in: statusParam });
     renderStatusFilteredTable(containerId, d.data || []);
     renderPager(`${containerId}Pager`, d.page, d.last_page, p => {
       statusListState[containerId].page = p;
@@ -1728,8 +2250,9 @@ async function openPublicFacilitiesDetailModal(id) {
     const docs = p.documents || [];
     const fb = p.feedback_summary || {};
 
-    openModal(`${escapeHtml(p.name)} ${publicFacilitiesSyncBadge()}`, `
+    openModal(p.name, `
       <div style="display:flex;flex-direction:column;gap:14px;">
+        <div>${publicFacilitiesSyncBadge()}</div>
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">
           <div><p class="modal-label">PROJECT ID</p><p class="modal-val">${p.project_code}</p></div>
           <div><p class="modal-label">STATUS</p><p class="modal-val">${statusBadge(p.status)}</p></div>
@@ -2163,11 +2686,11 @@ async function loadGisMapPage() {
       <input class="filter-input" id="gisMaxBudget" type="number" placeholder="Max budget (₱)" style="max-width:150px;">
       <button class="btn-secondary btn-compact" id="gisApplyFilters" type="button">Apply</button>
     </div>
-    <div class="gis-legend" style="display:flex;gap:16px;margin:12px 0;font-size:.78rem;color:var(--text-muted);">
-      <span><span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:${GIS_DEFAULT_COLOR};margin-right:5px;"></span>Active / In Progress</span>
-      <span><span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:${GIS_STATUS_COLORS.delayed};margin-right:5px;"></span>Delayed</span>
-      <span><span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:${GIS_STATUS_COLORS.completed};margin-right:5px;"></span>Completed / Turned Over</span>
-      <span><span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:${GIS_STATUS_COLORS.cancelled};margin-right:5px;"></span>Cancelled</span>
+    <div class="gis-legend">
+      <span class="gis-legend-item"><span class="gis-legend-dot" style="background:${GIS_DEFAULT_COLOR};"></span>Active / In Progress</span>
+      <span class="gis-legend-item"><span class="gis-legend-dot" style="background:${GIS_STATUS_COLORS.delayed};"></span>Delayed</span>
+      <span class="gis-legend-item"><span class="gis-legend-dot" style="background:${GIS_STATUS_COLORS.completed};"></span>Completed / Turned Over</span>
+      <span class="gis-legend-item"><span class="gis-legend-dot" style="background:${GIS_STATUS_COLORS.cancelled};"></span>Cancelled</span>
     </div>
     <div id="gisMapContainer" style="height:520px;border-radius:var(--radius);overflow:hidden;border:1px solid var(--border);"></div>
     <p id="gisEmptyState" class="empty-state" style="display:none;">No projects with map coordinates match this filter. Add latitude/longitude when registering or editing a project to place it here.</p>
