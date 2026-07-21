@@ -92,6 +92,20 @@ define('CIMM_SSL_VERIFY', filter_var(envValue('CIMM_SSL_VERIFY', '1'), FILTER_VA
 // same key.
 define('URBAN_PLANNING_API_KEY', envValue('URBAN_PLANNING_API_KEY', ''));
 
+// Facilities Reservation System — outbound integration, same shape as
+// Urban Planning's inspection-results.php: their repo has no live endpoint
+// yet for us to push to (its routes are still placeholder view files, per
+// https://github.com/lmfollero123/facilities-reservation-system1), so this
+// is a pull/poll feed they call once they build their consumer, not a push.
+// Shared-secret model: both sides must set the same key.
+define('FACILITIES_RESERVATION_API_KEY', envValue('FACILITIES_RESERVATION_API_KEY', ''));
+
+// The one thing to change to sync additional barangays into the Public
+// Facilities Integration (admin/api/public-facilities.php) and the
+// Facilities Reservation feed (integrations/facilities-reservation/) later —
+// nothing else in either file needs to change.
+const PUBLIC_FACILITIES_BARANGAY_FILTER = 'Culiat';
+
 const APP_ROLES = ['super_admin', 'admin', 'bac', 'engineer', 'contractor', 'citizen', 'hope'];
 
 const ROLE_LABELS = [

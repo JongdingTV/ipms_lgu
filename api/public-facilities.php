@@ -29,8 +29,8 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') !== 'GET') {
 $db = getDB();
 projectWorkflowEnsureProjectStatusSchema($db);
 
-// The one thing to change to sync a different/additional barangay later.
-const PUBLIC_FACILITIES_BARANGAY_FILTER = 'Culiat';
+// PUBLIC_FACILITIES_BARANGAY_FILTER is defined once in includes/config.php —
+// shared with integrations/facilities-reservation/'s outbound feed too.
 
 const PUBLIC_FACILITIES_VIEW_STATUSES = [
     'planned'   => ['approved', 'bidding', 'awarded', 'assigned'],
