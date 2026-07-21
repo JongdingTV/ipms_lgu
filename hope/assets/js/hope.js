@@ -953,7 +953,9 @@ async function hopeRenderExecutiveReports() {
         <div class="hope-stat-box"><span>Open Bids</span><strong>${procurement.open_bids}</strong></div>
         <div class="hope-stat-box"><span>Awards This Month</span><strong>${procurement.awarded_this_month}</strong></div>
       </div>
-      <p class="hope-decision-note" style="margin-top:16px;">${hopeHighRiskSummaryText(summary.high_risk_projects)}</p>
+      <article class="info-card" style="margin-top:16px;">
+        <p class="hope-decision-note" style="margin-bottom:0;">${hopeHighRiskSummaryText(summary.high_risk_projects)}</p>
+      </article>
     `;
   } catch (error) {
     body.innerHTML = '<p class="empty-state">Failed to load executive report.</p>';
@@ -1033,30 +1035,7 @@ async function hopeRenderProcurementSummary() {
   }
 }
 
-/* ---- Notifications & Profile -------------------------------------------------- */
-
-async function hopeRenderNotificationsPage() {
-  const container = document.getElementById('page-notifications');
-  if (!container) return;
-
-  container.innerHTML = `
-    <div class="page-header"><div><h2 class="page-title">Notifications</h2></div></div>
-    <div id="hopeNotificationsList" class="hope-list"><p class="empty-state">Loading...</p></div>
-  `;
-
-  const wrap = document.getElementById('hopeNotificationsList');
-  try {
-    const response = await fetch(`${window.BASE_PATH}api/notifications.php?per_page=30`, { headers: HOPE_CSRF_HEADERS });
-    const result = await response.json();
-    if (!response.ok) throw new Error(result.error || 'Unable to load notifications.');
-
-    wrap.innerHTML = (result.data || []).length
-      ? result.data.map(n => hopeRow(n.title, n.message, hopeDate(n.created_at))).join('')
-      : '<p class="empty-state">No notifications yet.</p>';
-  } catch (error) {
-    wrap.innerHTML = '<p class="empty-state">Unable to load notifications.</p>';
-  }
-}
+/* ---- Profile ------------------------------------------------------------------- */
 
 async function hopeRenderProfilePage() {
   const container = document.getElementById('page-profile');
@@ -1115,7 +1094,6 @@ const hopeRenderers = {
   'executive-reports': hopeRenderExecutiveReports,
   'budget-summary': hopeRenderBudgetSummary,
   'procurement-summary': hopeRenderProcurementSummary,
-  notifications: hopeRenderNotificationsPage,
   profile: hopeRenderProfilePage,
 };
 

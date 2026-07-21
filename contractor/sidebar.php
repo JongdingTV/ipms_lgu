@@ -117,10 +117,6 @@
         </a>
       </div>
 
-      <a href="#" class="nav-item" data-page="notifications">
-        <span class="nav-icon"><svg viewBox="0 0 20 20" fill="currentColor"><path d="M10 2a6 6 0 00-6 6v3.586l-.707.707A1 1 0 004 14h12a1 1 0 00.707-1.707L16 11.586V8a6 6 0 00-6-6zM8.05 16a2 2 0 003.9 0h-3.9z"/></svg></span>
-        <span class="nav-label">Notifications</span>
-      </a>
       <a href="#" class="nav-item" data-page="profile">
         <span class="nav-icon"><svg viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M10 9a3 3 0 100-6 3 3 0 000 6zm-7 9a7 7 0 1114 0H3z" clip-rule="evenodd"/></svg></span>
         <span class="nav-label">Profile</span>

@@ -124,7 +124,6 @@ require_once __DIR__ . '/sidebar.php';
     <section id="page-payment-history" class="page-section" style="display:none;"></section>
     <section id="page-performance-rating" class="page-section" style="display:none;"></section>
     <section id="page-compliance-records" class="page-section" style="display:none;"></section>
-    <section id="page-notifications" class="page-section" style="display:none;"></section>
     <section id="page-profile" class="page-section" style="display:none;"></section>
   </main>
 </div>

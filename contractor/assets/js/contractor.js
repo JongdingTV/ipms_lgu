@@ -995,7 +995,9 @@ async function contractorRenderMyBids() {
         <p class="contractor-scope-note">Bids you've submitted that BAC hasn't decided on yet.</p>
       </div>
     </div>
-    <div id="contractorMyBidsList" class="contractor-mini-list"><p class="empty-state">Loading...</p></div>
+    <article class="contractor-history-card">
+      <div id="contractorMyBidsList" class="contractor-mini-list"><p class="empty-state">Loading...</p></div>
+    </article>
   `;
 
   const container = document.getElementById('contractorMyBidsList');
@@ -1017,7 +1019,9 @@ async function contractorRenderBidResults() {
         <p class="contractor-scope-note">Bids BAC has already decided on.</p>
       </div>
     </div>
-    <div id="contractorBidResultsList" class="contractor-mini-list"><p class="empty-state">Loading...</p></div>
+    <article class="contractor-history-card">
+      <div id="contractorBidResultsList" class="contractor-mini-list"><p class="empty-state">Loading...</p></div>
+    </article>
   `;
 
   const container = document.getElementById('contractorBidResultsList');
@@ -1098,7 +1102,9 @@ async function contractorRenderProgressUpdates() {
       </div>
       <button class="btn-primary" type="button" onclick="contractorShowPage('accomplishment-report')">Submit New Report</button>
     </div>
-    <div id="contractorProgressUpdatesList" class="contractor-mini-list"><p class="empty-state">Loading...</p></div>
+    <article class="contractor-history-card">
+      <div id="contractorProgressUpdatesList" class="contractor-mini-list"><p class="empty-state">Loading...</p></div>
+    </article>
   `;
 
   const container = document.getElementById('contractorProgressUpdatesList');
@@ -1125,7 +1131,9 @@ async function contractorRenderSitePhotos() {
       </div>
       <button class="btn-primary" type="button" onclick="contractorShowPage('supporting-documents')">Upload Photos</button>
     </div>
-    <div id="contractorSitePhotosGrid" class="contractor-photo-grid"><p class="empty-state">Loading...</p></div>
+    <article class="contractor-history-card">
+      <div id="contractorSitePhotosGrid" class="contractor-photo-grid"><p class="empty-state">Loading...</p></div>
+    </article>
   `;
 
   const container = document.getElementById('contractorSitePhotosGrid');
@@ -1156,14 +1164,16 @@ function contractorRenderPaymentRequests() {
       </div>
       <button class="btn-primary" type="button" onclick="contractorOpenPaymentRequestForm()">Request Payment</button>
     </div>
-    <div class="contractor-mini-list">
-      ${pending.length ? pending.map(payment => `
-        <div class="contractor-mini-row">
-          <span>${contractorEscape(payment.project_code)} - ${contractorEscape(payment.billing_no || '')}</span>
-          <span>${contractorFullMoney(payment.requested_amount)} ${contractorBadge(payment.status, payment.label)}</span>
-        </div>
-      `).join('') : '<p class="empty-state">No pending payment requests.</p>'}
-    </div>
+    <article class="contractor-history-card">
+      <div class="contractor-mini-list">
+        ${pending.length ? pending.map(payment => `
+          <div class="contractor-mini-row">
+            <span>${contractorEscape(payment.project_code)} - ${contractorEscape(payment.billing_no || '')}</span>
+            <span>${contractorFullMoney(payment.requested_amount)} ${contractorBadge(payment.status, payment.label)}</span>
+          </div>
+        `).join('') : '<p class="empty-state">No pending payment requests.</p>'}
+      </div>
+    </article>
   `;
 }
 
@@ -1215,7 +1225,9 @@ async function contractorRenderPerformanceRating() {
         <p class="contractor-scope-note">Modeled on DPWH's Constructors' Performance Evaluation System.</p>
       </div>
     </div>
-    <div id="contractorPerformanceBody"><p class="empty-state">Loading...</p></div>
+    <article class="contractor-history-card">
+      <div id="contractorPerformanceBody"><p class="empty-state">Loading...</p></div>
+    </article>
   `;
 
   const body = document.getElementById('contractorPerformanceBody');
@@ -1250,7 +1262,9 @@ async function contractorRenderComplianceRecords() {
         <p class="contractor-scope-note">Standing indicators BAC and Admin consider during procurement.</p>
       </div>
     </div>
-    <div id="contractorComplianceBody"><p class="empty-state">Loading...</p></div>
+    <article class="contractor-history-card">
+      <div id="contractorComplianceBody"><p class="empty-state">Loading...</p></div>
+    </article>
   `;
 
   const body = document.getElementById('contractorComplianceBody');
@@ -1273,36 +1287,7 @@ async function contractorRenderComplianceRecords() {
   }
 }
 
-/* ---- Notifications & Profile ------------------------------------------------ */
-
-async function contractorRenderNotificationsPage() {
-  const page = document.getElementById('page-notifications');
-  page.innerHTML = `
-    <div class="page-header">
-      <div>
-        <h1 class="page-title">Notifications</h1>
-        <p class="contractor-scope-note">Every alert sent to your account.</p>
-      </div>
-    </div>
-    <div id="contractorNotificationsList" class="contractor-mini-list"><p class="empty-state">Loading...</p></div>
-  `;
-
-  const container = document.getElementById('contractorNotificationsList');
-  try {
-    const response = await fetch(`${window.BASE_PATH}api/notifications.php?per_page=30`, { headers: CONTRACTOR_CSRF_HEADERS });
-    const result = await response.json();
-    if (!response.ok) throw new Error(result.error || 'Unable to load notifications.');
-
-    container.innerHTML = (result.data || []).length ? result.data.map(notif => `
-      <div class="contractor-mini-row">
-        <span>${notif.is_read ? '' : '<strong>&bull;</strong> '}${contractorEscape(notif.title)} — ${contractorEscape(notif.message)}</span>
-        <span class="contractor-scope-note">${contractorDate(notif.created_at)}</span>
-      </div>
-    `).join('') : '<p class="empty-state">No notifications yet.</p>';
-  } catch (error) {
-    container.innerHTML = '<p class="empty-state">Unable to load notifications.</p>';
-  }
-}
+/* ---- Profile ---------------------------------------------------------------- */
 
 async function contractorRenderProfilePage() {
   const page = document.getElementById('page-profile');
@@ -1540,7 +1525,6 @@ function contractorShowPage(page) {
   if (page === 'payment-history') contractorRenderPaymentHistory();
   if (page === 'performance-rating') contractorRenderPerformanceRating();
   if (page === 'compliance-records') contractorRenderComplianceRecords();
-  if (page === 'notifications') contractorRenderNotificationsPage();
   if (page === 'profile') contractorRenderProfilePage();
 }
 

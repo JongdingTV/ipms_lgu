@@ -760,10 +760,11 @@ $statusChip = [
               <th>Location</th>
               <th>Submitted</th>
               <th>Status</th>
+              <th>Actions</th>
             </tr>
           </thead>
           <tbody id="trackedFeedbackBody">
-            <tr><td colspan="6" class="table-empty">Loading your submissions…</td></tr>
+            <tr><td colspan="7" class="table-empty">Loading your submissions…</td></tr>
           </tbody>
         </table>
       </div>
@@ -1062,6 +1063,22 @@ $statusChip = [
     </div>
     <div class="project-detail-body" id="projectDetailBody">
       <p class="empty-state">Loading project details...</p>
+    </div>
+  </div>
+</div>
+
+<!-- Feedback Detail Modal (full view of a citizen's own submitted report) -->
+<div class="modal-overlay" id="feedbackDetailModal" style="display: none;">
+  <div class="modal-card modal-card-wide">
+    <div class="modal-head">
+      <h3>
+        <svg width="17" height="17" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M18 10c0 3.866-3.582 7-8 7a8.841 8.841 0 01-4.083-.98L2 17l1.338-3.123C2.493 12.767 2 11.434 2 10c0-3.866 3.582-7 8-7s8 3.134 8 7z" clip-rule="evenodd"/></svg>
+        Report Details
+      </h3>
+      <button type="button" class="modal-close" id="feedbackDetailClose" title="Close">&times;</button>
+    </div>
+    <div class="project-detail-body" id="feedbackDetailBody">
+      <p class="empty-state">Loading report details...</p>
     </div>
   </div>
 </div>

@@ -3164,7 +3164,7 @@ async function fetchBudgetSummary() {
       return `
         <div class="budget-summary-card">
           <p class="budget-proj-name">${r.project_name}</p>
-          <div style="display:flex;justify-content:space-between;font-size:.75rem;color:#64748b;margin:4px 0;">
+          <div style="display:flex;flex-wrap:wrap;justify-content:space-between;gap:4px;font-size:.75rem;color:#64748b;margin:4px 0;">
             <span>₱${Number(r.total_spent).toLocaleString()} spent</span>
             <span>₱${Number(r.budget).toLocaleString()} budget</span>
           </div>
@@ -3311,12 +3311,14 @@ async function loadStaffRequestsPage() {
 
   container.innerHTML = `
     <div class="page-header">
-      <h2 class="page-title">Staff Requests</h2>
+      <div>
+        <h2 class="page-title">Staff Requests</h2>
+        <p style="font-size:.8rem;color:var(--text-muted);margin-top:4px;max-width:640px;">
+          Request a new Engineer or BAC account. A Super Admin must review and approve the
+          request before the login is created — you cannot create staff accounts directly.
+        </p>
+      </div>
     </div>
-    <p style="color:#64748b;margin-bottom:16px;max-width:640px;">
-      Request a new Engineer or BAC account. A Super Admin must review and approve the
-      request before the login is created — you cannot create staff accounts directly.
-    </p>
     <div class="table-card" style="padding:20px;max-width:520px;">
       <form id="staffRequestForm">
         <div class="form-group">
