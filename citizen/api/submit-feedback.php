@@ -72,7 +72,6 @@ if (!in_array($concernType, ['project', 'maintenance'], true)) {
 // Maintenance reports mirror the CIMMS request form: the affected
 // infrastructure is required ("specify" text wins over the dropdown).
 $infrastructureType = null;
-$maintenanceLocation = '';
 if ($concernType === 'maintenance') {
     $infraOther = trim($_POST['infrastructure_other'] ?? '');
     $infrastructureType = $infraOther !== '' ? $infraOther : trim($_POST['infrastructure'] ?? '');
@@ -81,16 +80,6 @@ if ($concernType === 'maintenance') {
     } elseif (mb_strlen($infrastructureType) > 100) {
         $errors[] = 'Infrastructure type must be 100 characters or fewer';
     }
-
-    // The CIMMS form uses a single free-text location instead of the IPMS
-    // district/barangay pair. It travels in the existing barangay column;
-    // district stays NULL for maintenance reports.
-    $maintenanceLocation = trim($_POST['location'] ?? '');
-    if ($maintenanceLocation === '') {
-        $errors[] = 'Location is required';
-    }
-    $district = '';
-    $barangay = mb_substr($maintenanceLocation, 0, 100);
 }
 if (empty($category) || !array_key_exists($category, feedbackCategories())) {
     $errors[] = 'Invalid category';
@@ -101,13 +90,14 @@ if (empty($priority) || !in_array($priority, ['low', 'medium', 'high', 'urgent']
 if (empty($message) || strlen($message) < 10) {
     $errors[] = 'Message must be at least 10 characters';
 }
-if ($concernType !== 'maintenance') {
-    if ($district === '' || $barangay === '') {
-        $errors[] = 'Please select your district and barangay';
-    } elseif (!qcIsValidLocation($district, $barangay)) {
-        // Rejects mismatched pairs (e.g. a D1 barangay submitted with D3) and unknown names.
-        $errors[] = 'The selected barangay does not belong to the selected district';
-    }
+// The feedback form always collects district + barangay via the QC location
+// picker — there is no separate free-text location field — for both project
+// and maintenance concerns, so both are validated and stored the same way.
+if ($district === '' || $barangay === '') {
+    $errors[] = 'Please select your district and barangay';
+} elseif (!qcIsValidLocation($district, $barangay)) {
+    // Rejects mismatched pairs (e.g. a D1 barangay submitted with D3) and unknown names.
+    $errors[] = 'The selected barangay does not belong to the selected district';
 }
 
 // Optional exact pin: both coordinates or neither, and roughly within Quezon City.
@@ -291,7 +281,10 @@ try {
                 // otherwise leave it blank so CimmClient falls back to
                 // mapInfrastructure($category).
                 'infrastructure' => $cimmInfrastructure,
-                'location' => $maintenanceLocation,
+                // Leave blank so CimmClient::buildLocation() composes
+                // "Brgy. X, District Y, Quezon City" from the district/
+                // barangay actually collected by the form.
+                'location' => '',
                 'latitude' => $latitude,
                 'longitude' => $longitude,
                 'name' => $resolvedName,
