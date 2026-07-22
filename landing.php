@@ -185,6 +185,7 @@ function renderStat(?float $n, string $prefix = '', string $suffix = ''): string
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;600;700;800;900&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" crossorigin="anonymous">
+    <link rel="stylesheet" href="<?= htmlspecialchars(assetUrl('/assets/css/chatbot-widget.css')) ?>">
     <meta name="theme-color" content="#1e3a8a">
     <style>
         /* Blue palette to match the QC City Hall photo used across the citizen
@@ -1715,5 +1716,9 @@ function renderStat(?float $n, string $prefix = '', string $suffix = ''): string
             }
         })();
     </script>
+    <script>
+        window.CHATBOT_ENDPOINT = <?= json_encode(appUrl('/api/chatbot.php')) ?>;
+    </script>
+    <script src="<?= htmlspecialchars(assetUrl('/assets/js/chatbot-widget.js')) ?>"></script>
 </body>
 </html>

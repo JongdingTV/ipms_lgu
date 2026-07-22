@@ -100,6 +100,11 @@ define('URBAN_PLANNING_API_KEY', envValue('URBAN_PLANNING_API_KEY', ''));
 // Shared-secret model: both sides must set the same key.
 define('FACILITIES_RESERVATION_API_KEY', envValue('FACILITIES_RESERVATION_API_KEY', ''));
 
+// AI Chatbot — landing page + citizen dashboard widget (api/chatbot.php,
+// includes/ChatbotClient.php). Free key (no credit card): https://aistudio.google.com/apikey
+define('GEMINI_API_KEY', envValue('GEMINI_API_KEY', ''));
+define('GEMINI_MODEL', envValue('GEMINI_MODEL', 'gemini-2.5-flash'));
+
 // The one thing to change to sync additional barangays into the Public
 // Facilities Integration (admin/api/public-facilities.php) and the
 // Facilities Reservation feed (integrations/facilities-reservation/) later —

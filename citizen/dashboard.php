@@ -3,7 +3,10 @@ require_once __DIR__ . '/../auth/session.php';
 
 $user = requireLogin(['citizen']);
 // filemtime as cache-buster so style/behavior changes show up without a hard refresh
-$extraStylesheets = ['citizen/assets/css/citizen.css?v=' . filemtime(__DIR__ . '/assets/css/citizen.css')];
+$extraStylesheets = [
+    'citizen/assets/css/citizen.css?v=' . filemtime(__DIR__ . '/assets/css/citizen.css'),
+    'assets/css/chatbot-widget.css?v=' . filemtime(dirname(__DIR__) . '/assets/css/chatbot-widget.css'),
+];
 
 require_once __DIR__ . '/includes/qc-locations.php';
 require_once __DIR__ . '/includes/feedback-categories.php';
@@ -1129,3 +1132,7 @@ $statusChip = [
 <script>window.SIDEBAR_BADGES_PORTAL = 'citizen';</script>
 <script src="<?= htmlspecialchars(assetUrl('/assets/js/sidebar-badges.js')) ?>"></script>
 <script src="<?= htmlspecialchars(assetUrl('/citizen/assets/js/citizen.js')) ?>"></script>
+<script>
+  window.CHATBOT_ENDPOINT = <?= json_encode(appUrl('/api/chatbot.php')) ?>;
+</script>
+<script src="<?= htmlspecialchars(assetUrl('/assets/js/chatbot-widget.js')) ?>"></script>
