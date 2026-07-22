@@ -100,10 +100,17 @@ define('URBAN_PLANNING_API_KEY', envValue('URBAN_PLANNING_API_KEY', ''));
 // Shared-secret model: both sides must set the same key.
 define('FACILITIES_RESERVATION_API_KEY', envValue('FACILITIES_RESERVATION_API_KEY', ''));
 
+// LG Road Monitoring System — outbound integration, same shape as Facilities
+// Reservation and Urban Planning's road-geometry-feed.php: they have no
+// live endpoint of their own yet (per https://github.com/conopioclarence96-commits/lg-road-monitoring,
+// as of writing), so this is a pull/poll feed they call, not a push.
+// Shared-secret model: both sides must set the same key.
+define('ROAD_MONITORING_API_KEY', envValue('ROAD_MONITORING_API_KEY', ''));
+
 // AI Chatbot — landing page + citizen dashboard widget (api/chatbot.php,
 // includes/ChatbotClient.php). Free key (no credit card): https://aistudio.google.com/apikey
 define('GEMINI_API_KEY', envValue('GEMINI_API_KEY', ''));
-define('GEMINI_MODEL', envValue('GEMINI_MODEL', 'gemini-2.5-flash'));
+define('GEMINI_MODEL', envValue('GEMINI_MODEL', 'gemini-flash-lite-latest'));
 
 // The one thing to change to sync additional barangays into the Public
 // Facilities Integration (admin/api/public-facilities.php) and the
