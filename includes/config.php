@@ -62,6 +62,10 @@ define('DB_USER', envValue('DB_USER', 'root'));
 define('DB_PASS', envValue('DB_PASS', ''));
 define('DB_CHARSET', envValue('DB_CHARSET', 'utf8mb4'));
 
+// Shared secret for verifying SSO tokens issued by Main LGU (infragovservices.com hub).
+// Must match SSO_SECRET_IPMS in Main LGU's .env.
+define('SSO_SHARED_SECRET', envValue('SSO_SHARED_SECRET', 'f56d2000a6be7cde816cb174274824462644e2255e9ee39b4946d166a933e490'));
+
 // Email Configuration
 define('MAIL_FROM_EMAIL', envValue('MAIL_FROM_EMAIL', 'ipms.systemlgu@gmail.com'));
 define('MAIL_FROM_NAME', envValue('MAIL_FROM_NAME', 'LGU IPMS System'));
