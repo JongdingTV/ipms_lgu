@@ -2,9 +2,11 @@
 require_once __DIR__ . '/../auth/session.php';
 
 $user = requireLogin(['citizen']);
-$topbarSearchPlaceholder = 'Search projects...';
 // filemtime as cache-buster so style/behavior changes show up without a hard refresh
-$extraStylesheets = ['citizen/assets/css/citizen.css?v=' . filemtime(__DIR__ . '/assets/css/citizen.css')];
+$extraStylesheets = [
+    'citizen/assets/css/citizen.css?v=' . filemtime(__DIR__ . '/assets/css/citizen.css'),
+    'assets/css/chatbot-widget.css?v=' . filemtime(dirname(__DIR__) . '/assets/css/chatbot-widget.css'),
+];
 
 require_once __DIR__ . '/includes/qc-locations.php';
 require_once __DIR__ . '/includes/feedback-categories.php';
@@ -174,6 +176,45 @@ $statusChip = [
         </article>
       </section>
 
+      <!-- Planned vs actual progress — same series the staff dashboard charts -->
+      <section class="chart-card chart-card-full reveal" style="transition-delay:.04s;">
+        <div class="chart-header">
+          <h2 class="chart-title">Project Progress Overview</h2>
+          <span class="chart-subnote">Average planned vs actual progress across public projects, by month</span>
+        </div>
+        <div class="chart-canvas-box chart-canvas-tall">
+          <canvas id="citizenProgressChart"></canvas>
+        </div>
+      </section>
+
+      <!-- Second charts row: money by stage, project starts, feedback mix -->
+      <section class="charts-grid-3 reveal" style="transition-delay:.06s;">
+        <article class="chart-card">
+          <div class="chart-header">
+            <h2 class="chart-title">Budget by Stage</h2>
+          </div>
+          <div class="chart-canvas-box">
+            <canvas id="budgetByStageChart"></canvas>
+          </div>
+        </article>
+        <article class="chart-card">
+          <div class="chart-header">
+            <h2 class="chart-title">New Projects per Month</h2>
+          </div>
+          <div class="chart-canvas-box">
+            <canvas id="projectsStartedChart"></canvas>
+          </div>
+        </article>
+        <article class="chart-card">
+          <div class="chart-header">
+            <h2 class="chart-title">Feedback by Category</h2>
+          </div>
+          <div class="chart-canvas-box">
+            <canvas id="feedbackCategoryChart"></canvas>
+          </div>
+        </article>
+      </section>
+
       <!-- Recent Projects Section -->
       <section class="dashboard-section reveal" style="transition-delay:.08s;">
         <div class="section-header">
@@ -206,8 +247,11 @@ $statusChip = [
       <div class="page-header">
         <h1 class="page-title">Public Projects</h1>
       </div>
-      <div class="filters">
-        <input type="text" id="projectSearch" placeholder="Search projects..." class="search-box">
+      <div class="list-toolbar">
+        <div class="list-search">
+          <svg viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M8 4a4 4 0 100 8 4 4 0 000-8zM2 8a6 6 0 1110.89 3.476l4.817 4.817a1 1 0 01-1.414 1.414l-4.816-4.816A6 6 0 012 8z" clip-rule="evenodd"/></svg>
+          <input type="text" id="projectSearch" placeholder="Search projects by name, location, or description">
+        </div>
         <select id="statusFilter" class="filter-select">
           <option value="">All Status</option>
           <option value="approved">Approved</option>
@@ -217,11 +261,31 @@ $statusChip = [
           <option value="active">Active</option>
           <option value="delayed">Delayed</option>
           <option value="on_hold">On Hold</option>
+          <option value="completion_inspection">Final Inspection</option>
           <option value="completed">Completed</option>
+          <option value="turnover">Turned Over</option>
         </select>
+        <div class="list-pager">
+          <span class="list-pager-info" id="projectsPagerInfo">0 of 0</span>
+          <button type="button" class="list-pager-btn" id="projectsPagerPrev" title="Previous page" aria-label="Previous page"><svg viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M12.707 5.293a1 1 0 010 1.414L9.414 10l3.293 3.293a1 1 0 01-1.414 1.414l-4-4a1 1 0 010-1.414l4-4a1 1 0 011.414 0z" clip-rule="evenodd"/></svg></button>
+          <button type="button" class="list-pager-btn" id="projectsPagerNext" title="Next page" aria-label="Next page"><svg viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M7.293 14.707a1 1 0 010-1.414L10.586 10 7.293 6.707a1 1 0 011.414-1.414l4 4a1 1 0 010 1.414l-4 4a1 1 0 01-1.414 0z" clip-rule="evenodd"/></svg></button>
+        </div>
       </div>
-      <div id="projectsGridContainer" class="projects-grid">
-        <p class="empty-state">Loading projects...</p>
+      <div class="table-card">
+        <table class="data-table">
+          <thead>
+            <tr>
+              <th>Project</th>
+              <th>Budget</th>
+              <th>Timeline</th>
+              <th>Progress</th>
+              <th>Status</th>
+            </tr>
+          </thead>
+          <tbody id="projectsTableBody">
+            <tr><td colspan="5" class="table-empty">Loading projects…</td></tr>
+          </tbody>
+        </table>
       </div>
     </section>
 
@@ -230,8 +294,21 @@ $statusChip = [
       <div class="page-header">
         <h1 class="page-title">Project Status Tracking</h1>
       </div>
-      <div id="projectStatusContainer" class="status-list">
-        <p class="empty-state">Loading project details...</p>
+      <div class="list-toolbar">
+        <div class="list-search">
+          <svg viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M8 4a4 4 0 100 8 4 4 0 000-8zM2 8a6 6 0 1110.89 3.476l4.817 4.817a1 1 0 01-1.414 1.414l-4.816-4.816A6 6 0 012 8z" clip-rule="evenodd"/></svg>
+          <input type="text" id="psSearch" placeholder="Search projects">
+        </div>
+        <div class="list-pager">
+          <span class="list-pager-info" id="psPagerInfo">0 of 0</span>
+          <button type="button" class="list-pager-btn" id="psPagerPrev" title="Previous page" aria-label="Previous page"><svg viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M12.707 5.293a1 1 0 010 1.414L9.414 10l3.293 3.293a1 1 0 01-1.414 1.414l-4-4a1 1 0 010-1.414l4-4a1 1 0 011.414 0z" clip-rule="evenodd"/></svg></button>
+          <button type="button" class="list-pager-btn" id="psPagerNext" title="Next page" aria-label="Next page"><svg viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M7.293 14.707a1 1 0 010-1.414L10.586 10 7.293 6.707a1 1 0 011.414-1.414l4 4a1 1 0 010 1.414l-4 4a1 1 0 01-1.414 0z" clip-rule="evenodd"/></svg></button>
+        </div>
+      </div>
+      <!-- Tracker cards, deliberately distinct from the Public Projects
+           directory table: each card walks the project's workflow stages. -->
+      <div id="projectStatusBody" class="tracker-list">
+        <p class="empty-state">Loading project details…</p>
       </div>
     </section>
 
@@ -341,7 +418,9 @@ $statusChip = [
 
           <!-- ============ STEP 2: Form ============ -->
           <div class="fb-panel" data-panel="2">
-            <div class="fb-panel-main">
+            <!-- Project concerns use the IPMS wizard form below; maintenance
+                 issues swap it for the CIMMS replica card (#fbCimmsWrap). -->
+            <div class="fb-panel-main" id="fbProjectWrap">
               <div class="fb-panel-headrow">
                 <div>
                   <h2 class="fb-panel-title" id="fbStep2Title">Tell us more</h2>
@@ -350,16 +429,11 @@ $statusChip = [
                 <span class="fb-time-badge">⏱ Approximately 2–3 minutes</span>
               </div>
 
-              <div class="fb-cimms-banner" id="fbCimmsBanner" style="display:none;">
-                <svg width="18" height="18" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M18 10A8 8 0 112 10a8 8 0 0116 0zm-7-4a1 1 0 10-2 0v4a1 1 0 00.293.707l2.828 2.829a1 1 0 101.415-1.415L11 9.586V6z" clip-rule="evenodd"/></svg>
-                <span>This maintenance concern will be coordinated with the Community Infrastructure Maintenance Management System (CIMMS) for proper handling.</span>
-              </div>
-
               <div class="fb-form-tips-layout">
                 <form id="feedbackForm" method="POST" data-profile-phone="<?= htmlspecialchars(preg_replace('/\D+/', '', (string) ($citizen['phone'] ?? '')), ENT_QUOTES) ?>">
                   <input type="hidden" name="concern_type" id="feedbackConcernType" value="project">
 
-                  <div class="fb-anon-row">
+                  <div class="fb-anon-row" id="fbAnonRow">
                     <label class="fb-toggle">
                       <input type="checkbox" id="feedbackAnonymous" name="anonymous" value="1">
                       <span class="fb-toggle-track"><span class="fb-toggle-thumb"></span></span>
@@ -376,8 +450,8 @@ $statusChip = [
                         <input type="text" id="feedbackContactName" name="contact_name" placeholder="Your name" value="<?= htmlspecialchars(trim(($citizen['first_name'] ?? '') . ' ' . ($citizen['last_name'] ?? ''))) ?>">
                       </div>
                       <div class="form-group">
-                        <label for="feedbackContactPhone">Contact Number</label>
-                        <input type="text" id="feedbackContactPhone" name="contact_phone" placeholder="09xx xxx xxxx" value="<?= htmlspecialchars((string) ($citizen['phone'] ?? '')) ?>">
+                        <label for="feedbackContactPhone" id="fbPhoneLabel">Contact Number</label>
+                        <input type="tel" id="feedbackContactPhone" name="contact_phone" placeholder="09XX-XXX-XXXX" maxlength="13" value="<?= htmlspecialchars((string) ($citizen['phone'] ?? '')) ?>">
                       </div>
                       <div class="form-group">
                         <label for="feedbackContactEmail">Email</label>
@@ -457,17 +531,17 @@ $statusChip = [
                   </div>
 
                   <div class="form-group">
-                    <label for="feedbackMessage">Description *</label>
+                    <label for="feedbackMessage" id="fbMessageLabel">Description *</label>
                     <textarea id="feedbackMessage" name="message" rows="6" placeholder="Describe your concern, report, or complaint about your area..." required></textarea>
                   </div>
 
                   <div class="form-group">
-                    <label for="feedbackPhotos">Photos (proof) <span class="fb-optional">— optional, up to 3 images, 3MB each</span></label>
+                    <label for="feedbackPhotos" id="fbPhotosLabel">Photos (proof) <span class="fb-optional">— optional, up to 4 images, 3MB each</span></label>
                     <label for="feedbackPhotos" class="id-upload-box feedback-upload-box">
                       <input type="file" id="feedbackPhotos" name="photos[]" accept="image/jpeg,image/png,image/gif,image/webp" multiple>
                       <svg width="26" height="26" viewBox="0 0 20 20" fill="currentColor" class="id-upload-icon"><path fill-rule="evenodd" d="M4 3a2 2 0 00-2 2v10a2 2 0 002 2h12a2 2 0 002-2V5a2 2 0 00-2-2H4zm12 12H4l4-8 3 6 2-4 3 6z" clip-rule="evenodd"/></svg>
                       <p class="id-upload-text">Click or drag photos here</p>
-                      <p class="id-upload-hint">JPG, PNG, GIF, or WEBP — maximum of 3 photos, 3MB each</p>
+                      <p class="id-upload-hint">JPG, PNG, GIF, or WEBP — maximum of 4 photos, 3MB each</p>
                     </label>
                     <div class="feedback-photo-previews" id="feedbackPhotoPreviews"></div>
                     <div class="id-upload-status" id="feedbackPhotoStatus" style="display: none;"></div>
@@ -484,6 +558,106 @@ $statusChip = [
                 <span>✔ Include photos for faster verification.</span>
                 <span>✔ Pin the exact location.</span>
                 <span>✔ Provide clear descriptions.</span>
+              </div>
+            </div>
+
+            <!-- ============ Maintenance path: replica of the CIMM
+                 "Submit a Request" form. Same fields, same order, same
+                 look — location is picked on a map (search / tap / GPS)
+                 and fills itself in. Submits to the same feedback API. -->
+            <div id="fbCimmsWrap" class="cimms-form-wrapper" style="display: none;">
+              <div class="cimms-report-card">
+                <h2>Submit a Request</h2>
+                <form id="cimmsForm" autocomplete="off">
+                  <!-- Hybrid dropdown/input: Infrastructure -->
+                  <div class="cimms-input-group">
+                    <label for="cimmsInfraSelect">INFRASTRUCTURE TYPE <span class="cimms-req">*</span></label>
+                    <select id="cimmsInfraSelect" name="infrastructure">
+                      <option value="">— Select infrastructure —</option>
+                      <option value="Roads">Roads</option>
+                      <option value="Street Lights">Street Lights</option>
+                      <option value="Drainage">Drainage</option>
+                      <option value="Public Facilities">Public Facilities</option>
+                      <option value="Water Supply">Water Supply</option>
+                      <option value="Electrical">Electrical</option>
+                      <option value="Other">Other</option>
+                    </select>
+                    <input
+                      type="text"
+                      id="cimmsInfraOther"
+                      name="infrastructure_other"
+                      placeholder="Specify infrastructure"
+                      style="display:none;"
+                      autocomplete="off"
+                    >
+                  </div>
+                  <div class="cimms-input-group">
+                    <label for="cimmsLocationInput">LOCATION <span class="cimms-req">*</span></label>
+                    <input
+                      type="text"
+                      id="cimmsLocationInput"
+                      name="location"
+                      placeholder="Click to select location"
+                      autocomplete="off"
+                      readonly
+                    >
+                  </div>
+                  <div class="cimms-input-group">
+                    <label for="cimmsName">NAME <span class="cimms-opt">(Optional)</span></label>
+                    <input type="text" id="cimmsName" name="name" placeholder="Your name" value="<?= htmlspecialchars(trim(($citizen['first_name'] ?? '') . ' ' . ($citizen['last_name'] ?? ''))) ?>">
+                  </div>
+                  <div class="cimms-input-group">
+                    <label for="cimmsContactNumber">CONTACT NUMBER <span class="cimms-req">*</span></label>
+                    <input
+                      type="tel"
+                      id="cimmsContactNumber"
+                      name="contact_number"
+                      placeholder="09XX-XXX-XXXX"
+                      maxlength="13"
+                      value="<?= htmlspecialchars(preg_replace('/\D+/', '', (string) ($citizen['phone'] ?? ''))) ?>"
+                      required
+                    >
+                  </div>
+                  <div class="cimms-input-group cimms-full-width">
+                    <label for="cimmsEmail">EMAIL ADDRESS <span class="cimms-opt">(Optional)</span></label>
+                    <input type="email" id="cimmsEmail" name="email" placeholder="your@email.com" value="<?= htmlspecialchars((string) ($citizen['email'] ?? '')) ?>">
+                    <p class="cimms-hint">
+                      <svg width="14" height="14" viewBox="0 0 20 20" fill="currentColor"><path d="M2.003 5.884L10 9.882l7.997-3.998A2 2 0 0016 4H4a2 2 0 00-1.997 1.884z"/><path d="M18 8.118l-8 4-8-4V14a2 2 0 002 2h12a2 2 0 002-2V8.118z"/></svg>
+                      If provided, we'll send you progress updates on your report.
+                    </p>
+                  </div>
+                  <div class="cimms-input-group cimms-full-width">
+                    <label for="cimmsIssue">ISSUE / DAMAGE DESCRIPTION <span class="cimms-req">*</span></label>
+                    <textarea id="cimmsIssue" name="issue" placeholder="Describe the problem in detail..." required></textarea>
+                  </div>
+                  <div class="cimms-input-group cimms-full-width">
+                    <label>EVIDENCE PHOTOS <span class="cimms-req">*</span></label>
+                    <div class="cimms-dropzone" id="cimmsDropzone">
+                      <input type="file" id="cimmsEvidence" accept="image/*" multiple hidden>
+                      <span class="cimms-dropzone-icon" aria-hidden="true">
+                        <svg width="22" height="22" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M5.5 17a4.5 4.5 0 01-1.44-8.765 4.5 4.5 0 018.302-3.046 3.5 3.5 0 014.504 4.272A4 4 0 0115 17H5.5zm3.75-2.75a.75.75 0 001.5 0V9.66l1.95 2.1a.75.75 0 101.1-1.02l-3.25-3.5a.75.75 0 00-1.1 0l-3.25 3.5a.75.75 0 101.1 1.02l1.95-2.1v4.59z" clip-rule="evenodd"/></svg>
+                      </span>
+                      <p class="cimms-dropzone-text">Click or drag to upload images</p>
+                      <p class="cimms-dropzone-hint">JPG, PNG, WEBP</p>
+                    </div>
+                    <div id="cimmsImagePreview" style="display:flex; gap:10px; margin-top:10px; flex-wrap:wrap;"></div>
+                  </div>
+                  <div class="cimms-terms cimms-full-width">
+                    <label>
+                      <input type="checkbox" id="cimmsAgree" required>
+                      <span>I AGREE TO THE <a href="#" onclick="return false;">Terms and Conditions</a> AND <a href="#" onclick="return false;">Privacy Policy</a></span>
+                    </label>
+                  </div>
+                  <!-- Back sits at the bottom, matching the wizard's other steps -->
+                  <div class="cimms-actions cimms-full-width">
+                    <button type="button" class="btn-outline" id="fbCimmsBack">Back</button>
+                    <button type="submit" class="cimms-btn-primary" id="cimmsSubmitBtn">
+                      <svg width="15" height="15" viewBox="0 0 20 20" fill="currentColor"><path d="M3.105 2.289a.75.75 0 00-.826.95l1.414 4.925A1.5 1.5 0 005.135 9.25h6.115a.75.75 0 010 1.5H5.135a1.5 1.5 0 00-1.442 1.086l-1.414 4.926a.75.75 0 00.826.95 28.896 28.896 0 0015.293-7.154.75.75 0 000-1.115A28.897 28.897 0 003.105 2.289z"/></svg>
+                      Submit Request
+                    </button>
+                    <span></span>
+                  </div>
+                </form>
               </div>
             </div>
 
@@ -530,6 +704,36 @@ $statusChip = [
         </div>
       </div>
 
+      <!-- CIMMS-style submit confirmation modal (maintenance path only) -->
+      <div id="cimmsAlertBackdrop">
+        <div id="cimmsAlertModal">
+          <div class="cimms-icon-wrap">
+            <span class="cimms-icon">✅</span>
+          </div>
+          <div class="cimms-alert-title">Confirm Submission</div>
+          <div class="cimms-alert-desc">Are you sure you want to submit this maintenance request?</div>
+          <div class="cimms-alert-btns">
+            <button class="cimms-alert-btn cancel" type="button" id="cimmsAlertCancel">Cancel</button>
+            <button class="cimms-alert-btn confirm" type="button" id="cimmsAlertConfirm">Submit</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- CIMMS-style map picker: drop or drag the pin and the Location
+           field fills itself from OpenStreetMap reverse geocoding. -->
+      <div id="cimmsMapBackdrop">
+        <div id="cimmsMapModal">
+          <div class="cimms-map-title">Pin the Location</div>
+          <div class="cimms-map-desc">Tap the map to drop a pin — drag it to fine-tune. The address fills in automatically.</div>
+          <div id="cimmsMapCanvas"></div>
+          <div class="cimms-map-address" id="cimmsMapAddress"></div>
+          <div class="cimms-map-btns">
+            <button class="cimms-alert-btn cancel" type="button" id="cimmsMapCancel">Cancel</button>
+            <button class="cimms-alert-btn confirm" type="button" id="cimmsMapUse">Use this location</button>
+          </div>
+        </div>
+      </div>
+
       <?php endif; ?>
     </section>
 
@@ -538,8 +742,34 @@ $statusChip = [
       <div class="page-header">
         <h1 class="page-title">Track Your Feedback & Complaints</h1>
       </div>
-      <div id="trackedFeedbackContainer" class="feedback-list">
-        <p class="empty-state">Loading your submissions...</p>
+      <div class="list-toolbar">
+        <div class="list-search">
+          <svg viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M8 4a4 4 0 100 8 4 4 0 000-8zM2 8a6 6 0 1110.89 3.476l4.817 4.817a1 1 0 01-1.414 1.414l-4.816-4.816A6 6 0 012 8z" clip-rule="evenodd"/></svg>
+          <input type="text" id="tfSearch" placeholder="Search your reports">
+        </div>
+        <div class="list-pager">
+          <span class="list-pager-info" id="tfPagerInfo">0 of 0</span>
+          <button type="button" class="list-pager-btn" id="tfPagerPrev" title="Previous page" aria-label="Previous page"><svg viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M12.707 5.293a1 1 0 010 1.414L9.414 10l3.293 3.293a1 1 0 01-1.414 1.414l-4-4a1 1 0 010-1.414l4-4a1 1 0 011.414 0z" clip-rule="evenodd"/></svg></button>
+          <button type="button" class="list-pager-btn" id="tfPagerNext" title="Next page" aria-label="Next page"><svg viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M7.293 14.707a1 1 0 010-1.414L10.586 10 7.293 6.707a1 1 0 011.414-1.414l4 4a1 1 0 010 1.414l-4 4a1 1 0 01-1.414 0z" clip-rule="evenodd"/></svg></button>
+        </div>
+      </div>
+      <div class="table-card">
+        <table class="data-table">
+          <thead>
+            <tr>
+              <th>Report</th>
+              <th>Category</th>
+              <th>Priority</th>
+              <th>Location</th>
+              <th>Submitted</th>
+              <th>Status</th>
+              <th>Actions</th>
+            </tr>
+          </thead>
+          <tbody id="trackedFeedbackBody">
+            <tr><td colspan="7" class="table-empty">Loading your submissions…</td></tr>
+          </tbody>
+        </table>
       </div>
     </section>
 
@@ -571,12 +801,84 @@ $statusChip = [
         </div>
       </div>
 
+      <!-- Charts: all figures come straight from the staff-side projects &
+           expenses tables via citizen/api/transparency.php -->
+      <div class="transparency-charts">
+        <article class="chart-card">
+          <div class="chart-header">
+            <h2 class="chart-title">Budget Utilization</h2>
+          </div>
+          <div class="chart-body budget-body">
+            <div class="donut-wrapper">
+              <canvas id="budgetDonutChart"></canvas>
+              <div class="donut-center">
+                <span class="donut-pct" id="budgetDonutPct">0%</span>
+                <span class="donut-sub">spent</span>
+              </div>
+            </div>
+            <div class="budget-legend" id="budgetDonutLegend"></div>
+          </div>
+        </article>
+
+        <article class="chart-card">
+          <div class="chart-header">
+            <h2 class="chart-title">Spending by Category</h2>
+          </div>
+          <div class="chart-canvas-box">
+            <canvas id="categorySpendChart"></canvas>
+          </div>
+        </article>
+
+        <article class="chart-card chart-card-full">
+          <div class="chart-header">
+            <h2 class="chart-title">Monthly Spending</h2>
+            <span class="chart-subnote">Expenses recorded over the last 12 months</span>
+          </div>
+          <div class="chart-canvas-box chart-canvas-tall">
+            <canvas id="monthlySpendChart"></canvas>
+          </div>
+        </article>
+
+        <article class="chart-card chart-card-full">
+          <div class="chart-header">
+            <h2 class="chart-title">Budget vs Spent by Project</h2>
+            <span class="chart-subnote">The largest public projects by allocated budget</span>
+          </div>
+          <div class="chart-canvas-box chart-canvas-tall">
+            <canvas id="projectBudgetChart"></canvas>
+          </div>
+        </article>
+      </div>
+
       <section class="dashboard-section">
         <div class="section-header">
           <h2>Project Expenses Breakdown</h2>
         </div>
-        <div id="expensesContainer" class="expenses-list">
-          <p class="empty-state">Loading expense data...</p>
+        <div class="list-toolbar">
+          <div class="list-search">
+            <svg viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M8 4a4 4 0 100 8 4 4 0 000-8zM2 8a6 6 0 1110.89 3.476l4.817 4.817a1 1 0 01-1.414 1.414l-4.816-4.816A6 6 0 012 8z" clip-rule="evenodd"/></svg>
+            <input type="text" id="expSearch" placeholder="Search expenses by project or category">
+          </div>
+          <div class="list-pager">
+            <span class="list-pager-info" id="expPagerInfo">0 of 0</span>
+            <button type="button" class="list-pager-btn" id="expPagerPrev" title="Previous page" aria-label="Previous page"><svg viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M12.707 5.293a1 1 0 010 1.414L9.414 10l3.293 3.293a1 1 0 01-1.414 1.414l-4-4a1 1 0 010-1.414l4-4a1 1 0 011.414 0z" clip-rule="evenodd"/></svg></button>
+            <button type="button" class="list-pager-btn" id="expPagerNext" title="Next page" aria-label="Next page"><svg viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M7.293 14.707a1 1 0 010-1.414L10.586 10 7.293 6.707a1 1 0 011.414-1.414l4 4a1 1 0 010 1.414l-4 4a1 1 0 01-1.414 0z" clip-rule="evenodd"/></svg></button>
+          </div>
+        </div>
+        <div class="table-card">
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th>Project</th>
+                <th>Category</th>
+                <th>Date</th>
+                <th class="cell-num">Amount</th>
+              </tr>
+            </thead>
+            <tbody id="expensesBody">
+              <tr><td colspan="4" class="table-empty">Loading expense data…</td></tr>
+            </tbody>
+          </table>
         </div>
       </section>
     </section>
@@ -768,6 +1070,57 @@ $statusChip = [
   </div>
 </div>
 
+<!-- Feedback Detail Modal (full view of a citizen's own submitted report) -->
+<div class="modal-overlay" id="feedbackDetailModal" style="display: none;">
+  <div class="modal-card modal-card-wide">
+    <div class="modal-head">
+      <h3>
+        <svg width="17" height="17" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M18 10c0 3.866-3.582 7-8 7a8.841 8.841 0 01-4.083-.98L2 17l1.338-3.123C2.493 12.767 2 11.434 2 10c0-3.866 3.582-7 8-7s8 3.134 8 7z" clip-rule="evenodd"/></svg>
+        Report Details
+      </h3>
+      <button type="button" class="modal-close" id="feedbackDetailClose" title="Close">&times;</button>
+    </div>
+    <div class="project-detail-body" id="feedbackDetailBody">
+      <p class="empty-state">Loading report details...</p>
+    </div>
+  </div>
+</div>
+
+<!-- Logout Confirmation Modal -->
+<div class="modal-overlay" id="logoutConfirmModal" style="display: none;">
+  <div class="modal-card">
+    <div class="modal-head">
+      <h3>
+        <svg width="17" height="17" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M3 3a1 1 0 00-1 1v12a1 1 0 102 0V4a1 1 0 00-1-1zm10.293 9.293a1 1 0 001.414 1.414l3-3a1 1 0 000-1.414l-3-3a1 1 0 10-1.414 1.414L14.586 9H7a1 1 0 100 2h7.586l-1.293 1.293z" clip-rule="evenodd"/></svg>
+        Log Out?
+      </h3>
+      <button type="button" class="modal-close" id="logoutConfirmClose" title="Close">&times;</button>
+    </div>
+    <p class="modal-text">Are you sure you want to log out? You'll need to sign in again to access your account.</p>
+    <div class="modal-actions">
+      <button type="button" class="btn-modal-ghost" id="logoutCancelBtn">Cancel</button>
+      <a href="<?= htmlspecialchars(appUrl('/auth/logout.php')) ?>" class="btn-modal-danger">Yes, Log Out</a>
+    </div>
+  </div>
+</div>
+
+<!-- Inactivity Auto-Logout Warning Modal -->
+<div class="modal-overlay" id="idleWarningModal" style="display: none;">
+  <div class="modal-card">
+    <div class="modal-head">
+      <h3>
+        <svg width="17" height="17" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm1-12a1 1 0 10-2 0v4a1 1 0 00.293.707l2.828 2.829a1 1 0 101.415-1.415L11 9.586V6z" clip-rule="evenodd"/></svg>
+        Are you still there?
+      </h3>
+    </div>
+    <p class="modal-text">You've been inactive for a while. For your security, you'll be logged out automatically in <strong id="idleCountdown">60</strong> seconds.</p>
+    <div class="modal-actions">
+      <a href="<?= htmlspecialchars(appUrl('/auth/logout.php')) ?>?timeout=1" class="btn-modal-ghost">Log Out Now</a>
+      <button type="button" class="btn-modal-primary" id="idleStayBtn">Stay Logged In</button>
+    </div>
+  </div>
+</div>
+
 <?php $notifPanelTitle = 'Citizen Updates'; include __DIR__ . '/../includes/notifications-panel.php'; ?>
 
 <script>
@@ -776,4 +1129,10 @@ $statusChip = [
   window.QC_GEOJSON_URL = <?= json_encode(appUrl('/citizen/assets/data/qc-barangays.geojson')) ?>;
 </script>
 <script src="<?= htmlspecialchars(assetUrl('/assets/js/notifications.js')) ?>"></script>
+<script>window.SIDEBAR_BADGES_PORTAL = 'citizen';</script>
+<script src="<?= htmlspecialchars(assetUrl('/assets/js/sidebar-badges.js')) ?>"></script>
 <script src="<?= htmlspecialchars(assetUrl('/citizen/assets/js/citizen.js')) ?>"></script>
+<script>
+  window.CHATBOT_ENDPOINT = <?= json_encode(appUrl('/api/chatbot.php')) ?>;
+</script>
+<script src="<?= htmlspecialchars(assetUrl('/assets/js/chatbot-widget.js')) ?>"></script>

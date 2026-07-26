@@ -2,7 +2,6 @@
 require_once __DIR__ . '/../auth/session.php';
 
 $user = requireLogin(['contractor']);
-$topbarSearchPlaceholder = 'Search assigned projects...';
 $extraStylesheets = ['assets/css/pagination.css', 'contractor/assets/css/contractor.css'];
 
 require_once __DIR__ . '/../includes/header.php';
@@ -75,6 +74,16 @@ require_once __DIR__ . '/sidebar.php';
       </section>
 
       <section class="charts-row reveal">
+        <article class="chart-card chart-main">
+          <div class="chart-header">
+            <h2 class="chart-title">Reported Progress Over Time</h2>
+          </div>
+          <div class="chart-body">
+            <canvas id="contractorProgressChart"></canvas>
+            <p class="empty-state" id="contractorProgressChartEmpty" style="display:none;">Progress will chart here once accomplishment reports are submitted.</p>
+          </div>
+        </article>
+
         <article class="chart-card">
           <div class="chart-header">
             <h2 class="chart-title">Project Status Mix</h2>
@@ -115,7 +124,6 @@ require_once __DIR__ . '/sidebar.php';
     <section id="page-payment-history" class="page-section" style="display:none;"></section>
     <section id="page-performance-rating" class="page-section" style="display:none;"></section>
     <section id="page-compliance-records" class="page-section" style="display:none;"></section>
-    <section id="page-notifications" class="page-section" style="display:none;"></section>
     <section id="page-profile" class="page-section" style="display:none;"></section>
   </main>
 </div>
@@ -133,7 +141,10 @@ require_once __DIR__ . '/sidebar.php';
 <?php $notifPanelTitle = 'Contractor Updates'; include __DIR__ . '/../includes/notifications-panel.php'; ?>
 
 <script src="<?= htmlspecialchars(assetUrl('/assets/js/notifications.js')) ?>"></script>
+<script>window.SIDEBAR_BADGES_PORTAL = 'contractor';</script>
+<script src="<?= htmlspecialchars(assetUrl('/assets/js/sidebar-badges.js')) ?>"></script>
 <script src="<?= htmlspecialchars(assetUrl('/assets/js/pagination.js')) ?>"></script>
+<script src="<?= htmlspecialchars(assetUrl('/assets/js/sidebar-toggle.js')) ?>"></script>
 <script src="<?= htmlspecialchars(assetUrl('/contractor/assets/js/contractor.js')) ?>"></script>
 </body>
 </html>

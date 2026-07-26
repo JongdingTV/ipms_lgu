@@ -2,7 +2,6 @@
 require_once __DIR__ . '/../auth/session.php';
 
 $user = requireLogin(['super_admin']);
-$topbarSearchPlaceholder = 'Search users, audit logs, login activity...';
 $extraStylesheets = ['assets/css/pagination.css', 'superadmin/assets/css/superadmin.css'];
 
 require_once __DIR__ . '/../includes/header.php';
@@ -66,6 +65,19 @@ require_once __DIR__ . '/sidebar.php';
       </section>
 
       <section class="charts-row reveal">
+        <article class="chart-card chart-main">
+          <div class="chart-header">
+            <h2 class="chart-title">Login Activity — Last 7 Days</h2>
+            <div class="chart-legend">
+              <span><span class="legend-dot legend-green"></span>Successful</span>
+              <span><span class="legend-dot" style="background:#ef4444;"></span>Failed</span>
+            </div>
+          </div>
+          <div class="chart-body">
+            <canvas id="saLoginTrendChart"></canvas>
+          </div>
+        </article>
+
         <article class="chart-card">
           <div class="chart-header">
             <h2 class="chart-title">Users by Role</h2>
@@ -321,7 +333,10 @@ require_once __DIR__ . '/sidebar.php';
   window.CURRENT_USER_ID = <?= (int) ($user['user_id'] ?? 0) ?>;
 </script>
 <script src="<?= htmlspecialchars(assetUrl('/assets/js/notifications.js')) ?>"></script>
+<script>window.SIDEBAR_BADGES_PORTAL = 'superadmin';</script>
+<script src="<?= htmlspecialchars(assetUrl('/assets/js/sidebar-badges.js')) ?>"></script>
 <script src="<?= htmlspecialchars(assetUrl('/assets/js/pagination.js')) ?>"></script>
+<script src="<?= htmlspecialchars(assetUrl('/assets/js/sidebar-toggle.js')) ?>"></script>
 <script src="<?= htmlspecialchars(assetUrl('/superadmin/assets/js/superadmin.js')) ?>"></script>
 </body>
 </html>

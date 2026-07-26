@@ -138,6 +138,7 @@ async function hopeRenderDashboard() {
   const stats = data.stats || {};
   document.getElementById('hopePendingCount').textContent = stats.pending_project_approvals || 0;
   document.getElementById('hopePendingAwardsCount').textContent = stats.pending_award_approvals || 0;
+  document.getElementById('hopePendingDeletionsCount').textContent = stats.pending_deletion_requests || 0;
   document.getElementById('hopeApprovedCount').textContent = stats.approved_this_month || 0;
   document.getElementById('hopeReturnedCount').textContent = stats.returned || 0;
   document.getElementById('hopeRejectedCount').textContent = stats.rejected || 0;
@@ -158,6 +159,125 @@ async function hopeRenderDashboard() {
   document.getElementById('hopeHighRiskList').innerHTML = highRisk.length
     ? highRisk.map(p => hopeRow(p.name, `${p.project_code} — ${hopeEscape(p.status).replaceAll('_', ' ')}`, hopeBadge('high_risk'))).join('')
     : '<p class="empty-state">No high-risk projects detected right now.</p>';
+
+  try {
+    hopeRenderDecisionChart(data.monthly_decisions || []);
+    hopeRenderStageChart(data.status_mix || []);
+  } catch (error) {
+    console.error('Failed to render dashboard charts:', error);
+  }
+}
+
+/* ---- Dashboard charts ----------------------------------------------------- */
+
+let hopeDecisionChartInst = null;
+let hopeStageChartInst = null;
+
+const HOPE_CHART_GRID = () => document.documentElement.getAttribute('data-theme') === 'dark'
+  ? 'rgba(148,163,184,.18)' : 'rgba(100,116,139,.12)';
+
+function hopeRenderDecisionChart(rows) {
+  const ctx = document.getElementById('hopeDecisionChart')?.getContext('2d');
+  if (!ctx) return;
+  if (hopeDecisionChartInst) hopeDecisionChartInst.destroy();
+
+  // Last six calendar months, oldest first, zero-filled from the log rows.
+  const months = [];
+  const now = new Date();
+  for (let i = 5; i >= 0; i--) {
+    const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+    months.push({
+      ym: `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`,
+      label: d.toLocaleString('en', { month: 'short' }),
+    });
+  }
+  const series = {
+    'Project approved': months.map(() => 0),
+    'Project returned': months.map(() => 0),
+    'Project rejected': months.map(() => 0),
+  };
+  rows.forEach(row => {
+    const index = months.findIndex(m => m.ym === row.ym);
+    if (index !== -1 && series[row.action]) series[row.action][index] = Number(row.total);
+  });
+
+  hopeDecisionChartInst = new Chart(ctx, {
+    type: 'bar',
+    data: {
+      labels: months.map(m => m.label),
+      datasets: [
+        { label: 'Approved', data: series['Project approved'], backgroundColor: 'rgba(34,197,94,.8)', borderRadius: 5, maxBarThickness: 26 },
+        { label: 'Returned', data: series['Project returned'], backgroundColor: 'rgba(249,115,22,.8)', borderRadius: 5, maxBarThickness: 26 },
+        { label: 'Rejected', data: series['Project rejected'], backgroundColor: 'rgba(239,68,68,.8)', borderRadius: 5, maxBarThickness: 26 },
+      ],
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      animation: { duration: 900, easing: 'easeOutQuart' },
+      plugins: {
+        legend: { display: false },
+        tooltip: { backgroundColor: '#1e2a3b' },
+      },
+      scales: {
+        x: { grid: { display: false }, ticks: { color: '#94a3b8', font: { size: 11 } }, border: { display: false } },
+        y: { beginAtZero: true, ticks: { precision: 0, color: '#94a3b8', font: { size: 11 } }, grid: { color: HOPE_CHART_GRID() }, border: { display: false } },
+      },
+    },
+  });
+}
+
+function hopeRenderStageChart(statusMix) {
+  const ctx = document.getElementById('hopeStageChart')?.getContext('2d');
+  if (!ctx) return;
+  if (hopeStageChartInst) hopeStageChartInst.destroy();
+
+  const stageOf = status => {
+    if (['draft', 'endorsed', 'returned', 'planning'].includes(status)) return 'In Review';
+    if (['approved', 'bidding', 'awarded'].includes(status)) return 'Procurement';
+    if (['assigned', 'active', 'delayed', 'on_hold', 'completion_inspection'].includes(status)) return 'Execution';
+    if (['completed', 'turnover'].includes(status)) return 'Completed';
+    return 'Stopped';
+  };
+  const stages = [
+    { label: 'In Review', color: '#94a3b8' },
+    { label: 'Procurement', color: '#f97316' },
+    { label: 'Execution', color: '#3b82f6' },
+    { label: 'Completed', color: '#22c55e' },
+    { label: 'Stopped', color: '#ef4444' },
+  ].map(stage => ({ ...stage, value: 0 }));
+  statusMix.forEach(row => {
+    const stage = stages.find(s => s.label === stageOf(row.status));
+    if (stage) stage.value += Number(row.total);
+  });
+  const total = stages.reduce((sum, s) => sum + s.value, 0);
+
+  hopeStageChartInst = new Chart(ctx, {
+    type: 'doughnut',
+    data: {
+      labels: stages.map(s => s.label),
+      datasets: [{
+        data: stages.map(s => s.value),
+        backgroundColor: stages.map(s => s.color),
+        borderColor: stages.map(() => '#fff'), borderWidth: 3, hoverOffset: 6,
+      }],
+    },
+    options: {
+      responsive: false, cutout: '70%',
+      animation: { duration: 900 },
+      plugins: {
+        legend: { display: false },
+        tooltip: { backgroundColor: '#1e2a3b', callbacks: { label: c => ` ${c.label}: ${c.raw}` } },
+      },
+    },
+  });
+
+  document.getElementById('hopeStageChartTotal').textContent = total;
+  document.getElementById('hopeStageChartLegend').innerHTML = stages.map(s => `
+    <div class="budget-legend-item">
+      <span class="legend-dot" style="background:${s.color};"></span>
+      <span>${hopeEscape(s.label)} <strong>${s.value}</strong></span>
+    </div>
+  `).join('');
 }
 
 /* ---- Project Approvals ---------------------------------------------------- */
@@ -372,38 +492,42 @@ async function hopeRenderAwardApprovals() {
         <p class="hope-decision-note">Review BAC's recommended contractor and bid evaluation, then approve the award, return the recommendation for reconsideration, or reject it. A remark is required for Return and Reject decisions.</p>
       </div>
     </div>
-    <div id="hopeAwardTable" class="table-card"><div class="skeleton-group"><div class="skeleton-row"></div><div class="skeleton-row"></div></div></div>
+    ${listToolbarHtml('hopeAwardSearch', 'Search project, contractor...', 'hopeAwardPager')}
+    <div class="table-card">
+      <table class="data-table">
+        <thead><tr><th>Project</th><th>Contractor</th><th>Award Amount</th><th>Recommended</th><th>Actions</th></tr></thead>
+        <tbody id="hopeAwardBody"><tr><td colspan="5" class="table-empty">Loading...</td></tr></tbody>
+      </table>
+    </div>
   `;
+
+  initClientList('hopeAwards', {
+    bodyId: 'hopeAwardBody', searchId: 'hopeAwardSearch', pagerId: 'hopeAwardPager',
+    columns: 5, emptyText: 'No contract award recommendations are awaiting your decision.',
+    searchText: r => `${r.project_code} ${r.project_name} ${r.contractor_name}`,
+    rowHtml: r => `
+      <tr>
+        <td><span class="proj-id">${hopeEscape(r.project_code)}</span><br><strong>${hopeEscape(r.project_name)}</strong></td>
+        <td>${hopeEscape(r.contractor_name)}<br><small style="color:#94a3b8">Performance ${r.performance_score}/100</small></td>
+        <td class="cell-money">${hopeMoney(r.award_amount)}</td>
+        <td class="cell-nowrap">${hopeDate(r.created_at)}</td>
+        <td><button class="btn-primary btn-compact" onclick="hopeOpenAwardDetailModal(${r.id})">Review</button></td>
+      </tr>`,
+  });
 
   await hopeLoadAwardApprovals();
 }
 
 async function hopeLoadAwardApprovals() {
-  const wrap = document.getElementById('hopeAwardTable');
-  if (!wrap) return;
+  const body = document.getElementById('hopeAwardBody');
+  if (!body) return;
 
   try {
     const result = await hopeGet('list_award_recommendations');
     result.data.forEach(r => { hopeAwardRecsById[r.id] = r; });
-
-    wrap.innerHTML = result.data.length ? `
-      <table class="data-table">
-        <thead><tr><th>Project</th><th>Contractor</th><th>Award Amount</th><th>Recommended</th><th>Actions</th></tr></thead>
-        <tbody>
-          ${result.data.map(r => `
-            <tr>
-              <td><span class="proj-id">${hopeEscape(r.project_code)}</span><br><strong>${hopeEscape(r.project_name)}</strong></td>
-              <td>${hopeEscape(r.contractor_name)}<br><small style="color:#94a3b8">Performance ${r.performance_score}/100</small></td>
-              <td>${hopeMoney(r.award_amount)}</td>
-              <td>${hopeDate(r.created_at)}</td>
-              <td><button class="btn-primary btn-compact" onclick="hopeOpenAwardDetailModal(${r.id})">Review</button></td>
-            </tr>
-          `).join('')}
-        </tbody>
-      </table>
-    ` : '<p class="empty-state">No contract award recommendations are awaiting your decision.</p>';
+    setClientListData('hopeAwards', result.data);
   } catch (error) {
-    wrap.innerHTML = '<p class="empty-state">Failed to load award recommendations.</p>';
+    body.innerHTML = '<tr><td colspan="5" class="table-empty">Failed to load award recommendations.</td></tr>';
   }
 }
 
@@ -512,6 +636,125 @@ function hopeOpenAwardDecisionModal(recId, decision) {
   });
 }
 
+/* ---- Deletion Requests ---------------------------------------------------- */
+
+let hopeDeletionRequestsById = {};
+
+async function hopeRenderDeletionRequests() {
+  const container = document.getElementById('page-deletion-requests');
+  if (!container) return;
+
+  container.innerHTML = `
+    <div class="page-header">
+      <div>
+        <h2 class="page-title">Deletion Requests</h2>
+        <p class="hope-decision-note">Review Admin's request to permanently delete a project, including the stated reason, then approve or reject it. A remark is required to reject.</p>
+      </div>
+    </div>
+    ${listToolbarHtml('hopeDeletionSearch', 'Search project...', 'hopeDeletionPager')}
+    <div class="table-card">
+      <table class="data-table">
+        <thead><tr><th>Project</th><th>Requested By</th><th>Reason</th><th>Requested</th><th>Actions</th></tr></thead>
+        <tbody id="hopeDeletionBody"><tr><td colspan="5" class="table-empty">Loading...</td></tr></tbody>
+      </table>
+    </div>
+  `;
+
+  initClientList('hopeDeletions', {
+    bodyId: 'hopeDeletionBody', searchId: 'hopeDeletionSearch', pagerId: 'hopeDeletionPager',
+    columns: 5, emptyText: 'No project deletion requests are awaiting your review.',
+    searchText: r => `${r.project_code} ${r.project_name} ${r.requested_by_name || ''}`,
+    rowHtml: r => `
+      <tr>
+        <td><span class="proj-id">${hopeEscape(r.project_code)}</span><br><strong>${hopeEscape(r.project_name)}</strong></td>
+        <td>${hopeEscape(r.requested_by_name || 'Unknown')}</td>
+        <td style="max-width:260px;">${hopeEscape(r.reason)}</td>
+        <td class="cell-nowrap">${hopeDate(r.created_at)}</td>
+        <td><button class="btn-primary btn-compact" onclick="hopeOpenDeletionDetailModal(${r.id})">Review</button></td>
+      </tr>`,
+  });
+
+  await hopeLoadDeletionRequests();
+}
+
+async function hopeLoadDeletionRequests() {
+  const body = document.getElementById('hopeDeletionBody');
+  if (!body) return;
+
+  try {
+    const result = await hopeGet('list_deletion_requests');
+    result.data.forEach(r => { hopeDeletionRequestsById[r.id] = r; });
+    setClientListData('hopeDeletions', result.data);
+  } catch (error) {
+    body.innerHTML = '<tr><td colspan="5" class="table-empty">Failed to load deletion requests.</td></tr>';
+  }
+}
+
+function hopeOpenDeletionDetailModal(requestId) {
+  const r = hopeDeletionRequestsById[requestId];
+  if (!r) return;
+
+  hopeOpenModal(`Deletion Request — ${hopeEscape(r.project_code)}`, `
+    <div style="display:flex;flex-direction:column;gap:14px;">
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">
+        <div><p class="modal-label">PROJECT</p><p class="modal-val">${hopeEscape(r.project_name)}</p></div>
+        <div><p class="modal-label">LOCATION</p><p class="modal-val">${hopeEscape(r.location || '-')}</p></div>
+        <div><p class="modal-label">CURRENT STATUS</p><p class="modal-val">${r.project_status ? hopeBadge(r.project_status) : 'Project already removed'}</p></div>
+        <div><p class="modal-label">BUDGET</p><p class="modal-val">${r.budget != null ? hopeMoney(r.budget) : '-'}</p></div>
+        <div><p class="modal-label">REQUESTED BY</p><p class="modal-val">${hopeEscape(r.requested_by_name || 'Unknown')}</p></div>
+        <div><p class="modal-label">REQUESTED</p><p class="modal-val">${hopeDate(r.created_at)}</p></div>
+      </div>
+      <div>
+        <p class="modal-label">REASON FOR DELETION</p>
+        <p class="modal-val" style="font-weight:400;">${hopeEscape(r.reason)}</p>
+      </div>
+      <div class="form-actions">
+        <button class="btn-secondary" type="button" onclick="hopeOpenDeletionDecisionModal(${requestId}, 'reject')">Reject Request</button>
+        <button class="btn-primary" type="button" onclick="hopeOpenDeletionDecisionModal(${requestId}, 'approve')">Approve — Permanently Delete</button>
+      </div>
+    </div>
+  `);
+}
+
+function hopeOpenDeletionDecisionModal(requestId, decision) {
+  const labels = { approve: 'Approve Deletion', reject: 'Reject Request' };
+  const remarksRequired = decision !== 'approve';
+
+  hopeOpenModal(labels[decision], `
+    <form id="hopeDeletionDecisionForm">
+      ${decision === 'approve' ? '<p class="empty-state" style="color:#ef4444;">This permanently deletes the project and all its related records. This cannot be undone.</p>' : ''}
+      <div class="form-group">
+        <label>Remarks${remarksRequired ? ' *' : ' (optional)'}</label>
+        <textarea name="remarks" class="form-input" rows="4" placeholder="Explain the decision" ${remarksRequired ? 'required' : ''}></textarea>
+      </div>
+      <div class="form-actions">
+        <button type="button" class="btn-secondary" onclick="hopeCloseModal()">Cancel</button>
+        <button type="submit" class="btn-primary">Confirm ${labels[decision]}</button>
+      </div>
+    </form>
+  `);
+
+  document.getElementById('hopeDeletionDecisionForm').addEventListener('submit', async event => {
+    event.preventDefault();
+    const remarks = new FormData(event.target).get('remarks') || '';
+    try {
+      const response = await fetch(`${HOPE_API}?action=decide_deletion`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...HOPE_CSRF_HEADERS },
+        body: JSON.stringify({ request_id: requestId, decision, remarks }),
+      });
+      const result = await response.json();
+      if (!response.ok || result.error) throw hopeErrorFrom(result, response);
+      hopeToast(`Deletion request ${result.status}.`);
+      hopeCloseModal();
+      await hopeLoadDeletionRequests();
+      await hopeRenderDashboard();
+    } catch (error) {
+      hopeToast(error.message || 'Failed to record decision.', 'error');
+    }
+  });
+}
+
 /* ---- Returned Projects / Decision History ----------------------------------- */
 
 async function hopeRenderReturnedProjects() {
@@ -525,34 +768,39 @@ async function hopeRenderReturnedProjects() {
         <p class="hope-decision-note">Projects sent back for revision, awaiting Admin's resubmission.</p>
       </div>
     </div>
-    <div id="hopeReturnedTable" class="table-card"><div class="skeleton-group"><div class="skeleton-row"></div></div></div>
-  `;
-
-  const wrap = document.getElementById('hopeReturnedTable');
-  try {
-    const result = await hopeFetchProjects({ status: 'returned', per_page: 50 });
-    wrap.innerHTML = result.data.length ? `
+    ${listToolbarHtml('hopeReturnedSearch', 'Search code, project, reason...', 'hopeReturnedPager')}
+    <div class="table-card">
       <table class="data-table">
         <thead><tr><th>Code</th><th>Project</th><th>Budget</th><th>Reason</th><th>Actions</th></tr></thead>
-        <tbody>
-          ${result.data.map(p => `
-            <tr>
-              <td>${hopeEscape(p.project_code)}</td>
-              <td>${hopeEscape(p.name)}</td>
-              <td>${hopeMoney(p.budget)}</td>
-              <td>${hopeEscape(p.rejection_reason || '-')}</td>
-              <td><button class="btn-secondary btn-compact" onclick="hopeOpenProjectModal(${p.id})">View</button></td>
-            </tr>
-          `).join('')}
-        </tbody>
+        <tbody id="hopeReturnedBody"><tr><td colspan="5" class="table-empty">Loading...</td></tr></tbody>
       </table>
-    ` : '<p class="empty-state">No returned projects.</p>';
+    </div>
+  `;
+
+  initClientList('hopeReturned', {
+    bodyId: 'hopeReturnedBody', searchId: 'hopeReturnedSearch', pagerId: 'hopeReturnedPager',
+    columns: 5, emptyText: 'No returned projects.',
+    searchText: p => `${p.project_code} ${p.name} ${p.rejection_reason || ''}`,
+    rowHtml: p => `
+      <tr>
+        <td class="cell-nowrap">${hopeEscape(p.project_code)}</td>
+        <td><span class="cell-title">${hopeEscape(p.name)}</span></td>
+        <td class="cell-money">${hopeMoney(p.budget)}</td>
+        <td>${hopeEscape(p.rejection_reason || '-')}</td>
+        <td><button class="btn-secondary btn-compact" onclick="hopeOpenProjectModal(${p.id})">View</button></td>
+      </tr>`,
+  });
+
+  try {
+    const result = await hopeFetchProjects({ status: 'returned', per_page: 50 });
+    setClientListData('hopeReturned', result.data);
   } catch (error) {
-    wrap.innerHTML = '<p class="empty-state">Failed to load returned projects.</p>';
+    const body = document.getElementById('hopeReturnedBody');
+    if (body) body.innerHTML = '<tr><td colspan="5" class="table-empty">Failed to load returned projects.</td></tr>';
   }
 }
 
-let hopeHistoryState = { page: 1 };
+let hopeHistoryState = { page: 1, search: '' };
 
 async function hopeRenderDecisionHistory() {
   const container = document.getElementById('page-decision-history');
@@ -565,11 +813,16 @@ async function hopeRenderDecisionHistory() {
         <p class="hope-decision-note">Every project approval and contract award decision you've made.</p>
       </div>
     </div>
+    ${listToolbarHtml('hopeHistorySearch', 'Search action, project, details...', 'hopeHistoryPager')}
     <div id="hopeHistoryTable" class="table-card"></div>
-    <div id="hopeHistoryPager" class="pager"></div>
   `;
 
-  hopeHistoryState.page = 1;
+  hopeHistoryState = { page: 1, search: '' };
+  document.getElementById('hopeHistorySearch').addEventListener('input', debounce(() => {
+    hopeHistoryState.search = document.getElementById('hopeHistorySearch').value.trim();
+    hopeHistoryState.page = 1;
+    hopeLoadDecisionHistory();
+  }, 300));
   await hopeLoadDecisionHistory();
 }
 
@@ -579,7 +832,7 @@ async function hopeLoadDecisionHistory() {
   wrap.innerHTML = '<div class="skeleton-group"><div class="skeleton-row"></div><div class="skeleton-row"></div></div>';
 
   try {
-    const result = await hopeGet('decision_history', { page: hopeHistoryState.page, per_page: 15 });
+    const result = await hopeGet('decision_history', { page: hopeHistoryState.page, per_page: 15, search: hopeHistoryState.search });
     wrap.innerHTML = result.data.length ? `
       <table class="data-table">
         <thead><tr><th>Date</th><th>Action</th><th>Project</th><th>Details</th></tr></thead>
@@ -613,32 +866,42 @@ async function hopeRenderProjectsByStage(pageId, title, statusIn) {
 
   container.innerHTML = `
     <div class="page-header"><div><h2 class="page-title">${hopeEscape(title)}</h2></div></div>
-    <div id="${pageId}Table" class="table-card"><div class="skeleton-group"><div class="skeleton-row"></div></div></div>
-  `;
-
-  const wrap = document.getElementById(`${pageId}Table`);
-  try {
-    const result = await hopeFetchProjects({ status_in: statusIn, per_page: 100 });
-    wrap.innerHTML = result.data.length ? `
+    ${listToolbarHtml(`${pageId}Search`, 'Search code, project, contractor...', `${pageId}Pager`)}
+    <div class="table-card">
       <table class="data-table">
         <thead><tr><th>Code</th><th>Project</th><th>Budget</th><th>Contractor</th><th>Progress</th><th>Status</th><th>Actions</th></tr></thead>
-        <tbody>
-          ${result.data.map(p => `
-            <tr>
-              <td>${hopeEscape(p.project_code)}</td>
-              <td>${hopeEscape(p.name)}</td>
-              <td>${hopeMoney(p.budget)}</td>
-              <td>${hopeEscape(p.contractor_name || 'Unassigned')}</td>
-              <td>${Number(p.progress || 0)}%</td>
-              <td>${hopeBadge(p.status)}</td>
-              <td><button class="btn-secondary btn-compact" onclick="hopeOpenProjectModal(${p.id})">View</button></td>
-            </tr>
-          `).join('')}
-        </tbody>
+        <tbody id="${pageId}Body"><tr><td colspan="7" class="table-empty">Loading...</td></tr></tbody>
       </table>
-    ` : '<p class="empty-state">No projects in this category.</p>';
+    </div>
+  `;
+
+  initClientList(`stage-${pageId}`, {
+    bodyId: `${pageId}Body`, searchId: `${pageId}Search`, pagerId: `${pageId}Pager`,
+    columns: 7, emptyText: 'No projects in this category.',
+    searchText: p => `${p.project_code} ${p.name} ${p.contractor_name || ''} ${p.status}`,
+    rowHtml: p => `
+      <tr>
+        <td class="cell-nowrap">${hopeEscape(p.project_code)}</td>
+        <td><span class="cell-title">${hopeEscape(p.name)}</span></td>
+        <td class="cell-money">${hopeMoney(p.budget)}</td>
+        <td>${hopeEscape(p.contractor_name || 'Unassigned')}</td>
+        <td>
+          <div class="cell-progress">
+            <div class="mini-progress"><div style="width:${Number(p.progress) || 0}%"></div></div>
+            <span>${Number(p.progress || 0)}%</span>
+          </div>
+        </td>
+        <td>${hopeBadge(p.status)}</td>
+        <td><button class="btn-secondary btn-compact" onclick="hopeOpenProjectModal(${p.id})">View</button></td>
+      </tr>`,
+  });
+
+  try {
+    const result = await hopeFetchProjects({ status_in: statusIn, per_page: 100 });
+    setClientListData(`stage-${pageId}`, result.data);
   } catch (error) {
-    wrap.innerHTML = '<p class="empty-state">Failed to load projects.</p>';
+    const body = document.getElementById(`${pageId}Body`);
+    if (body) body.innerHTML = '<tr><td colspan="7" class="table-empty">Failed to load projects.</td></tr>';
   }
 }
 
@@ -690,7 +953,9 @@ async function hopeRenderExecutiveReports() {
         <div class="hope-stat-box"><span>Open Bids</span><strong>${procurement.open_bids}</strong></div>
         <div class="hope-stat-box"><span>Awards This Month</span><strong>${procurement.awarded_this_month}</strong></div>
       </div>
-      <p class="hope-decision-note" style="margin-top:16px;">${hopeHighRiskSummaryText(summary.high_risk_projects)}</p>
+      <article class="info-card" style="margin-top:16px;">
+        <p class="hope-decision-note" style="margin-bottom:0;">${hopeHighRiskSummaryText(summary.high_risk_projects)}</p>
+      </article>
     `;
   } catch (error) {
     body.innerHTML = '<p class="empty-state">Failed to load executive report.</p>';
@@ -715,21 +980,29 @@ async function hopeRenderBudgetSummary() {
         <div class="hope-stat-box"><span>Total Utilized</span><strong>${hopeMoney(data.total_spent)}</strong></div>
         <div class="hope-stat-box"><span>Utilization</span><strong>${data.utilization_pct}%</strong></div>
       </div>
-      <table class="data-table">
-        <thead><tr><th>Code</th><th>Project</th><th>Status</th><th>Budget</th><th>Spent</th></tr></thead>
-        <tbody>
-          ${data.projects.map(p => `
-            <tr>
-              <td>${hopeEscape(p.project_code)}</td>
-              <td>${hopeEscape(p.name)}</td>
-              <td>${hopeBadge(p.status)}</td>
-              <td>${hopeMoney(p.budget)}</td>
-              <td>${hopeMoney(p.spent)}</td>
-            </tr>
-          `).join('')}
-        </tbody>
-      </table>
+      ${listToolbarHtml('hopeBudgetSearch', 'Search code, project, status...', 'hopeBudgetPager')}
+      <div class="table-card">
+        <table class="data-table">
+          <thead><tr><th>Code</th><th>Project</th><th>Status</th><th>Budget</th><th>Spent</th></tr></thead>
+          <tbody id="hopeBudgetTableBody"></tbody>
+        </table>
+      </div>
     `;
+
+    initClientList('hopeBudget', {
+      bodyId: 'hopeBudgetTableBody', searchId: 'hopeBudgetSearch', pagerId: 'hopeBudgetPager',
+      columns: 5, emptyText: 'No projects with budget data.',
+      searchText: p => `${p.project_code} ${p.name} ${p.status}`,
+      rowHtml: p => `
+        <tr>
+          <td class="cell-nowrap">${hopeEscape(p.project_code)}</td>
+          <td><span class="cell-title">${hopeEscape(p.name)}</span></td>
+          <td>${hopeBadge(p.status)}</td>
+          <td class="cell-money">${hopeMoney(p.budget)}</td>
+          <td class="cell-money">${hopeMoney(p.spent)}</td>
+        </tr>`,
+    });
+    setClientListData('hopeBudget', data.projects);
   } catch (error) {
     body.innerHTML = '<p class="empty-state">Failed to load budget summary.</p>';
   }
@@ -762,30 +1035,7 @@ async function hopeRenderProcurementSummary() {
   }
 }
 
-/* ---- Notifications & Profile -------------------------------------------------- */
-
-async function hopeRenderNotificationsPage() {
-  const container = document.getElementById('page-notifications');
-  if (!container) return;
-
-  container.innerHTML = `
-    <div class="page-header"><div><h2 class="page-title">Notifications</h2></div></div>
-    <div id="hopeNotificationsList" class="hope-list"><p class="empty-state">Loading...</p></div>
-  `;
-
-  const wrap = document.getElementById('hopeNotificationsList');
-  try {
-    const response = await fetch(`${window.BASE_PATH}api/notifications.php?per_page=30`, { headers: HOPE_CSRF_HEADERS });
-    const result = await response.json();
-    if (!response.ok) throw new Error(result.error || 'Unable to load notifications.');
-
-    wrap.innerHTML = (result.data || []).length
-      ? result.data.map(n => hopeRow(n.title, n.message, hopeDate(n.created_at))).join('')
-      : '<p class="empty-state">No notifications yet.</p>';
-  } catch (error) {
-    wrap.innerHTML = '<p class="empty-state">Unable to load notifications.</p>';
-  }
-}
+/* ---- Profile ------------------------------------------------------------------- */
 
 async function hopeRenderProfilePage() {
   const container = document.getElementById('page-profile');
@@ -836,6 +1086,7 @@ const hopeRenderers = {
   'project-approvals': hopeRenderProjectApprovals,
   'award-approvals': hopeRenderAwardApprovals,
   'returned-projects': hopeRenderReturnedProjects,
+  'deletion-requests': hopeRenderDeletionRequests,
   'decision-history': hopeRenderDecisionHistory,
   'approved-projects': hopeRenderApprovedProjects,
   'ongoing-projects': hopeRenderOngoingProjects,
@@ -843,7 +1094,6 @@ const hopeRenderers = {
   'executive-reports': hopeRenderExecutiveReports,
   'budget-summary': hopeRenderBudgetSummary,
   'procurement-summary': hopeRenderProcurementSummary,
-  notifications: hopeRenderNotificationsPage,
   profile: hopeRenderProfilePage,
 };
 
@@ -883,10 +1133,7 @@ function hopeWireShell() {
     });
   });
 
-  const sidebarToggle = document.getElementById('sidebarToggle');
-  sidebarToggle?.addEventListener('click', () => {
-    document.getElementById('sidebar')?.classList.toggle('open');
-  });
+  // Sidebar toggle (open/close + backdrop) is handled by assets/js/sidebar-toggle.js.
 
   const userMenuBtn = document.getElementById('userMenuBtn');
   const userMenu = document.getElementById('userMenu');
@@ -896,12 +1143,6 @@ function hopeWireShell() {
   });
 
   document.addEventListener('click', event => {
-    if (window.innerWidth <= 768) {
-      const sidebar = document.getElementById('sidebar');
-      if (sidebar?.classList.contains('open') && !sidebar.contains(event.target) && event.target !== sidebarToggle) {
-        sidebar.classList.remove('open');
-      }
-    }
     if (userMenu && !userMenu.contains(event.target) && event.target !== userMenuBtn) {
       userMenu.classList.remove('open');
     }

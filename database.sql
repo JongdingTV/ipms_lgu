@@ -366,6 +366,7 @@ CREATE TABLE feedback (
   citizen_name VARCHAR(120),
   message TEXT NOT NULL,
   category ENUM('complaint','road_damage','drainage_flooding','streetlight','sidewalk_accessibility','safety_hazard','project_delay','suggestion','inquiry','commendation') DEFAULT 'complaint' COMMENT 'Keep in sync with citizen/includes/feedback-categories.php',
+  infrastructure_type VARCHAR(100) NULL COMMENT 'CIMMS maintenance reports: affected infrastructure (Roads, Street Lights, ...)',
   concern_type ENUM('project','maintenance') NOT NULL DEFAULT 'project' COMMENT 'maintenance concerns are forwarded to CIMMS',
   anonymous TINYINT(1) NOT NULL DEFAULT 0,
   contact_name VARCHAR(120) NULL,

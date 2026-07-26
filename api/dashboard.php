@@ -85,6 +85,14 @@ for ($m = 1; $m <= 12; $m++) {
 }
 $out['progress_chart'] = $progressChart;
 
+// ── Projects by status (bar chart) ──
+$out['status_mix'] = $db->query("
+    SELECT status, COUNT(*) AS total
+    FROM projects
+    GROUP BY status
+    ORDER BY total DESC, status ASC
+")->fetchAll();
+
 // ── Budget Status for donut ──
 $anomaly = (float) $db
     ->query("SELECT COALESCE(SUM(amount),0) FROM expenses WHERE flagged=1")
@@ -117,6 +125,32 @@ $out['budget_anomalies'] = $db->query("
     JOIN projects p ON p.id = e.project_id
     WHERE e.flagged = 1
     ORDER BY e.expense_date DESC
+")->fetchAll();
+
+// ── Projects by category / funding source (Reports page breakdowns) ──
+$out['category_breakdown'] = $db->query("
+    SELECT COALESCE(category, 'Uncategorized') AS label, COUNT(*) AS total, COALESCE(SUM(budget),0) AS total_budget
+    FROM projects
+    WHERE status NOT IN ('draft','returned','cancelled')
+    GROUP BY label
+    ORDER BY total DESC
+")->fetchAll();
+
+$out['funding_source_breakdown'] = $db->query("
+    SELECT COALESCE(funding_source, 'Unspecified') AS label, COUNT(*) AS total, COALESCE(SUM(budget),0) AS total_budget
+    FROM projects
+    WHERE status NOT IN ('draft','returned','cancelled')
+    GROUP BY label
+    ORDER BY total DESC
+")->fetchAll();
+
+// ── Monthly spending trend, last 12 calendar months with any expense ──
+$out['monthly_spending'] = $db->query("
+    SELECT DATE_FORMAT(expense_date, '%Y-%m') AS ym, DATE_FORMAT(expense_date, '%b %Y') AS month, SUM(amount) AS total
+    FROM expenses
+    GROUP BY ym
+    ORDER BY ym ASC
+    LIMIT 12
 ")->fetchAll();
 
 // ── Recent citizen feedback ──

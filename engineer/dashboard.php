@@ -2,7 +2,6 @@
 require_once __DIR__ . '/../auth/session.php';
 
 $user = requireLogin(['engineer']);
-$topbarSearchPlaceholder = 'Search assigned projects...';
 $extraStylesheets = ['assets/css/pagination.css', 'engineer/assets/css/engineer.css'];
 
 require_once __DIR__ . '/../includes/header.php';
@@ -65,6 +64,15 @@ require_once __DIR__ . '/sidebar.php';
       </section>
 
       <section class="charts-row reveal">
+        <article class="chart-card chart-main">
+          <div class="chart-header">
+            <h2 class="chart-title">Progress by Assigned Project</h2>
+          </div>
+          <div class="chart-body">
+            <canvas id="engineerProgressChart"></canvas>
+          </div>
+        </article>
+
         <article class="chart-card">
           <div class="chart-header">
             <h2 class="chart-title">Project Status Mix</h2>
@@ -136,6 +144,8 @@ require_once __DIR__ . '/sidebar.php';
     <section id="page-delay-report" class="page-section" style="display:none;"></section>
     <section id="page-issue-reporting" class="page-section" style="display:none;"></section>
     <section id="page-status-tracker" class="page-section" style="display:none;"></section>
+    <section id="page-urban-planning-inspection" class="page-section" style="display:none;"></section>
+    <section id="page-road-inspection-history" class="page-section" style="display:none;"></section>
   </main>
 </div>
 
@@ -152,7 +162,10 @@ require_once __DIR__ . '/sidebar.php';
 <?php $notifPanelTitle = 'Engineer Updates'; include __DIR__ . '/../includes/notifications-panel.php'; ?>
 
 <script src="<?= htmlspecialchars(assetUrl('/assets/js/notifications.js')) ?>"></script>
+<script>window.SIDEBAR_BADGES_PORTAL = 'engineer';</script>
+<script src="<?= htmlspecialchars(assetUrl('/assets/js/sidebar-badges.js')) ?>"></script>
 <script src="<?= htmlspecialchars(assetUrl('/assets/js/pagination.js')) ?>"></script>
+<script src="<?= htmlspecialchars(assetUrl('/assets/js/sidebar-toggle.js')) ?>"></script>
 <script src="<?= htmlspecialchars(assetUrl('/engineer/assets/js/engineer.js')) ?>"></script>
 </body>
 </html>

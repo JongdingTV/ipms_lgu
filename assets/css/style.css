@@ -2,23 +2,31 @@
    LGU Infrastructure Dashboard — assets/css/style.css
    ======================================================== */
 
-/* ── Variables ── */
+/* ── Variables ──
+   Glassmorphism pass: the staff portals share the citizen portal's design
+   language — blurred City Hall photo backdrop (body::before), translucent
+   glass surfaces, Sora display headings — so the whole system reads as one
+   product. --bg-body stays an opaque tint for hover states and inset
+   surfaces; the page itself is transparent so the photo shows through. */
 :root {
-  --bg-body:          #f4f7fb;
-  --bg-sidebar:       #182333;
-  --bg-sidebar-hover: #223047;
-  --bg-active:        #28507d;
+  --bg-body:          #f2f7fd;
+  --bg-sidebar:       rgba(255,255,255,0.85);
+  --bg-sidebar-hover: rgba(37,99,235,0.08);
+  --bg-active:        linear-gradient(135deg, #2563eb 0%, #1e40af 100%);
   --accent:           #2563eb;
+  --accent-dark:      #1e40af;
   --accent-light:     #dbeafe;
   --text-primary:     #1e293b;
   --text-muted:       #64748b;
-  --text-sidebar:     #94a3b8;
+  --text-sidebar:     #64748b;
   --text-sidebar-active: #ffffff;
-  --card-bg:          #ffffff;
+  --card-bg:          rgba(255,255,255,0.92);
+  --input-bg:         #ffffff;
   --card-shadow:      0 14px 34px rgba(15,23,42,0.07);
-  --border:           #dbe4ef;
-  --radius:           8px;
-  --radius-sm:        8px;
+  --border:           #d8e3f2;
+  --sidebar-border:   rgba(255,255,255,0.55);
+  --radius:           12px;
+  --radius-sm:        10px;
   --green:   #22c55e;
   --red:     #ef4444;
   --orange:  #f97316;
@@ -27,49 +35,91 @@
   --sidebar-w: 248px;
   --topbar-h:  68px;
   --font: 'Plus Jakarta Sans', sans-serif;
+  --display-font: 'Sora', 'Plus Jakarta Sans', system-ui, sans-serif;
   --mono: 'DM Mono', monospace;
 }
 
 /* ── Dark mode (see assets/js/theme-toggle.js) ──
-   Only the surface/text variables need overriding — the sidebar is already
-   dark in light mode, and the status colors (green/red/orange/amber/blue)
-   stay vibrant enough against a dark background as-is. Anything built with
-   these variables (which is most of the app) re-themes automatically;
-   a handful of hardcoded `background:white` form inputs are a known,
-   accepted gap rather than chasing every literal color in the codebase. */
+   Same glass recipe over a near-black wash on the photo (body::after
+   override below). Anything built with these variables (which is most of
+   the app) re-themes automatically; the remaining hardcoded light tints
+   get explicit :root[data-theme="dark"] overrides near their base rules. */
 :root[data-theme="dark"] {
   --bg-body:          #0f172a;
-  --bg-sidebar:       #0b1220;
-  --bg-sidebar-hover: #1c2a3f;
-  --bg-active:        #1e3a5f;
+  --bg-sidebar:       rgba(11,18,32,0.85);
+  --bg-sidebar-hover: rgba(59,130,246,0.14);
+  --bg-active:        linear-gradient(135deg, #2563eb 0%, #1e40af 100%);
   --accent:           #3b82f6;
   --accent-light:     #1e3a5f;
   --text-primary:     #e2e8f0;
   --text-muted:       #94a3b8;
-  --card-bg:          #1e293b;
+  --text-sidebar:     #94a3b8;
+  --card-bg:          rgba(30,41,59,0.92);
+  --input-bg:         #0f172a;
   --card-shadow:      0 14px 34px rgba(0,0,0,0.4);
   --border:           #334155;
+  --sidebar-border:   rgba(148,163,184,0.16);
 }
 
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-html { font-size: 14px; }
+/* Citizen-scale type ramp (18px base, matching citizen.css) — everything
+   below is sized in rem, so this one rule lifts the whole staff side. */
+html { font-size: 112.5%; }
 body {
   font-family: var(--font);
-  background: var(--bg-body);
+  background: transparent;
   color: var(--text-primary);
   display: flex;
   min-height: 100vh;
   overflow-x: hidden;
   transition: background-color .25s ease, color .25s ease;
 }
+
+/* Blurred City Hall photo backdrop, same recipe as the citizen portal
+   (citizen.css) and both login pages. Cards above it are slightly
+   translucent so the glass effect carries through. */
+body::before {
+  content: "";
+  position: fixed;
+  inset: -24px;
+  z-index: -2;
+  background: url('../img/cityhall.jpeg') center / cover no-repeat;
+  filter: blur(7px) saturate(1.05);
+  transform: scale(1.04);
+}
+body::after {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  background: linear-gradient(180deg, rgba(37, 99, 235, 0.14), rgba(242, 247, 253, 0.6));
+}
+:root[data-theme="dark"] body::after {
+  background: linear-gradient(180deg, rgba(2, 6, 23, 0.78), rgba(2, 6, 23, 0.88));
+}
+
+/* Display face for headings — Sora pairs with the Plus Jakarta Sans body,
+   mirroring the citizen portal's type system. */
+.page-title,
+.chart-title,
+.info-card-title,
+.logo-title,
+.modal-header h3,
+.confirm-head h3 {
+  font-family: var(--display-font);
+  letter-spacing: -0.015em;
+}
+
 a { text-decoration: none; color: inherit; }
 button { cursor: pointer; font-family: var(--font); }
 
-/* ── Sidebar ── */
+/* ── Sidebar (glass) ── */
 .sidebar {
   position: fixed; top: 0; left: 0;
   width: var(--sidebar-w); height: 100vh;
   background: var(--bg-sidebar);
+  backdrop-filter: blur(14px) saturate(1.4);
+  -webkit-backdrop-filter: blur(14px) saturate(1.4);
   display: flex; flex-direction: column;
   z-index: 100; transition: transform 0.32s cubic-bezier(0.4, 0, 0.2, 1), background-color .25s ease; overflow-y: auto;
 }
@@ -81,7 +131,7 @@ button { cursor: pointer; font-family: var(--font); }
 .sidebar-logo {
   display: flex; align-items: center; gap: 10px;
   padding: 20px 16px 18px;
-  border-bottom: 1px solid rgba(255,255,255,0.07); flex-shrink: 0;
+  border-bottom: 1px solid var(--border); flex-shrink: 0;
 }
 .logo-badge {
   width: 40px;
@@ -89,10 +139,11 @@ button { cursor: pointer; font-family: var(--font); }
   display: grid;
   place-items: center;
   flex-shrink: 0;
-  border-radius: 8px;
+  border-radius: 10px;
   background: #ffffff;
+  border: 1px solid var(--border);
   padding: 3px;
-  box-shadow: 0 10px 24px rgba(2, 8, 23, .18);
+  box-shadow: 0 10px 24px rgba(2, 8, 23, .12);
 }
 .logo-badge img {
   width: 100%;
@@ -100,7 +151,7 @@ button { cursor: pointer; font-family: var(--font); }
   object-fit: contain;
 }
 .logo-text { display: flex; flex-direction: column; }
-.logo-title { font-size: .85rem; font-weight: 700; color: #fff; line-height: 1.2; }
+.logo-title { font-size: .85rem; font-weight: 700; color: var(--text-primary); line-height: 1.2; }
 .logo-sub { font-size: .65rem; color: var(--text-sidebar); line-height: 1.3; }
 .sidebar-nav { padding: 12px 10px; display: flex; flex-direction: column; gap: 2px; flex: 1; }
 .nav-item {
@@ -109,17 +160,78 @@ button { cursor: pointer; font-family: var(--font); }
   color: var(--text-sidebar); font-size: .82rem; font-weight: 500;
   transition: background .18s, color .18s;
 }
-.nav-item:hover { background: var(--bg-sidebar-hover); color: #c8d6e8; }
-.nav-item.active { background: var(--bg-active); color: var(--text-sidebar-active); }
-.nav-icon { width: 18px; height: 18px; flex-shrink: 0; display: flex; align-items: center; justify-content: center; }
+.nav-item:hover { background: var(--bg-sidebar-hover); color: var(--accent); }
+.nav-item.active { background: var(--bg-active); color: var(--text-sidebar-active); font-weight: 600; }
+.nav-icon { width: 18px; height: 18px; flex-shrink: 0; display: flex; align-items: center; justify-content: center; transition: transform .15s; }
 .nav-icon svg { width: 100%; height: 100%; }
+.nav-item:hover .nav-icon { transform: scale(1.08); }
+
+/* ── Sidebar notification badges & status pills ──
+   Populated live by assets/js/script.js's fetchSidebarBadges() from
+   api/admin-badges.php — every number reflects real table state. */
+.nav-label { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.nav-badge { display: flex; align-items: center; gap: 4px; flex-shrink: 0; }
+
+.nav-badge-dot {
+  display: inline-flex; align-items: center; justify-content: center;
+  min-width: 20px; height: 20px; padding: 0 6px;
+  border-radius: 10px;
+  font-size: .68rem; font-weight: 700; line-height: 1;
+  color: #fff;
+  font-variant-numeric: tabular-nums;
+}
+.nav-badge-red    { background: var(--red); }
+.nav-badge-orange { background: var(--orange); }
+.nav-badge-green  { background: var(--green); }
+.nav-badge-blue   { background: var(--blue); }
+
+@keyframes navBadgePulse {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(239,68,68,.55); }
+  50%      { box-shadow: 0 0 0 4px rgba(239,68,68,0); }
+}
+.nav-badge-pulse { animation: navBadgePulse 1.8s ease-in-out infinite; }
+@media (prefers-reduced-motion: reduce) {
+  .nav-badge-pulse { animation: none; }
+}
+
+.nav-badge-pill {
+  display: inline-flex; align-items: center;
+  padding: 2px 7px;
+  border-radius: 999px;
+  font-size: .6rem; font-weight: 800; letter-spacing: .04em;
+  line-height: 1.4; text-transform: uppercase; white-space: nowrap;
+}
+/* Pill text colors darken in light mode (the sidebar is white glass now)
+   and lighten again on the dark sidebar. */
+.nav-badge-pill-new     { background: rgba(34,197,94,.16);  color: #15803d; }
+.nav-badge-pill-updated { background: rgba(59,130,246,.16); color: #1d4ed8; }
+.nav-badge-pill-ai      { background: rgba(168,85,247,.16); color: #7e22ce; }
+.nav-badge-pill-urgent  { background: rgba(239,68,68,.16);  color: #b91c1c; }
+.nav-badge-pill-default { background: rgba(148,163,184,.18); color: var(--text-sidebar); }
+:root[data-theme="dark"] .nav-badge-pill-new     { background: rgba(34,197,94,.18);  color: #4ade80; }
+:root[data-theme="dark"] .nav-badge-pill-updated { background: rgba(59,130,246,.18); color: #60a5fa; }
+:root[data-theme="dark"] .nav-badge-pill-ai      { background: rgba(168,85,247,.18); color: #c084fc; }
+:root[data-theme="dark"] .nav-badge-pill-urgent  { background: rgba(239,68,68,.18);  color: #f87171; }
 
 /* ── Main ── */
-.main-wrapper { margin-left: var(--sidebar-w); flex: 1; display: flex; flex-direction: column; min-height: 100vh; transition: margin-left .3s; }
+.main-wrapper { margin-left: var(--sidebar-w); flex: 1; min-width: 0; display: flex; flex-direction: column; min-height: 100vh; transition: margin-left .3s; }
 
-/* ── Topbar ── */
+/* Desktop burger: body.sidebar-collapsed slides the sidebar away and gives
+   the content full width — same behavior as the citizen portal. On mobile
+   the burger keeps the off-canvas .open drawer instead. No transition
+   override here anymore — the base .sidebar rule's own cubic-bezier timing
+   (which also covers background-color) already applies and is nicer than
+   the flat .3s this used to replace it with. */
+@media (min-width: 769px) {
+  body.sidebar-collapsed .sidebar { transform: translateX(-100%); }
+  body.sidebar-collapsed .main-wrapper { margin-left: 0; }
+}
+
+/* ── Topbar (glass) ── */
 .topbar {
-  height: var(--topbar-h); background: var(--card-bg);
+  height: var(--topbar-h); background: var(--bg-sidebar);
+  backdrop-filter: blur(14px) saturate(1.4);
+  -webkit-backdrop-filter: blur(14px) saturate(1.4);
   border-bottom: 1px solid var(--border);
   display: flex; align-items: center; justify-content: space-between; gap: 20px; padding: 0 24px;
   position: sticky; top: 0; z-index: 90;
@@ -131,7 +243,7 @@ button { cursor: pointer; font-family: var(--font); }
 .menu-toggle:hover { background: var(--bg-body); color: var(--text-primary); }
 .menu-toggle svg { width: 20px; height: 20px; }
 .search-bar { display: flex; align-items: center; gap: 10px; background: var(--bg-body); border: 1px solid var(--border); border-radius: 8px; padding: 8px 14px; width: 100%; transition: all .2s; }
-.search-bar:focus-within { border-color: var(--accent); box-shadow: 0 0 0 3px rgba(59,130,246,.1); background: white; }
+.search-bar:focus-within { border-color: var(--accent); box-shadow: 0 0 0 3px rgba(59,130,246,.1); background: var(--input-bg); }
 .search-icon { width: 16px; height: 16px; color: var(--text-muted); flex-shrink: 0; }
 .search-bar input { border: none; background: transparent; outline: none; font-size: .83rem; color: var(--text-primary); width: 100%; font-family: var(--font); }
 .search-bar input::placeholder { color: var(--text-muted); }
@@ -157,7 +269,7 @@ button { cursor: pointer; font-family: var(--font); }
 .user-avatar { width: 40px; height: 40px; border-radius: 50%; background: linear-gradient(90deg, #60a5fa, #2563eb); color: white; border: none; cursor: pointer; font-weight: 700; font-size: .95rem; display: flex; align-items: center; justify-content: center; transition: all .2s; }
 .user-avatar:hover { transform: scale(1.08); box-shadow: 0 4px 12px rgba(37,99,235,.3); }
 
-.user-menu { position: absolute; top: calc(100% + 8px); right: 0; background: white; border-radius: 12px; box-shadow: 0 10px 40px rgba(0,0,0,.15); min-width: 280px; opacity: 0; visibility: hidden; transform: translateY(-8px); transition: all .2s; z-index: 1000; overflow: hidden; }
+.user-menu { position: absolute; top: calc(100% + 8px); right: 0; background: var(--card-bg); border-radius: 12px; box-shadow: 0 10px 40px rgba(0,0,0,.15); min-width: 280px; opacity: 0; visibility: hidden; transform: translateY(-8px); transition: all .2s; z-index: 1000; overflow: hidden; }
 .user-menu.open { opacity: 1; visibility: visible; transform: translateY(0); }
 .user-menu-header { padding: 14px 16px; display: flex; align-items: center; gap: 12px; background: #f8fafc; border-bottom: 1px solid var(--border); }
 .user-menu-avatar { width: 44px; height: 44px; border-radius: 50%; background: linear-gradient(90deg, #60a5fa, #2563eb); color: white; display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: 1.1rem; flex-shrink: 0; }
@@ -173,6 +285,11 @@ button { cursor: pointer; font-family: var(--font); }
 .user-menu-logout { color: var(--red); }
 .user-menu-logout:hover { background: #fef2f2; }
 .user-menu-logout svg { color: var(--red); }
+/* The menu surface follows --card-bg, but the header/hover tints above are
+   hardcoded light-only colors — swap them for translucent slate on dark. */
+:root[data-theme="dark"] .user-menu-header { background: rgba(148,163,184,.08); }
+:root[data-theme="dark"] .user-menu-item:hover { background: rgba(148,163,184,.12); }
+:root[data-theme="dark"] .user-menu-logout:hover { background: rgba(239,68,68,.14); }
 .sidebar-toggle {
   background: none; border: none; color: var(--text-muted);
   width: 32px; height: 32px; display: none;
@@ -202,6 +319,11 @@ button { cursor: pointer; font-family: var(--font); }
 
 /* ── Content ── */
 .content { padding: 24px; display: flex; flex-direction: column; gap: 20px; flex: 1; }
+
+/* Vertical rhythm: page sections toggle via display:block, so the .content
+   flex gap never applies inside them — space the stacked blocks here.
+   (Adjacent margins collapse, so blocks with their own margins keep them.) */
+.page-section > * + * { margin-top: 20px; }
 
 /* ── KPI ── */
 .kpi-grid { display: grid; grid-template-columns: repeat(4,1fr); gap: 16px; }
@@ -239,6 +361,18 @@ button { cursor: pointer; font-family: var(--font); }
 .chart-title { font-size: .9rem; font-weight: 700; }
 .chart-legend { display: flex; align-items: center; gap: 14px; font-size: .75rem; color: var(--text-muted); }
 .legend-dot { display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-right: 4px; }
+
+/* ── GIS Map legend: each status gets its own pill so it stays readable
+   against the map/photo backdrop, instead of plain text floating on it ── */
+.gis-legend { display: flex; flex-wrap: wrap; gap: 8px; margin: 14px 0; }
+.gis-legend-item {
+  display: inline-flex; align-items: center; gap: 7px;
+  padding: 6px 14px; border-radius: 999px;
+  background: var(--card-bg); border: 1px solid var(--border); box-shadow: var(--card-shadow);
+  font-size: .8rem; font-weight: 600; color: var(--text-primary); white-space: nowrap;
+}
+.gis-legend-dot { display: inline-block; width: 11px; height: 11px; border-radius: 50%; flex-shrink: 0; box-shadow: 0 0 0 2px rgba(255,255,255,.5); }
+:root[data-theme="dark"] .gis-legend-dot { box-shadow: 0 0 0 2px rgba(0,0,0,.35); }
 .legend-blue  { background: #3b82f6; }
 .legend-green { background: #22c55e; }
 .chart-body { position: relative; }
@@ -316,11 +450,15 @@ button { cursor: pointer; font-family: var(--font); }
 .ai-green  { background: #16a34a; color: white; }
 
 /* ── Modal ── */
-.modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,.45); z-index: 200; display: flex; align-items: center; justify-content: center; opacity: 0; pointer-events: none; transition: opacity .2s; backdrop-filter: blur(3px); }
+/* z-index 2100: comfortably above Leaflet's own default panes/controls
+   (tile/marker/popup panes up to 700, .leaflet-top/.leaflet-bottom controls
+   at 1000) — otherwise an open GIS Map's markers/popups/zoom buttons render
+   on top of this modal instead of being covered by it. */
+.modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,.45); z-index: 2100; display: flex; align-items: center; justify-content: center; opacity: 0; pointer-events: none; transition: opacity .2s; backdrop-filter: blur(3px); }
 .modal-overlay.open { opacity: 1; pointer-events: all; }
 .modal { background: var(--card-bg); color: var(--text-primary); border-radius: var(--radius); width: 560px; max-width: 94vw; max-height: 90vh; overflow-y: auto; box-shadow: 0 20px 60px rgba(0,0,0,.2); transform: scale(.94); transition: transform .2s, background-color .25s ease, color .25s ease; }
 .modal-overlay.open .modal { transform: scale(1); }
-.modal-header { display: flex; align-items: center; justify-content: space-between; padding: 18px 22px; border-bottom: 1px solid var(--border); position: sticky; top: 0; background: white; z-index: 1; }
+.modal-header { display: flex; align-items: center; justify-content: space-between; padding: 18px 22px; border-bottom: 1px solid var(--border); position: sticky; top: 0; background: var(--card-bg); z-index: 1; }
 .modal-header h3 { font-size: .95rem; font-weight: 700; }
 .modal-close { background: none; border: none; font-size: 1.4rem; color: var(--text-muted); line-height: 1; padding: 0 4px; transition: color .15s; }
 .modal-close:hover { color: var(--red); }
@@ -329,9 +467,10 @@ button { cursor: pointer; font-family: var(--font); }
 .modal-val { color: #1e293b; font-weight: 600; }
 
 /* ── Notification Panel ── */
-.notif-panel { position: fixed; top: var(--topbar-h); right: 16px; width: 300px; background: white; border: 1px solid var(--border); border-radius: var(--radius); box-shadow: 0 8px 32px rgba(0,0,0,.12); z-index: 150; opacity: 0; pointer-events: none; transform: translateY(-8px); transition: opacity .2s, transform .2s; overflow: hidden; }
+.notif-panel { position: fixed; top: var(--topbar-h); right: 16px; width: 300px; max-height: calc(100vh - var(--topbar-h) - 24px); background: var(--card-bg); border: 1px solid var(--border); border-radius: var(--radius); box-shadow: 0 8px 32px rgba(0,0,0,.12); z-index: 150; opacity: 0; pointer-events: none; transform: translateY(-8px); transition: opacity .2s, transform .2s; overflow: hidden; display: flex; flex-direction: column; }
 .notif-panel.open { opacity: 1; pointer-events: all; transform: translateY(0); }
-.notif-panel-header { display: flex; align-items: center; justify-content: space-between; padding: 14px 16px 10px; font-size: .83rem; font-weight: 700; border-bottom: 1px solid var(--border); }
+.notif-panel-header { flex: 0 0 auto; display: flex; align-items: center; justify-content: space-between; padding: 14px 16px 10px; font-size: .83rem; font-weight: 700; border-bottom: 1px solid var(--border); }
+#notifList { overflow-y: auto; flex: 1 1 auto; }
 .notif-clear { background: none; border: none; font-size: .75rem; color: var(--accent); cursor: pointer; }
 .notif-item { display: flex; align-items: flex-start; gap: 10px; padding: 12px 16px; border-bottom: 1px solid var(--border); }
 .notif-item:last-child { border-bottom: none; }
@@ -349,7 +488,7 @@ button { cursor: pointer; font-family: var(--font); }
 .gsearch-trigger kbd { background: var(--card-bg); border: 1px solid var(--border); border-radius: 4px; padding: 1px 6px; font-size: .68rem; font-family: var(--font); color: var(--text-muted); }
 .hide-tablet { display: inline; }
 
-.gsearch-overlay { position: fixed; inset: 0; background: rgba(15,23,42,.5); z-index: 300; display: flex; align-items: flex-start; justify-content: center; padding-top: 12vh; opacity: 0; pointer-events: none; transition: opacity .2s; backdrop-filter: blur(3px); }
+.gsearch-overlay { position: fixed; inset: 0; background: rgba(15,23,42,.5); z-index: 2000; display: flex; align-items: flex-start; justify-content: center; padding-top: 12vh; opacity: 0; pointer-events: none; transition: opacity .2s; backdrop-filter: blur(3px); }
 .gsearch-overlay.open { opacity: 1; pointer-events: all; }
 .gsearch-box { background: var(--card-bg); color: var(--text-primary); width: 560px; max-width: 92vw; max-height: 70vh; border-radius: var(--radius); box-shadow: 0 24px 70px rgba(0,0,0,.3); overflow: hidden; display: flex; flex-direction: column; transform: translateY(-12px) scale(.98); transition: transform .2s, background-color .25s ease, color .25s ease; }
 .gsearch-overlay.open .gsearch-box { transform: translateY(0) scale(1); }
@@ -371,53 +510,186 @@ button { cursor: pointer; font-family: var(--font); }
    PAGE-LEVEL STYLES (Projects, Budget, Contractors, Feedback)
    ══════════════════════════════════════════════════════════ */
 
-/* ── Page header ── */
-.page-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 16px; }
-.page-title { font-size: 1.2rem; font-weight: 800; color: var(--text-primary); }
+/* ── Page header — same padded card treatment as the citizen portal, so
+   module titles sit on glass instead of floating over the photo backdrop. ── */
+.page-header {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 16px; flex-wrap: wrap;
+  padding: clamp(18px, 2.2vw, 26px) clamp(20px, 2.4vw, 28px);
+  margin-bottom: 20px;
+  background: var(--card-bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--card-shadow);
+}
+.page-title {
+  display: flex; align-items: center; gap: 12px;
+  font-size: clamp(1.35rem, 2vw, 1.7rem); font-weight: 800;
+  color: var(--text-primary); line-height: 1.15;
+}
+/* Same gradient accent bar as the citizen module titles. */
+.page-title::before {
+  content: ""; width: 5px; height: 1.05em; border-radius: 4px;
+  background: linear-gradient(180deg, var(--accent), var(--accent-dark, #1e40af));
+  flex-shrink: 0;
+}
+/* Portal scope notes ride inside the padded header; citizen-scale them.
+   (.content beats the per-portal .82rem rules loaded after this file.) */
+.content [class*="scope-note"],
+.content .hope-decision-note { font-size: .9rem; line-height: 1.55; }
 
 /* ── Buttons ── */
-.btn-primary { background: var(--accent); color: white; border: none; border-radius: var(--radius-sm); padding: 9px 18px; font-size: .83rem; font-weight: 600; transition: background .15s, transform .1s; }
-.btn-primary:hover { background: #2563eb; transform: translateY(-1px); }
+.btn-primary { background: linear-gradient(135deg, var(--accent), var(--accent-dark, #1e40af)); color: white; border: none; border-radius: var(--radius-sm); padding: 9px 18px; font-size: .83rem; font-weight: 600; transition: box-shadow .15s, transform .1s; }
+.btn-primary:hover { box-shadow: 0 10px 22px rgba(37,99,235,.3); transform: translateY(-1px); }
 .btn-secondary { background: var(--bg-body); color: var(--text-primary); border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 9px 18px; font-size: .83rem; font-weight: 600; transition: background .15s; }
 .btn-secondary:hover { background: #e2e8f0; }
+:root[data-theme="dark"] .btn-secondary:hover { background: #1c2a3f; }
 .btn-icon { background: none; border: 1px solid var(--border); border-radius: 6px; padding: 4px 8px; font-size: .8rem; transition: background .15s; }
 .btn-icon:hover { background: var(--bg-body); }
 .btn-icon.btn-danger:hover { background: #fee2e2; border-color: var(--red); }
 .btn-icon:disabled { opacity: .4; cursor: not-allowed; }
 .action-btns { display: flex; gap: 4px; }
 
-/* ── Filter bar ── */
-.filter-bar { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
-.filter-input { border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 7px 12px; font-size: .82rem; font-family: var(--font); outline: none; min-width: 200px; transition: border-color .2s; background: var(--card-bg); }
-.filter-input:focus { border-color: var(--accent); }
-.filter-select { border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 7px 12px; font-size: .82rem; font-family: var(--font); outline: none; background: var(--card-bg); cursor: pointer; }
+/* ── Filter bar (pill-styled to match the Gmail list toolbar) ── */
+.filter-bar { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 14px; }
+.filter-input { border: 1px solid var(--border); border-radius: 999px; padding: 9px 18px; font-size: .85rem; font-family: var(--font); outline: none; min-width: 220px; transition: border-color .2s, box-shadow .2s; background: var(--card-bg); color: var(--text-primary); }
+.filter-input:focus { border-color: var(--accent); box-shadow: 0 0 0 3px rgba(37, 99, 235, .12); }
+.filter-input::placeholder { color: var(--text-muted); }
+.filter-select { border: 1px solid var(--border); border-radius: 999px; padding: 9px 14px; font-size: .85rem; font-family: var(--font); outline: none; background: var(--card-bg); color: var(--text-primary); cursor: pointer; }
+/* Magnifier inside pill search boxes — the citizen .list-search look
+   without markup changes. Applies to any pill input that searches. */
+.filter-bar .filter-input[placeholder^="Search" i],
+input.search-pill {
+  padding-left: 42px;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20' fill='%2394a3b8'%3E%3Cpath fill-rule='evenodd' d='M8 4a4 4 0 100 8 4 4 0 000-8zM2 8a6 6 0 1110.89 3.476l4.817 4.817a1 1 0 01-1.414 1.414l-4.816-4.816A6 6 0 012 8z' clip-rule='evenodd'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: 16px center;
+  background-size: 16px 16px;
+}
 
-/* ── Table ── */
-.table-card { background: var(--card-bg); border-radius: var(--radius); box-shadow: var(--card-shadow); border: 1px solid var(--border); overflow: hidden; }
-.data-table { width: 100%; border-collapse: collapse; font-size: .82rem; }
-.data-table th { background: #f8fafc; padding: 11px 14px; text-align: left; font-size: .72rem; font-weight: 700; color: var(--text-muted); letter-spacing: .05em; text-transform: uppercase; border-bottom: 1px solid var(--border); white-space: nowrap; }
-.data-table td { padding: 11px 14px; border-bottom: 1px solid var(--border); vertical-align: middle; color: var(--text-primary); }
+/* ── Table — citizen-portal scale: roomier cells, clean (untinted) header
+   row, horizontal scroll inside the card when columns overflow. ── */
+.table-card { background: var(--card-bg); border-radius: var(--radius); box-shadow: var(--card-shadow); border: 1px solid var(--border); overflow-x: auto; }
+.data-table { width: 100%; border-collapse: collapse; font-size: .9rem; }
+.data-table th { padding: 13px 16px; text-align: left; font-size: .72rem; font-weight: 700; color: var(--text-muted); letter-spacing: .07em; text-transform: uppercase; border-bottom: 1px solid var(--border); white-space: nowrap; }
+.data-table td { padding: 13px 16px; border-bottom: 1px solid var(--border); vertical-align: middle; color: var(--text-primary); }
 .data-table tr:last-child td { border-bottom: none; }
-.data-table tr:hover td { background: #f8fafc; }
+.data-table tbody tr:hover td { background: rgba(148,163,184,.1); }
 
-/* ── Pager ── */
-.pager { display: flex; align-items: center; justify-content: center; gap: 12px; padding: 12px 0; }
-.pager-btn { background: var(--card-bg); border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 6px 16px; font-size: .8rem; font-weight: 600; cursor: pointer; transition: background .15s; }
+/* ── Pager (legacy .pager containers restyle to the same pill look) ── */
+.pager { display: flex; align-items: center; justify-content: flex-end; gap: 12px; padding: 12px 0; }
+.pager-btn { background: var(--card-bg); border: 1px solid var(--border); border-radius: 999px; padding: 6px 16px; font-size: .8rem; font-weight: 600; cursor: pointer; transition: background .15s; }
 .pager-btn:hover:not(:disabled) { background: var(--accent); color: white; border-color: var(--accent); }
 .pager-btn:disabled { opacity: .4; cursor: not-allowed; }
-.pager-info { font-size: .8rem; color: var(--text-muted); }
+.pager-info { font-size: .8rem; color: var(--text-muted); font-variant-numeric: tabular-nums; }
+
+/* ── Gmail-style list toolbar + pager (ported from the citizen portal) ──
+   .list-toolbar rows hold a pill search box and the .list-pager pill that
+   assets/js/pagination.js renders inside each .pagination-wrap. */
+.list-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-bottom: 14px;
+}
+.list-search {
+  flex: 1;
+  min-width: 220px;
+  max-width: 520px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  background: var(--card-bg);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 9px 18px;
+  transition: border-color .2s, box-shadow .2s;
+}
+.list-search:focus-within {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px rgba(37, 99, 235, .12);
+}
+.list-search svg { width: 16px; height: 16px; color: var(--text-muted); flex-shrink: 0; }
+.list-search input {
+  flex: 1;
+  min-width: 0;
+  border: none;
+  outline: none;
+  background: transparent;
+  font-size: .9rem;
+  font-family: var(--font);
+  color: var(--text-primary);
+}
+.list-search input::placeholder { color: var(--text-muted); }
+.list-toolbar .filter-select { margin: 0; }
+
+.list-pager {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  /* Same surface as the search pill — without it the pager floats on the
+     blurred photo backdrop and is barely readable. */
+  background: var(--card-bg);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 5px 8px 5px 16px;
+}
+.list-pager-info {
+  font-size: .85rem;
+  font-weight: 600;
+  color: var(--text-primary);
+  margin-right: 8px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.list-pager-btn {
+  width: 34px;
+  height: 34px;
+  border: none;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--text-muted);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: background .15s, color .15s;
+}
+.list-pager-btn svg { width: 18px; height: 18px; }
+.list-pager-btn:hover:not(:disabled) {
+  background: rgba(148, 163, 184, .18);
+  color: var(--text-primary);
+}
+.list-pager-btn:disabled { opacity: .35; cursor: default; }
+
+/* Row/cell helpers shared with the citizen table design */
+.row-click { cursor: pointer; transition: background .12s; }
+.row-click:hover { background: rgba(148, 163, 184, .1); }
+.cell-title { font-weight: 600; color: var(--text-primary); }
+.cell-sub { font-size: .8rem; color: var(--text-muted); margin-top: 2px; }
+.cell-clamp { max-width: 360px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cell-money { font-family: var(--mono); white-space: nowrap; }
+.cell-nowrap { white-space: nowrap; }
+.cell-num { text-align: right; }
+.table-empty { text-align: center; color: var(--text-muted); padding: 30px 18px !important; }
+.cell-progress { display: flex; align-items: center; gap: 8px; min-width: 110px; }
+.cell-progress span { font-size: .82rem; color: var(--text-muted); font-variant-numeric: tabular-nums; }
+.mini-progress { flex: 1; height: 6px; border-radius: 999px; background: rgba(148, 163, 184, .25); overflow: hidden; }
+.mini-progress div { height: 100%; border-radius: 999px; background: linear-gradient(90deg, var(--accent), var(--accent-dark, #1e40af)); }
 
 /* ── Forms ── */
 .form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
 .form-group { display: flex; flex-direction: column; gap: 5px; }
 .form-group label { font-size: .75rem; font-weight: 600; color: var(--text-muted); letter-spacing: .03em; }
-.form-input { border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 8px 12px; font-size: .83rem; font-family: var(--font); outline: none; transition: border-color .2s; background: white; resize: vertical; width: 100%; }
+.form-input { border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 8px 12px; font-size: .83rem; font-family: var(--font); outline: none; transition: border-color .2s; background: var(--input-bg); color: var(--text-primary); resize: vertical; width: 100%; }
 .form-input:focus { border-color: var(--accent); box-shadow: 0 0 0 3px rgba(59,130,246,.1); }
 .form-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 20px; padding-top: 16px; border-top: 1px solid var(--border); }
 
 /* ── Budget Summary Cards ── */
 .budget-summary-grid { display: grid; grid-template-columns: repeat(4,1fr); gap: 14px; }
-.budget-summary-card { background: var(--card-bg); border: 1px solid var(--border); border-radius: var(--radius); padding: 14px 16px; box-shadow: var(--card-shadow); }
+.budget-summary-card { min-width: 0; background: var(--card-bg); border: 1px solid var(--border); border-radius: var(--radius); padding: 14px 16px; box-shadow: var(--card-shadow); }
 .budget-proj-name { font-size: .82rem; font-weight: 700; color: var(--text-primary); margin-bottom: 6px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
 /* ── Contractor Cards ── */
@@ -452,13 +724,57 @@ button { cursor: pointer; font-family: var(--font); }
 /* ── Dynamic document rows (repeatable "+ Add another document" fields) ── */
 .doc-section { margin-top: 16px; }
 .doc-section > label { display: block; margin-bottom: 8px; font-size: .75rem; font-weight: 600; color: var(--text-muted); letter-spacing: .03em; }
-.doc-rows { display: flex; flex-direction: column; gap: 8px; }
+.doc-rows { display: flex; flex-direction: column; gap: 8px; max-height: 280px; overflow-y: auto; padding-right: 4px; }
+.doc-list-scroll { max-height: 240px; overflow-y: auto; padding-right: 4px; }
 .doc-row { display: grid; grid-template-columns: 1fr 1.4fr 1.4fr auto; gap: 8px; align-items: center; padding: 10px; border: 1px dashed var(--border); border-radius: var(--radius-sm); background: var(--bg-body); }
-.doc-row-remove { width: 28px; height: 28px; border: 1px solid var(--border); border-radius: 6px; background: white; color: var(--text-muted); font-size: 1rem; line-height: 1; cursor: pointer; transition: background .15s, color .15s, border-color .15s; }
+.doc-row-remove { width: 28px; height: 28px; border: 1px solid var(--border); border-radius: 6px; background: var(--input-bg); color: var(--text-muted); font-size: 1rem; line-height: 1; cursor: pointer; transition: background .15s, color .15s, border-color .15s; }
 .doc-row-remove:hover { background: #fee2e2; border-color: var(--red); color: var(--red); }
 .doc-add-btn { align-self: flex-start; margin-top: 4px; padding: 7px 14px; border: 1px dashed var(--accent); border-radius: var(--radius-sm); background: var(--accent-light); color: var(--accent); font-size: .78rem; font-weight: 700; cursor: pointer; transition: background .15s; }
 .doc-add-btn:hover { background: #cfe0fc; }
+.doc-add-btn:disabled { cursor: not-allowed; opacity: .55; border-color: var(--border); background: var(--bg-body); color: var(--text-muted); }
+.doc-add-btn:disabled:hover { background: var(--bg-body); }
 @media (max-width: 640px) { .doc-row { grid-template-columns: 1fr; } }
+
+/* ── Road Geometry (conditional module — Project Category = Roads and Bridges) ── */
+.road-geometry-card {
+  border: 1px solid var(--border); border-radius: var(--radius); background: var(--bg-body);
+  padding: 16px; margin-top: 14px;
+}
+.road-geometry-header { margin-bottom: 12px; }
+.road-geometry-header h3 { font-size: .95rem; margin: 0 0 2px; }
+.road-geometry-header small { color: var(--text-muted); font-size: .75rem; }
+.road-map-toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 10px; position: relative; }
+.road-map-toolbar .filter-input { flex: 1; min-width: 180px; }
+.road-point-count { font-size: .78rem; font-weight: 700; color: var(--text-muted); white-space: nowrap; margin-left: auto; }
+.road-map-suggestions {
+  display: none; position: absolute; top: 100%; left: 0; width: 100%; max-width: 320px; z-index: 20;
+  background: var(--card-bg); border: 1px solid var(--border); border-radius: var(--radius-sm);
+  box-shadow: var(--card-shadow); max-height: 200px; overflow-y: auto; margin-top: 4px;
+}
+.road-map-suggestions div { padding: 8px 12px; font-size: .8rem; cursor: pointer; border-bottom: 1px solid var(--border); }
+.road-map-suggestions div:last-child { border-bottom: none; }
+.road-map-suggestions div:hover { background: var(--bg-sidebar-hover); }
+.road-geometry-readouts {
+  display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; margin-top: 12px;
+}
+.road-geometry-readouts > div {
+  background: var(--card-bg); border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 10px 12px;
+}
+.road-summary-card {
+  margin-top: 12px; padding: 14px; border-radius: var(--radius-sm);
+  background: var(--accent-light); border: 1px solid var(--border);
+}
+.road-summary-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; margin-top: 8px; }
+.road-toggle-grid { display: flex; flex-wrap: wrap; gap: 16px 24px; margin-top: 10px; }
+.road-toggle { font-size: .8rem; }
+@media (max-width: 900px) {
+  .road-geometry-readouts { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .road-summary-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+@media (max-width: 560px) {
+  .road-geometry-readouts { grid-template-columns: 1fr; }
+  .road-summary-grid { grid-template-columns: 1fr; }
+}
 
 /* ── Toggle switch (e.g. Settings' maintenance_mode) ── */
 .form-checkbox-label { display: flex; align-items: center; gap: 10px; font-size: .83rem; font-weight: 600; color: var(--text-primary); cursor: pointer; }
@@ -574,6 +890,42 @@ button { cursor: pointer; font-family: var(--font); }
 .report-row span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .report-row strong { font-family: var(--mono); white-space: nowrap; }
 
+.report-panel .report-chart-body { height: 200px; margin-top: 10px; }
+.report-columns-2 {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+}
+
+/* ── Public Facilities Integration (read-only, Barangay Culiat) ── */
+.pf-tabs { display: flex; gap: 6px; margin: 4px 0 16px; flex-wrap: wrap; }
+.pf-tab {
+  padding: 8px 16px; border-radius: 999px; border: 1px solid var(--border);
+  background: var(--card-bg); color: var(--text-muted); font-size: .82rem; font-weight: 600;
+  cursor: pointer; transition: background .15s, color .15s, border-color .15s;
+}
+.pf-tab:hover { color: var(--text-primary); }
+.pf-tab.active { background: var(--accent); border-color: var(--accent); color: #fff; }
+.pf-badge { display: inline-block; padding: 2px 10px; border-radius: 999px; font-size: .68rem; font-weight: 700; letter-spacing: .03em; }
+.pf-badge-planned { background: #dbeafe; color: #1d4ed8; }
+.pf-badge-ongoing { background: #dcfce7; color: #15803d; }
+.pf-badge-completed { background: #e2e8f0; color: #475569; }
+.pf-badge-cancelled { background: #fee2e2; color: #b91c1c; }
+.pf-sync-badge {
+  display: inline-flex; align-items: center; gap: 5px; padding: 4px 12px;
+  border-radius: 999px; background: var(--accent-light); color: var(--accent);
+  font-size: .72rem; font-weight: 700; white-space: nowrap; height: fit-content;
+}
+.pf-sync-badge::before { content: ''; width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
+.pf-cancel-box { background: #fee2e2; border: 1px solid #fecaca; border-radius: var(--radius-sm); padding: 12px 14px; }
+.pf-cancel-box .modal-label { color: #b91c1c; }
+:root[data-theme="dark"] .pf-cancel-box { background: rgba(239,68,68,.14); border-color: rgba(239,68,68,.35); }
+:root[data-theme="dark"] .pf-cancel-box .modal-label { color: #f87171; }
+:root[data-theme="dark"] .pf-badge-planned { background: rgba(59,130,246,.18); color: #93c5fd; }
+:root[data-theme="dark"] .pf-badge-ongoing { background: rgba(34,197,94,.18); color: #86efac; }
+:root[data-theme="dark"] .pf-badge-completed { background: rgba(148,163,184,.18); color: #cbd5e1; }
+:root[data-theme="dark"] .pf-badge-cancelled { background: rgba(239,68,68,.18); color: #fca5a5; }
+
 .risk-grid {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -630,11 +982,73 @@ button { cursor: pointer; font-family: var(--font); }
 @keyframes spin { to { transform: rotate(360deg); } }
 
 /* ── Empty state ── */
-.empty-state { text-align: center; color: var(--text-muted); padding: 32px; font-size: .85rem; }
+.empty-state { text-align: center; color: var(--text-muted); padding: 32px; font-size: .9rem; }
+/* Empty states rendered straight onto the photo backdrop (timeline/stack
+   containers with no card of their own) get a glass card for readability. */
+.page-section > .empty-state,
+.kpi-grid > .empty-state,
+.bac-timeline > .empty-state,
+.bac-list > .empty-state,
+.engineer-stack > .empty-state {
+  background: var(--card-bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--card-shadow);
+}
+
+/* ── Confirm dialogs (logout confirmation + idle auto-logout warning) ──
+   Markup in includes/topbar.php, behavior in assets/js/session-guard.js.
+   Same look as the citizen portal's modal-card dialogs; a separate class
+   from .modal-overlay because these toggle display, not the .open class. */
+.confirm-overlay {
+  position: fixed; inset: 0; z-index: 2200; /* session-critical — must beat every other overlay, including .modal-overlay */
+  display: flex; align-items: center; justify-content: center;
+  padding: 16px;
+  background: rgba(15,23,42,.5);
+  backdrop-filter: blur(3px);
+}
+.confirm-card {
+  background: var(--card-bg);
+  border-radius: 12px;
+  box-shadow: 0 24px 60px rgba(15,23,42,.3);
+  width: 100%;
+  max-width: 420px;
+  padding: 22px;
+  animation: confirmFadeIn .2s ease-out;
+}
+@keyframes confirmFadeIn {
+  from { opacity: 0; transform: translateY(10px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+.confirm-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 14px; }
+.confirm-head h3 { display: flex; align-items: center; gap: 8px; font-size: 1rem; font-weight: 700; color: var(--text-primary); }
+.confirm-head h3 svg { color: #28507d; }
+:root[data-theme="dark"] .confirm-head h3 svg { color: #93c5fd; }
+.confirm-text { color: var(--text-muted); font-size: .9rem; line-height: 1.55; }
+.confirm-text strong { color: var(--text-primary); font-family: var(--mono); }
+.confirm-actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 18px; }
+
+.btn-modal-ghost,
+.btn-modal-danger,
+.btn-modal-primary {
+  display: inline-flex; align-items: center; justify-content: center;
+  padding: 9px 18px; border-radius: 8px;
+  font-size: .85rem; font-weight: 600; font-family: var(--font);
+  cursor: pointer; text-decoration: none;
+  border: 1px solid transparent;
+  transition: background .15s, color .15s, box-shadow .15s;
+}
+.btn-modal-ghost { background: transparent; border-color: var(--border); color: var(--text-muted); }
+.btn-modal-ghost:hover { background: #f1f5f9; color: var(--text-primary); }
+:root[data-theme="dark"] .btn-modal-ghost:hover { background: rgba(148,163,184,.15); }
+.btn-modal-danger { background: #dc2626; color: #fff; }
+.btn-modal-danger:hover { background: #b91c1c; box-shadow: 0 8px 18px rgba(220,38,38,.3); }
+.btn-modal-primary { background: linear-gradient(135deg, #28507d, #1e3a5f); color: #fff; }
+.btn-modal-primary:hover { box-shadow: 0 8px 18px rgba(40,80,125,.35); }
 
 /* Modern shell refinements */
 .sidebar {
-  border-right: 1px solid rgba(255,255,255,.06);
+  border-right: 1px solid var(--sidebar-border);
 }
 
 .sidebar-logo {
@@ -654,11 +1068,11 @@ button { cursor: pointer; font-family: var(--font); }
 }
 
 .nav-item:hover {
-  border-color: rgba(255,255,255,.06);
+  border-color: transparent;
 }
 
 .nav-item.active {
-  box-shadow: inset 3px 0 0 #93c5fd;
+  box-shadow: 0 10px 22px rgba(37,99,235,.28);
 }
 
 /* Grouped sidebar nav — group labels are plain text, never .nav-item, so a
@@ -677,33 +1091,42 @@ button { cursor: pointer; font-family: var(--font); }
   color: var(--text-muted);
   opacity: .75;
 }
+/* Optional icon on a group label (e.g. Engineer Portal's "System
+   Integrations" section) — plain text labels elsewhere are unaffected
+   since they simply don't include a .nav-group-icon span. */
+.nav-group-label.has-icon { display: flex; align-items: center; gap: 6px; }
+.nav-group-icon { width: 13px; height: 13px; flex-shrink: 0; display: flex; }
+.nav-group-icon svg { width: 100%; height: 100%; }
 
 .topbar {
   padding: 0 clamp(16px, 3vw, 28px);
   box-shadow: 0 10px 28px rgba(15,23,42,.06);
 }
 
-.topbar-left .search-bar {
-  width: min(430px, 100%);
-  min-height: 40px;
-}
+/* The lone topbar search control, sized like the citizen portal's
+   "Search everything" pill (the per-portal search bar was removed —
+   modules carry their own search pills instead). */
+.topbar .gsearch-trigger { min-height: 40px; padding: 8px 14px; font-size: .85rem; }
 
 .content {
   width: 100%;
   max-width: 1500px;
   gap: 22px;
   padding: clamp(18px, 2.4vw, 30px);
+  /* Flex items default to min-width:auto, which lets a wide child (an
+     uncontained table, say) force this whole column wider than the
+     viewport instead of shrinking — pushing the topbar's right side out
+     of view along with it. min-width:0 hands overflow handling back to
+     the child itself (.table-card already scrolls internally). */
+  min-width: 0;
 }
 
 .page-header {
   align-items: flex-start;
-  gap: 16px;
-  margin-bottom: 18px;
 }
 
 .page-title {
   letter-spacing: 0;
-  line-height: 1.15;
 }
 
 .kpi-grid {
@@ -732,8 +1155,13 @@ button { cursor: pointer; font-family: var(--font); }
   letter-spacing: .01em;
 }
 
+/* Long peso figures (e.g. "PHP 2,500,000.00") must wrap inside the card
+   instead of overflowing it at the larger type scale. */
+.kpi-card { overflow: hidden; }
 .kpi-value {
   font-size: clamp(1.45rem, 2.2vw, 1.9rem);
+  overflow-wrap: anywhere;
+  line-height: 1.15;
 }
 
 .charts-row,
@@ -800,10 +1228,11 @@ button { cursor: pointer; font-family: var(--font); }
   .ai-grid { grid-template-columns: 1fr; }
   .form-grid { grid-template-columns: 1fr; }
   .report-columns { grid-template-columns: 1fr; }
+  .report-columns-2 { grid-template-columns: 1fr; }
 }
 @media (max-width:768px) {
   .sidebar { transform: translateX(-100%); }
-  .sidebar.open { transform: translateX(0); }
+  .sidebar.open { transform: translateX(0); box-shadow: 0 0 44px rgba(2,8,23,.4); }
   .main-wrapper { margin-left: 0; }
   .menu-toggle { display: flex; }
   .kpi-grid { grid-template-columns: 1fr 1fr; }
@@ -814,6 +1243,20 @@ button { cursor: pointer; font-family: var(--font); }
   .gsearch-trigger kbd { display: none; }
   .budget-summary-grid { grid-template-columns: 1fr; }
   .admin-summary-grid { grid-template-columns: 1fr; }
+}
+
+/* Backdrop behind the off-canvas mobile drawer — same treatment as the
+   citizen portal's own sidebar, extended here to every other portal via
+   assets/js/sidebar-toggle.js. Hidden entirely on desktop, where there's
+   no overlay to dim anything behind. */
+.sidebar-backdrop { display: none; }
+@media (max-width:768px) {
+  .sidebar-backdrop {
+    display: block; position: fixed; inset: 0;
+    background: rgba(15,23,42,.45); z-index: 99; /* just under the sidebar's z-index 100 */
+    opacity: 0; pointer-events: none; transition: opacity .3s;
+  }
+  .sidebar-backdrop.show { opacity: 1; pointer-events: auto; }
 }
 @media (max-width:480px) {
   .topbar { gap: 8px; padding: 0 12px; }

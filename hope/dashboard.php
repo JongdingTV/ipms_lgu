@@ -2,7 +2,6 @@
 require_once __DIR__ . '/../auth/session.php';
 
 $user = requireLogin(['hope']);
-$topbarSearchPlaceholder = 'Search projects...';
 $extraStylesheets = ['assets/css/pagination.css', 'hope/assets/css/hope.css'];
 
 require_once __DIR__ . '/../includes/header.php';
@@ -41,6 +40,16 @@ require_once __DIR__ . '/sidebar.php';
           <div class="kpi-info">
             <span class="kpi-label">Pending Contract Award Approvals</span>
             <strong class="kpi-value" id="hopePendingAwardsCount">0</strong>
+          </div>
+        </article>
+
+        <article class="kpi-card">
+          <div class="kpi-icon kpi-red">
+            <svg viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M9 2a1 1 0 00-.894.553L7.382 4H4a1 1 0 000 2v10a2 2 0 002 2h8a2 2 0 002-2V6a1 1 0 100-2h-3.382l-.724-1.447A1 1 0 0011 2H9zM7 8a1 1 0 012 0v6a1 1 0 11-2 0V8zm5-1a1 1 0 00-1 1v6a1 1 0 102 0V8a1 1 0 00-1-1z" clip-rule="evenodd"/></svg>
+          </div>
+          <div class="kpi-info">
+            <span class="kpi-label">Pending Deletion Requests</span>
+            <strong class="kpi-value" id="hopePendingDeletionsCount">0</strong>
           </div>
         </article>
 
@@ -105,6 +114,37 @@ require_once __DIR__ . '/sidebar.php';
         </article>
       </section>
 
+      <section class="charts-row reveal">
+        <article class="chart-card chart-main">
+          <div class="chart-header">
+            <h2 class="chart-title">Approval Decisions — Last 6 Months</h2>
+            <div class="chart-legend">
+              <span><span class="legend-dot legend-green"></span>Approved</span>
+              <span><span class="legend-dot" style="background:#f97316;"></span>Returned</span>
+              <span><span class="legend-dot" style="background:#ef4444;"></span>Rejected</span>
+            </div>
+          </div>
+          <div class="chart-body">
+            <canvas id="hopeDecisionChart"></canvas>
+          </div>
+        </article>
+
+        <article class="chart-card">
+          <div class="chart-header">
+            <h2 class="chart-title">Portfolio by Stage</h2>
+          </div>
+          <div class="chart-body budget-body">
+            <div class="donut-wrapper">
+              <canvas id="hopeStageChart"></canvas>
+              <div class="donut-center">
+                <span class="donut-pct" id="hopeStageChartTotal">0</span>
+              </div>
+            </div>
+            <div class="budget-legend" id="hopeStageChartLegend"></div>
+          </div>
+        </article>
+      </section>
+
       <section class="lower-row reveal">
         <article class="info-card" style="grid-column: span 2;">
           <div class="hope-panel-head">
@@ -131,6 +171,7 @@ require_once __DIR__ . '/sidebar.php';
     <section id="page-project-approvals" class="page-section" style="display:none;"></section>
     <section id="page-award-approvals" class="page-section" style="display:none;"></section>
     <section id="page-returned-projects" class="page-section" style="display:none;"></section>
+    <section id="page-deletion-requests" class="page-section" style="display:none;"></section>
     <section id="page-decision-history" class="page-section" style="display:none;"></section>
     <section id="page-approved-projects" class="page-section" style="display:none;"></section>
     <section id="page-ongoing-projects" class="page-section" style="display:none;"></section>
@@ -138,7 +179,6 @@ require_once __DIR__ . '/sidebar.php';
     <section id="page-executive-reports" class="page-section" style="display:none;"></section>
     <section id="page-budget-summary" class="page-section" style="display:none;"></section>
     <section id="page-procurement-summary" class="page-section" style="display:none;"></section>
-    <section id="page-notifications" class="page-section" style="display:none;"></section>
     <section id="page-profile" class="page-section" style="display:none;"></section>
   </main>
 </div>
@@ -156,7 +196,10 @@ require_once __DIR__ . '/sidebar.php';
 <?php $notifPanelTitle = 'HOPE Updates'; include __DIR__ . '/../includes/notifications-panel.php'; ?>
 
 <script src="<?= htmlspecialchars(assetUrl('/assets/js/notifications.js')) ?>"></script>
+<script>window.SIDEBAR_BADGES_PORTAL = 'hope';</script>
+<script src="<?= htmlspecialchars(assetUrl('/assets/js/sidebar-badges.js')) ?>"></script>
 <script src="<?= htmlspecialchars(assetUrl('/assets/js/pagination.js')) ?>"></script>
+<script src="<?= htmlspecialchars(assetUrl('/assets/js/sidebar-toggle.js')) ?>"></script>
 <script src="<?= htmlspecialchars(assetUrl('/hope/assets/js/hope.js')) ?>"></script>
 </body>
 </html>

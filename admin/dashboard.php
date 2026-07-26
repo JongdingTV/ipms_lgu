@@ -3,10 +3,16 @@ require_once '../auth/session.php';
 $user = requireLogin(['admin']);
 require_once '../includes/header.php';
 require_once '../includes/sidebar.php';
+// Pure geography data (district/barangay names), no citizen-session
+// dependency — reused here so Project Registration's location picker can
+// share the exact same District -> Barangay data as Citizen Feedback's.
+require_once '../citizen/includes/qc-locations.php';
 ?>
 
 <div class="main-wrapper">
   <?php require_once '../includes/topbar.php'; ?>
+
+  <script>window.QC_DISTRICTS = <?= json_encode(qcDistricts(), JSON_UNESCAPED_UNICODE) ?>;</script>
 
   <main class="content">
     <section class="kpi-grid">
@@ -106,6 +112,15 @@ require_once '../includes/sidebar.php';
       </article>
     </section>
 
+    <article class="chart-card chart-main reveal">
+      <div class="chart-header">
+        <h2 class="chart-title">Projects by Status</h2>
+      </div>
+      <div class="chart-body">
+        <canvas id="statusMixChart"></canvas>
+      </div>
+    </article>
+
     <section class="lower-row reveal">
       <article class="info-card">
         <h2 class="info-card-title">Top Delayed Projects</h2>
@@ -149,7 +164,7 @@ require_once '../includes/sidebar.php';
       </div>
     </section>
 
-    <section class="lower-row reveal" style="margin-top:18px; transition-delay:.16s;">
+    <section class="lower-row reveal" style="transition-delay:.16s;">
       <article class="info-card">
         <h2 class="info-card-title">Workflow Connections</h2>
         <div id="workflowConnectionList" class="anomaly-list">

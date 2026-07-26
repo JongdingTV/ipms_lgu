@@ -12,8 +12,8 @@ let contractorState = {
 /* reports/documents accumulate over time, so they're fetched paginated,
    per-page, rather than bulk-loaded like the small/bounded lists above. */
 let contractorListState = {
-  reports: { page: 1, perPage: 10 },
-  documents: { page: 1, perPage: 10 },
+  reports: { page: 1, perPage: 10, search: '' },
+  documents: { page: 1, perPage: 10, search: '' },
 };
 
 /* Bidding, accreditation, and performance data is fetched lazily the first
@@ -279,7 +279,72 @@ function contractorRenderDashboard() {
     console.error('Failed to render status chart:', error);
   }
 
+  contractorLoadProgressChart();
+
   contractorRenderStageWidgets();
+}
+
+let contractorProgressChartInst = null;
+
+/* Line chart of the progress % reported in accomplishment reports, oldest
+   first. Fetched separately from the summary since reports are paginated. */
+async function contractorLoadProgressChart() {
+  const canvas = document.getElementById('contractorProgressChart');
+  const emptyNote = document.getElementById('contractorProgressChartEmpty');
+  if (!canvas) return;
+
+  let reports = [];
+  try {
+    const result = await contractorGet('reports', { page: 1, per_page: 50 });
+    reports = (result.data || []).slice().reverse();
+  } catch (error) {
+    console.error('Failed to load reports for progress chart:', error);
+  }
+
+  if (!reports.length) {
+    canvas.style.display = 'none';
+    if (emptyNote) emptyNote.style.display = '';
+    return;
+  }
+  canvas.style.display = '';
+  if (emptyNote) emptyNote.style.display = 'none';
+
+  if (contractorProgressChartInst) contractorProgressChartInst.destroy();
+  const gridColor = document.documentElement.getAttribute('data-theme') === 'dark'
+    ? 'rgba(148,163,184,.18)' : 'rgba(100,116,139,.12)';
+
+  contractorProgressChartInst = new Chart(canvas.getContext('2d'), {
+    type: 'line',
+    data: {
+      labels: reports.map(r => contractorDate(r.report_date)),
+      datasets: [{
+        label: 'Reported progress',
+        data: reports.map(r => Number(r.progress_percent) || 0),
+        borderColor: '#3b82f6', backgroundColor: 'rgba(59,130,246,.08)',
+        borderWidth: 2.5, tension: 0.35, fill: true,
+        pointBackgroundColor: '#3b82f6', pointBorderColor: '#fff',
+        pointBorderWidth: 2, pointRadius: 4, pointHoverRadius: 6,
+      }],
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      animation: { duration: 900, easing: 'easeOutQuart' },
+      plugins: {
+        legend: { display: false },
+        tooltip: {
+          backgroundColor: '#1e2a3b',
+          callbacks: {
+            title: items => `${reports[items[0].dataIndex]?.project_code || ''} — ${items[0].label}`,
+            label: c => ` ${c.raw}% complete`,
+          },
+        },
+      },
+      scales: {
+        x: { grid: { display: false }, ticks: { color: '#94a3b8', font: { size: 11 }, maxTicksLimit: 8 }, border: { display: false } },
+        y: { min: 0, max: 100, ticks: { stepSize: 25, color: '#94a3b8', font: { size: 11 }, callback: v => v + '%' }, grid: { color: gridColor }, border: { display: false } },
+      },
+    },
+  });
 }
 
 /**
@@ -435,6 +500,10 @@ function contractorRenderReportPage(selectedProjectId = '') {
       </article>
       <article class="contractor-history-card">
         <h2>Recent Reports</h2>
+        <label class="list-search" style="max-width:none;margin-bottom:10px;">
+          <svg viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M8 4a4 4 0 100 8 4 4 0 000-8zM2 8a6 6 0 1110.89 3.476l4.817 4.817a1 1 0 01-1.414 1.414l-4.816-4.816A6 6 0 012 8z" clip-rule="evenodd"/></svg>
+          <input type="text" id="contractorReportsSearch" placeholder="Search project or accomplishments...">
+        </label>
         <div id="contractorReportsList" class="contractor-mini-list"><p class="empty-state">Loading...</p></div>
         <div class="pagination-wrap" id="contractorReportsPager"></div>
       </article>
@@ -442,6 +511,11 @@ function contractorRenderReportPage(selectedProjectId = '') {
   `;
 
   document.getElementById('contractorReportForm').addEventListener('submit', contractorSubmitReport);
+  document.getElementById('contractorReportsSearch').addEventListener('input', debounce(() => {
+    contractorListState.reports.search = document.getElementById('contractorReportsSearch').value.trim();
+    contractorListState.reports.page = 1;
+    contractorLoadReportsList();
+  }, 300));
   contractorLoadReportsList();
 }
 
@@ -452,7 +526,7 @@ async function contractorLoadReportsList() {
   const state = contractorListState.reports;
 
   try {
-    const result = await contractorGet('reports', { page: state.page, per_page: state.perPage });
+    const result = await contractorGet('reports', { page: state.page, per_page: state.perPage, search: state.search });
 
     container.innerHTML = result.data.length ? result.data.map(report => `
       <div class="contractor-mini-row">
@@ -503,6 +577,10 @@ function contractorRenderDocumentsPage() {
       </article>
       <article class="contractor-history-card">
         <h2>Uploaded Documents</h2>
+        <label class="list-search" style="max-width:none;margin-bottom:10px;">
+          <svg viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M8 4a4 4 0 100 8 4 4 0 000-8zM2 8a6 6 0 1110.89 3.476l4.817 4.817a1 1 0 01-1.414 1.414l-4.816-4.816A6 6 0 012 8z" clip-rule="evenodd"/></svg>
+          <input type="text" id="contractorDocumentsSearch" placeholder="Search project or document title...">
+        </label>
         <div id="contractorDocumentsList" class="contractor-mini-list"><p class="empty-state">Loading...</p></div>
         <div class="pagination-wrap" id="contractorDocumentsPager"></div>
       </article>
@@ -511,6 +589,11 @@ function contractorRenderDocumentsPage() {
 
   contractorWireDocRows(document.getElementById('docRows'), document.getElementById('docAddBtn'));
   document.getElementById('contractorDocumentForm').addEventListener('submit', contractorSubmitDocument);
+  document.getElementById('contractorDocumentsSearch').addEventListener('input', debounce(() => {
+    contractorListState.documents.search = document.getElementById('contractorDocumentsSearch').value.trim();
+    contractorListState.documents.page = 1;
+    contractorLoadDocumentsList();
+  }, 300));
   contractorLoadDocumentsList();
 }
 
@@ -521,7 +604,7 @@ async function contractorLoadDocumentsList() {
   const state = contractorListState.documents;
 
   try {
-    const result = await contractorGet('documents', { page: state.page, per_page: state.perPage });
+    const result = await contractorGet('documents', { page: state.page, per_page: state.perPage, search: state.search });
 
     container.innerHTML = result.data.length ? result.data.map(doc => `
       <div class="contractor-mini-row">
@@ -912,7 +995,9 @@ async function contractorRenderMyBids() {
         <p class="contractor-scope-note">Bids you've submitted that BAC hasn't decided on yet.</p>
       </div>
     </div>
-    <div id="contractorMyBidsList" class="contractor-mini-list"><p class="empty-state">Loading...</p></div>
+    <article class="contractor-history-card">
+      <div id="contractorMyBidsList" class="contractor-mini-list"><p class="empty-state">Loading...</p></div>
+    </article>
   `;
 
   const container = document.getElementById('contractorMyBidsList');
@@ -934,7 +1019,9 @@ async function contractorRenderBidResults() {
         <p class="contractor-scope-note">Bids BAC has already decided on.</p>
       </div>
     </div>
-    <div id="contractorBidResultsList" class="contractor-mini-list"><p class="empty-state">Loading...</p></div>
+    <article class="contractor-history-card">
+      <div id="contractorBidResultsList" class="contractor-mini-list"><p class="empty-state">Loading...</p></div>
+    </article>
   `;
 
   const container = document.getElementById('contractorBidResultsList');
@@ -1015,7 +1102,9 @@ async function contractorRenderProgressUpdates() {
       </div>
       <button class="btn-primary" type="button" onclick="contractorShowPage('accomplishment-report')">Submit New Report</button>
     </div>
-    <div id="contractorProgressUpdatesList" class="contractor-mini-list"><p class="empty-state">Loading...</p></div>
+    <article class="contractor-history-card">
+      <div id="contractorProgressUpdatesList" class="contractor-mini-list"><p class="empty-state">Loading...</p></div>
+    </article>
   `;
 
   const container = document.getElementById('contractorProgressUpdatesList');
@@ -1042,7 +1131,9 @@ async function contractorRenderSitePhotos() {
       </div>
       <button class="btn-primary" type="button" onclick="contractorShowPage('supporting-documents')">Upload Photos</button>
     </div>
-    <div id="contractorSitePhotosGrid" class="contractor-photo-grid"><p class="empty-state">Loading...</p></div>
+    <article class="contractor-history-card">
+      <div id="contractorSitePhotosGrid" class="contractor-photo-grid"><p class="empty-state">Loading...</p></div>
+    </article>
   `;
 
   const container = document.getElementById('contractorSitePhotosGrid');
@@ -1073,14 +1164,16 @@ function contractorRenderPaymentRequests() {
       </div>
       <button class="btn-primary" type="button" onclick="contractorOpenPaymentRequestForm()">Request Payment</button>
     </div>
-    <div class="contractor-mini-list">
-      ${pending.length ? pending.map(payment => `
-        <div class="contractor-mini-row">
-          <span>${contractorEscape(payment.project_code)} - ${contractorEscape(payment.billing_no || '')}</span>
-          <span>${contractorFullMoney(payment.requested_amount)} ${contractorBadge(payment.status, payment.label)}</span>
-        </div>
-      `).join('') : '<p class="empty-state">No pending payment requests.</p>'}
-    </div>
+    <article class="contractor-history-card">
+      <div class="contractor-mini-list">
+        ${pending.length ? pending.map(payment => `
+          <div class="contractor-mini-row">
+            <span>${contractorEscape(payment.project_code)} - ${contractorEscape(payment.billing_no || '')}</span>
+            <span>${contractorFullMoney(payment.requested_amount)} ${contractorBadge(payment.status, payment.label)}</span>
+          </div>
+        `).join('') : '<p class="empty-state">No pending payment requests.</p>'}
+      </div>
+    </article>
   `;
 }
 
@@ -1132,7 +1225,9 @@ async function contractorRenderPerformanceRating() {
         <p class="contractor-scope-note">Modeled on DPWH's Constructors' Performance Evaluation System.</p>
       </div>
     </div>
-    <div id="contractorPerformanceBody"><p class="empty-state">Loading...</p></div>
+    <article class="contractor-history-card">
+      <div id="contractorPerformanceBody"><p class="empty-state">Loading...</p></div>
+    </article>
   `;
 
   const body = document.getElementById('contractorPerformanceBody');
@@ -1167,7 +1262,9 @@ async function contractorRenderComplianceRecords() {
         <p class="contractor-scope-note">Standing indicators BAC and Admin consider during procurement.</p>
       </div>
     </div>
-    <div id="contractorComplianceBody"><p class="empty-state">Loading...</p></div>
+    <article class="contractor-history-card">
+      <div id="contractorComplianceBody"><p class="empty-state">Loading...</p></div>
+    </article>
   `;
 
   const body = document.getElementById('contractorComplianceBody');
@@ -1190,36 +1287,7 @@ async function contractorRenderComplianceRecords() {
   }
 }
 
-/* ---- Notifications & Profile ------------------------------------------------ */
-
-async function contractorRenderNotificationsPage() {
-  const page = document.getElementById('page-notifications');
-  page.innerHTML = `
-    <div class="page-header">
-      <div>
-        <h1 class="page-title">Notifications</h1>
-        <p class="contractor-scope-note">Every alert sent to your account.</p>
-      </div>
-    </div>
-    <div id="contractorNotificationsList" class="contractor-mini-list"><p class="empty-state">Loading...</p></div>
-  `;
-
-  const container = document.getElementById('contractorNotificationsList');
-  try {
-    const response = await fetch(`${window.BASE_PATH}api/notifications.php?per_page=30`, { headers: CONTRACTOR_CSRF_HEADERS });
-    const result = await response.json();
-    if (!response.ok) throw new Error(result.error || 'Unable to load notifications.');
-
-    container.innerHTML = (result.data || []).length ? result.data.map(notif => `
-      <div class="contractor-mini-row">
-        <span>${notif.is_read ? '' : '<strong>&bull;</strong> '}${contractorEscape(notif.title)} — ${contractorEscape(notif.message)}</span>
-        <span class="contractor-scope-note">${contractorDate(notif.created_at)}</span>
-      </div>
-    `).join('') : '<p class="empty-state">No notifications yet.</p>';
-  } catch (error) {
-    container.innerHTML = '<p class="empty-state">Unable to load notifications.</p>';
-  }
-}
+/* ---- Profile ---------------------------------------------------------------- */
 
 async function contractorRenderProfilePage() {
   const page = document.getElementById('page-profile');
@@ -1457,7 +1525,6 @@ function contractorShowPage(page) {
   if (page === 'payment-history') contractorRenderPaymentHistory();
   if (page === 'performance-rating') contractorRenderPerformanceRating();
   if (page === 'compliance-records') contractorRenderComplianceRecords();
-  if (page === 'notifications') contractorRenderNotificationsPage();
   if (page === 'profile') contractorRenderProfilePage();
 }
 
@@ -1468,10 +1535,30 @@ function contractorGoToReport(projectId = '') {
   }
 }
 
+window.GLOBAL_SEARCH_NAVIGATE = contractorShowPage;
+window.GLOBAL_SEARCH_SOURCES = [
+  {
+    label: 'Assigned Projects',
+    url: `${CONTRACTOR_API}?action=projects`,
+    mapItem: row => ({
+      title: row.name,
+      meta: `${row.project_code || ''} · ${row.status || ''}`.replace(/^ · /, ''),
+      page: 'assigned-projects',
+    }),
+  },
+  {
+    label: 'Accomplishment Reports',
+    url: `${CONTRACTOR_API}?action=reports`,
+    mapItem: row => ({
+      title: `${row.project_code || ''} — ${row.report_date || ''}`,
+      meta: `${row.progress_percent ?? 0}% · ${(row.accomplishments || '').slice(0, 60)}`,
+      page: 'accomplishment-report',
+    }),
+  },
+];
+
 function contractorWireShell() {
-  document.getElementById('sidebarToggle')?.addEventListener('click', () => {
-    document.getElementById('sidebar')?.classList.toggle('open');
-  });
+  // Sidebar toggle (open/close + backdrop) is handled by assets/js/sidebar-toggle.js.
 
   document.querySelectorAll('.nav-item').forEach(item => {
     item.addEventListener('click', event => {

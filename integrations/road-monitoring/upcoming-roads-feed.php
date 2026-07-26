@@ -1,0 +1,90 @@
+<?php
+// ============================================================
+// integrations/road-monitoring/upcoming-roads-feed.php
+//
+// Outbound feed: the LG Road Monitoring System polls this to pull upcoming
+// and ongoing Roads and Bridges projects — the road alignment (geometry) IPMS
+// captured during Project Registration, plus the timeline and progress that
+// tells them a road is about to be (or currently being) worked on. Pull (GET)
+// model, same reason as every other outbound integration in this codebase:
+// their repo (https://github.com/conopioclarence96-commits/lg-road-monitoring,
+// as of writing) has no live receiver endpoint of its own yet.
+//
+// "Upcoming" here means: approved through active construction — i.e. HOPE
+// has approved the project and it isn't finished or cancelled yet. Still-
+// internal drafts/reviews and completed/cancelled projects are excluded.
+// Read-only from our side too: no endpoint here accepts edits. IPMS remains
+// the owner of the project and its geometry; the Road Monitoring System only
+// ever consumes this data.
+//
+// Field list is intentionally narrow — see the README in this folder for
+// the full contract. No budget, no contractor/engineer identities, no
+// internal remarks or documents.
+// ============================================================
+require_once __DIR__ . '/../../includes/db.php';
+require_once __DIR__ . '/../../includes/config.php';
+require_once __DIR__ . '/../../includes/workflow.php';
+
+header('Content-Type: application/json');
+
+if ($_SERVER['REQUEST_METHOD'] !== 'GET') {
+    http_response_code(405);
+    echo json_encode(['success' => false, 'message' => 'Method not allowed']);
+    exit;
+}
+
+$providedKey = $_SERVER['HTTP_X_API_KEY'] ?? '';
+if (ROAD_MONITORING_API_KEY === '' || !hash_equals(ROAD_MONITORING_API_KEY, $providedKey)) {
+    http_response_code(401);
+    echo json_encode(['success' => false, 'message' => 'Invalid or missing API key']);
+    exit;
+}
+
+$db = getDB();
+projectWorkflowEnsureProjectStatusSchema($db);
+projectRoadGeometryEnsureSchema($db);
+
+// "Upcoming" = approved through active construction; not yet started still
+// goes through internal review (excluded), and finished/cancelled projects
+// no longer need monitoring (excluded).
+const ROAD_MONITORING_UPCOMING_STATUSES = [
+    'approved', 'bidding', 'awarded', 'assigned', 'active', 'delayed', 'on_hold', 'completion_inspection',
+];
+
+$placeholders = implode(',', array_fill(0, count(ROAD_MONITORING_UPCOMING_STATUSES), '?'));
+$stmt = $db->prepare("
+    SELECT p.id AS project_id, p.name AS project_name, p.status AS project_status,
+           p.progress, p.start_date, p.end_date,
+           g.road_name, g.road_type, g.road_status,
+           g.start_latitude, g.start_longitude, g.end_latitude, g.end_longitude,
+           g.polyline_coordinates, g.estimated_length_meters,
+           g.barangays_covered, g.districts_covered
+    FROM project_road_geometry g
+    INNER JOIN projects p ON p.id = g.project_id
+    WHERE p.category = 'Roads and Bridges' AND p.status IN ($placeholders)
+    ORDER BY p.start_date ASC, g.updated_at DESC
+");
+$stmt->execute(ROAD_MONITORING_UPCOMING_STATUSES);
+$rows = $stmt->fetchAll();
+
+$results = array_map(function (array $row): array {
+    return [
+        'project_id' => (int) $row['project_id'],
+        'project_name' => $row['project_name'],
+        'project_status' => $row['project_status'],
+        'progress_percent' => (int) $row['progress'],
+        'start_date' => $row['start_date'],
+        'end_date' => $row['end_date'],
+        'road_name' => $row['road_name'],
+        'road_type' => $row['road_type'],
+        'road_status' => $row['road_status'],
+        'polyline_coordinates' => json_decode((string) $row['polyline_coordinates'], true) ?: [],
+        'road_length_meters' => (float) $row['estimated_length_meters'],
+        'start_coordinate' => ['lat' => (float) $row['start_latitude'], 'lng' => (float) $row['start_longitude']],
+        'end_coordinate' => ['lat' => (float) $row['end_latitude'], 'lng' => (float) $row['end_longitude']],
+        'barangays_covered' => json_decode((string) $row['barangays_covered'], true) ?: [],
+        'districts_covered' => json_decode((string) $row['districts_covered'], true) ?: [],
+    ];
+}, $rows);
+
+echo json_encode(['success' => true, 'count' => count($results), 'roads' => $results]);

@@ -96,6 +96,41 @@ define('CIMM_API_KEY', envValue('CIMM_API_KEY', ''));
 define('CIMM_API_TIMEOUT', (int) envValue('CIMM_API_TIMEOUT', '20'));
 define('CIMM_SSL_VERIFY', filter_var(envValue('CIMM_SSL_VERIFY', '1'), FILTER_VALIDATE_BOOLEAN));
 
+// Urban Planning System — inbound integration for road inspection requests
+// (opposite direction from CIMMS above: there, IPMS calls out; here, the
+// separate Urban Planning System capstone project calls in). This repo
+// hosts both endpoints it needs: integrations/urban-planning/inspection-
+// requests.php (inbound receiver) and inspection-results.php (outbound,
+// polled). Same shared-secret model as CIMMS: both sides must set the
+// same key.
+define('URBAN_PLANNING_API_KEY', envValue('URBAN_PLANNING_API_KEY', ''));
+
+// Facilities Reservation System — outbound integration, same shape as
+// Urban Planning's inspection-results.php: their repo has no live endpoint
+// yet for us to push to (its routes are still placeholder view files, per
+// https://github.com/lmfollero123/facilities-reservation-system1), so this
+// is a pull/poll feed they call once they build their consumer, not a push.
+// Shared-secret model: both sides must set the same key.
+define('FACILITIES_RESERVATION_API_KEY', envValue('FACILITIES_RESERVATION_API_KEY', ''));
+
+// LG Road Monitoring System — outbound integration, same shape as Facilities
+// Reservation and Urban Planning's road-geometry-feed.php: they have no
+// live endpoint of their own yet (per https://github.com/conopioclarence96-commits/lg-road-monitoring,
+// as of writing), so this is a pull/poll feed they call, not a push.
+// Shared-secret model: both sides must set the same key.
+define('ROAD_MONITORING_API_KEY', envValue('ROAD_MONITORING_API_KEY', ''));
+
+// AI Chatbot — landing page + citizen dashboard widget (api/chatbot.php,
+// includes/ChatbotClient.php). Free key (no credit card): https://aistudio.google.com/apikey
+define('GEMINI_API_KEY', envValue('GEMINI_API_KEY', ''));
+define('GEMINI_MODEL', envValue('GEMINI_MODEL', 'gemini-flash-lite-latest'));
+
+// The one thing to change to sync additional barangays into the Public
+// Facilities Integration (admin/api/public-facilities.php) and the
+// Facilities Reservation feed (integrations/facilities-reservation/) later —
+// nothing else in either file needs to change.
+const PUBLIC_FACILITIES_BARANGAY_FILTER = 'Culiat';
+
 const APP_ROLES = ['super_admin', 'admin', 'bac', 'engineer', 'contractor', 'citizen', 'hope'];
 
 const ROLE_LABELS = [

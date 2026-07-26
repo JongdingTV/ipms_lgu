@@ -107,8 +107,70 @@ function projectWorkflowEnsureProjectStatusSchema(PDO $db): void
         // uses for its own optional map pin.
         $db->exec("ALTER TABLE projects ADD COLUMN IF NOT EXISTS latitude DECIMAL(10,7) NULL AFTER turnover_notes");
         $db->exec("ALTER TABLE projects ADD COLUMN IF NOT EXISTS longitude DECIMAL(10,7) NULL AFTER latitude");
+
+        // Project classification, added to Project Registration — informational
+        // only (no workflow gate reads these), unrelated to the old fund_source
+        // column dropped above, which belonged to a removed approval step.
+        $db->exec("ALTER TABLE projects ADD COLUMN IF NOT EXISTS category " . projectCategoryEnumSql() . " NULL AFTER longitude");
+        $db->exec("ALTER TABLE projects ADD COLUMN IF NOT EXISTS funding_source " . projectFundingSourceEnumSql() . " NULL AFTER category");
+        $db->exec("ALTER TABLE projects ADD COLUMN IF NOT EXISTS implementing_office VARCHAR(150) NULL AFTER funding_source");
+        $db->exec("ALTER TABLE projects ADD COLUMN IF NOT EXISTS physical_target VARCHAR(255) NULL AFTER implementing_office");
     } catch (Throwable $e) {
     }
+}
+
+// The feedback table's category ENUM widening, infrastructure_type column,
+// and district/barangay/latitude/longitude columns were all added directly
+// on the dev database (when CIMMS integration and the QC map picker were
+// built) and only ever captured in database/migrations/feedback_schema_
+// catchup.sql — a hand-run .sql file nobody actually ran against the live
+// database. A fresh/production database never gets any of it, so every
+// query touching these (submit-feedback.php, my-feedback.php, citizen/api/
+// dashboard.php) fatals with an unknown-column or truncated-enum SQL error
+// instead of returning JSON. Self-healing this closes that gap for good,
+// consistent with how every other schema drift in this app is handled.
+function feedbackEnsureSchema(PDO $db): void
+{
+    try {
+        $stmt = $db->query("
+            SELECT COLUMN_TYPE FROM INFORMATION_SCHEMA.COLUMNS
+            WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'feedback' AND COLUMN_NAME = 'category'
+        ");
+        $columnType = (string) $stmt->fetchColumn();
+        if (strpos($columnType, "'road_damage'") === false) {
+            $db->exec("ALTER TABLE feedback MODIFY COLUMN category ENUM('complaint','road_damage','drainage_flooding','streetlight','sidewalk_accessibility','safety_hazard','project_delay','suggestion','inquiry','commendation') DEFAULT 'complaint'");
+        }
+
+        $db->exec("ALTER TABLE feedback ADD COLUMN IF NOT EXISTS infrastructure_type VARCHAR(100) NULL AFTER category");
+        $db->exec("ALTER TABLE feedback ADD COLUMN IF NOT EXISTS district VARCHAR(20) NULL AFTER contact_email");
+        $db->exec("ALTER TABLE feedback ADD COLUMN IF NOT EXISTS barangay VARCHAR(100) NULL AFTER district");
+        $db->exec("ALTER TABLE feedback ADD COLUMN IF NOT EXISTS latitude DECIMAL(10,7) NULL AFTER barangay");
+        $db->exec("ALTER TABLE feedback ADD COLUMN IF NOT EXISTS longitude DECIMAL(10,7) NULL AFTER latitude");
+        $db->exec("ALTER TABLE feedback ADD INDEX IF NOT EXISTS idx_feedback_concern_type (concern_type)");
+        $db->exec("ALTER TABLE feedback ADD INDEX IF NOT EXISTS idx_feedback_cimm_sync (cimm_sync_status)");
+
+        $db->exec("
+            CREATE TABLE IF NOT EXISTS feedback_photos (
+                id INT AUTO_INCREMENT PRIMARY KEY,
+                feedback_id INT NOT NULL,
+                photo_path VARCHAR(255) NOT NULL,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                INDEX idx_feedback_photos_feedback (feedback_id),
+                CONSTRAINT fk_feedback_photos_feedback FOREIGN KEY (feedback_id) REFERENCES feedback(id) ON DELETE CASCADE
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+        ");
+    } catch (Throwable $e) {
+    }
+}
+
+function projectCategoryEnumSql(): string
+{
+    return "ENUM('Roads and Bridges','Drainage and Flood Control','Water Supply','Public Buildings and Facilities','Street Lighting','Parks and Recreation','Other')";
+}
+
+function projectFundingSourceEnumSql(): string
+{
+    return "ENUM('LGU General Fund','20% Development Fund','National Government Fund','Grant/Donor Fund','Special Education Fund','Other')";
 }
 
 /**
@@ -516,6 +578,91 @@ function projectWorkflowLog(PDO $db, string $action, ?int $projectId = null, str
             VALUES (?, ?, ?, ?)
         ");
         $stmt->execute([$projectId, $actorId, $action, $details !== '' ? $details : null]);
+    } catch (Throwable $e) {
+    }
+}
+
+// Maker-checker gate for permanent project deletion: Admin (api/projects.php's
+// request_deletion) submits a reason, HOPE (hope/api/portal.php's
+// decide_deletion) approves or rejects it, and only an approval actually runs
+// DELETE FROM projects. project_code/project_name are snapshotted here so the
+// request row still reads meaningfully after the project itself is gone
+// (project_id then goes NULL via the FK below, same ON DELETE SET NULL
+// pattern bac_procurement_logs already uses for the same reason).
+function projectDeletionEnsureSchema(PDO $db): void
+{
+    try {
+        $db->exec("
+            CREATE TABLE IF NOT EXISTS project_deletion_requests (
+                id INT AUTO_INCREMENT PRIMARY KEY,
+                project_id INT NULL,
+                project_code VARCHAR(20) NOT NULL,
+                project_name VARCHAR(200) NOT NULL,
+                reason TEXT NOT NULL,
+                status ENUM('pending','approved','rejected') NOT NULL DEFAULT 'pending',
+                requested_by INT NULL,
+                decided_by INT NULL,
+                decided_at DATETIME NULL,
+                decision_remarks TEXT NULL,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+                INDEX idx_pdr_status (status),
+                INDEX idx_pdr_project (project_id),
+                CONSTRAINT fk_pdr_project FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE SET NULL,
+                CONSTRAINT fk_pdr_requested_by FOREIGN KEY (requested_by) REFERENCES users(id) ON DELETE SET NULL,
+                CONSTRAINT fk_pdr_decided_by FOREIGN KEY (decided_by) REFERENCES users(id) ON DELETE SET NULL
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+        ");
+    } catch (Throwable $e) {
+    }
+}
+
+// Road Geometry — conditional module on Project Registration, visible only
+// when category = 'Roads and Bridges'. One row per project (UNIQUE on
+// project_id, upserted). This is the data IPMS shares with the separate
+// Urban Planning System capstone project via integrations/urban-planning/
+// road-geometry-feed.php — that system only ever reads this, never writes
+// it; IPMS remains the owner of the project and its geometry.
+function projectRoadGeometryEnsureSchema(PDO $db): void
+{
+    try {
+        $db->exec("
+            CREATE TABLE IF NOT EXISTS project_road_geometry (
+                id INT AUTO_INCREMENT PRIMARY KEY,
+                project_id INT NOT NULL,
+                road_name VARCHAR(200) NOT NULL,
+                road_type VARCHAR(50) NULL,
+                road_status VARCHAR(50) NULL,
+                start_latitude DECIMAL(10,7) NULL,
+                start_longitude DECIMAL(10,7) NULL,
+                start_address VARCHAR(255) NULL,
+                start_barangay VARCHAR(100) NULL,
+                start_district VARCHAR(100) NULL,
+                end_latitude DECIMAL(10,7) NULL,
+                end_longitude DECIMAL(10,7) NULL,
+                end_address VARCHAR(255) NULL,
+                end_barangay VARCHAR(100) NULL,
+                end_district VARCHAR(100) NULL,
+                polyline_coordinates TEXT NULL COMMENT 'JSON array of [lat,lng] pairs',
+                estimated_length_meters DECIMAL(10,2) NULL,
+                num_segments INT NULL,
+                bounding_box TEXT NULL COMMENT 'JSON {min_lat,min_lng,max_lat,max_lng}',
+                barangays_covered TEXT NULL COMMENT 'JSON array of barangay names',
+                districts_covered TEXT NULL COMMENT 'JSON array of district names',
+                road_width DECIMAL(6,2) NULL,
+                num_lanes INT NULL,
+                road_surface VARCHAR(30) NULL,
+                bridge_included TINYINT(1) NOT NULL DEFAULT 0,
+                drainage_included TINYINT(1) NOT NULL DEFAULT 0,
+                bike_lane TINYINT(1) NOT NULL DEFAULT 0,
+                sidewalk TINYINT(1) NOT NULL DEFAULT 0,
+                streetlights TINYINT(1) NOT NULL DEFAULT 0,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+                UNIQUE KEY idx_road_geometry_project (project_id),
+                CONSTRAINT fk_road_geometry_project FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+        ");
     } catch (Throwable $e) {
     }
 }

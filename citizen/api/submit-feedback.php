@@ -3,6 +3,7 @@ require_once __DIR__ . '/../../auth/session.php';
 require_once __DIR__ . '/../includes/qc-locations.php';
 require_once __DIR__ . '/../includes/feedback-categories.php';
 require_once __DIR__ . '/../../includes/CimmClient.php';
+require_once __DIR__ . '/../../includes/workflow.php';
 
 header('Content-Type: application/json');
 
@@ -14,6 +15,7 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
 
 $user = requireLogin(['citizen']);
 $pdo = getDB();
+feedbackEnsureSchema($pdo);
 
 const FEEDBACK_MAX_PHOTOS = 4; // matches the CIMMS request form's evidence limit
 const FEEDBACK_MAX_PHOTO_BYTES = 3 * 1024 * 1024; // 3MB, must match the client-side limit
@@ -100,7 +102,16 @@ if ($district === '' || $barangay === '') {
     $errors[] = 'The selected barangay does not belong to the selected district';
 }
 
-// Optional exact pin: both coordinates or neither, and roughly within Quezon City.
+// Maintenance reports forward straight to CIMMS, which either uses the exact
+// pin we send or has to geocode the free-text location itself — the latter
+// can resolve to a different spot each time the request is viewed, which is
+// exactly the "pin moves around" bug this required pin fixes. Regular
+// project feedback keeps the pin optional, same as before.
+if ($concernType === 'maintenance' && ($latitudeRaw === '' || $longitudeRaw === '')) {
+    $errors[] = 'Please tap the exact spot on the map to pin your location.';
+}
+
+// Both coordinates or neither, and roughly within Quezon City.
 $latitude = null;
 $longitude = null;
 if ($latitudeRaw !== '' || $longitudeRaw !== '') {
@@ -138,7 +149,8 @@ $resolvedName = $isAnonymous
     : ($contactName !== '' ? $contactName : ($citizenFullName !== '' ? $citizenFullName : null));
 $resolvedEmail = $contactEmail !== '' ? $contactEmail : (string) ($citizen['email'] ?? '');
 
-// Validate proof photos (optional, 3MB each, real images only)
+// Proof photos: required for maintenance reports (CIMMS needs evidence to
+// act on), optional for regular project feedback — 3MB each, real images only.
 $photoFiles = [];
 if (!empty($_FILES['photos']) && is_array($_FILES['photos']['name'])) {
     $count = count($_FILES['photos']['name']);
@@ -175,6 +187,9 @@ if (!empty($_FILES['photos']) && is_array($_FILES['photos']['name'])) {
 
         $photoFiles[] = ['tmp' => $tmp, 'ext' => FEEDBACK_ALLOWED_PHOTO_MIME[$imageInfo['mime']]];
     }
+}
+if ($concernType === 'maintenance' && $photoFiles === []) {
+    $errors[] = 'Please attach at least one photo as evidence.';
 }
 
 if (!empty($errors)) {

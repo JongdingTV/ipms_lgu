@@ -1,0 +1,34 @@
+<!DOCTYPE html>
+<html>
+<head><meta charset="utf-8"><title>portal viewer</title>
+<style>body{margin:0;background:#222}iframe{width:1440px;height:1600px;border:0;display:block}</style>
+</head>
+<body>
+<iframe id="fr"></iframe>
+<script>
+// TEMPORARY dev helper for local screenshot testing — delete after use.
+// pview.html?role=hope&nav=project-approvals[&theme=dark]
+const params = new URLSearchParams(location.search);
+const role = params.get('role') || 'admin';
+const nav = params.get('nav') || '';
+const btn = params.get('btn') || '';
+const theme = params.get('theme') || '';
+const fr = document.getElementById('fr');
+let navigated = false;
+fr.onload = () => {
+  if (navigated || (!nav && !btn)) return;
+  navigated = true;
+  setTimeout(() => {
+    try {
+      const item = nav
+        ? fr.contentDocument.querySelector('.nav-item[data-page="' + nav + '"]')
+        : fr.contentDocument.getElementById(btn);
+      if (item) item.click();
+      document.title = 'CLICK ' + (item ? 'ok' : 'MISSING');
+    } catch (e) { document.title = 'CLICK ERR ' + e.message; }
+  }, 2500);
+};
+fr.src = '../scripts/dev-autologin.php?role=' + encodeURIComponent(role) + (theme ? '&theme=' + theme : '');
+</script>
+</body>
+</html>

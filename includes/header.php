@@ -22,6 +22,13 @@ $extraStylesheets = $extraStylesheets ?? [];
       } catch (e) {}
     })();
   </script>
+  <!-- style.css declares --font: 'Plus Jakarta Sans' and --mono: 'DM Mono';
+       without this link they silently fall back to plain system fonts.
+       Sora is the citizen portal's display face for headings. -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <!-- Poppins: face of the CIMMS maintenance-request replica on the citizen dashboard. -->
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Sora:wght@600;700;800&family=DM+Mono:wght@400;500&family=Poppins:wght@300;400;500;600;700&display=swap">
   <link rel="icon" href="<?= htmlspecialchars($BASE_PATH) ?>assets/img/ipms-icon.png" type="image/png">
   <link rel="apple-touch-icon" href="<?= htmlspecialchars($BASE_PATH) ?>assets/img/ipms-icon.png">
   <link rel="stylesheet" href="<?= htmlspecialchars(assetUrl('/assets/css/style.css')) ?>">
@@ -31,6 +38,17 @@ $extraStylesheets = $extraStylesheets ?? [];
   <!-- Only the UMD build works as a plain classic script — dist/chart.js (and its
        chart.min.js minified alias) is an ES module and throws a SyntaxError here. -->
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+  <script>
+    // Charts inherit the app's type system (same face the citizen charts use)
+    // and theme-appropriate tick/grid colors. Page loads re-apply this, so a
+    // theme toggle takes effect on the next chart render.
+    if (window.Chart) {
+      Chart.defaults.font.family = "'Plus Jakarta Sans', sans-serif";
+      var __chartDark = document.documentElement.getAttribute('data-theme') === 'dark';
+      Chart.defaults.color = __chartDark ? '#94a3b8' : '#64748b';
+      Chart.defaults.borderColor = __chartDark ? 'rgba(148,163,184,.18)' : 'rgba(100,116,139,.15)';
+    }
+  </script>
   <script src="<?= htmlspecialchars(assetUrl('/assets/js/scroll-reveal.js')) ?>"></script>
   <script src="<?= htmlspecialchars(assetUrl('/assets/js/theme-toggle.js')) ?>"></script>
   <script>

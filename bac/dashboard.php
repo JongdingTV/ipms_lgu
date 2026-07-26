@@ -2,7 +2,6 @@
 require_once __DIR__ . '/../auth/session.php';
 
 $user = requireLogin(['bac']);
-$topbarSearchPlaceholder = 'Search bids, contractors, procurement logs...';
 $extraStylesheets = ['assets/css/pagination.css', 'bac/assets/css/bac.css'];
 
 require_once __DIR__ . '/../includes/header.php';
@@ -66,6 +65,19 @@ require_once __DIR__ . '/sidebar.php';
       </section>
 
       <section class="charts-row reveal">
+        <article class="chart-card chart-main">
+          <div class="chart-header">
+            <h2 class="chart-title">Bidding Activity — Last 6 Months</h2>
+            <div class="chart-legend">
+              <span><span class="legend-dot legend-blue"></span>Announcements Posted</span>
+              <span><span class="legend-dot legend-green"></span>Bids Received</span>
+            </div>
+          </div>
+          <div class="chart-body">
+            <canvas id="bacActivityChart"></canvas>
+          </div>
+        </article>
+
         <article class="chart-card">
           <div class="chart-header">
             <h2 class="chart-title">Procurement Pipeline</h2>
@@ -151,7 +163,10 @@ require_once __DIR__ . '/sidebar.php';
 <?php $notifPanelTitle = 'BAC Updates'; include __DIR__ . '/../includes/notifications-panel.php'; ?>
 
 <script src="<?= htmlspecialchars(assetUrl('/assets/js/notifications.js')) ?>"></script>
+<script>window.SIDEBAR_BADGES_PORTAL = 'bac';</script>
+<script src="<?= htmlspecialchars(assetUrl('/assets/js/sidebar-badges.js')) ?>"></script>
 <script src="<?= htmlspecialchars(assetUrl('/assets/js/pagination.js')) ?>"></script>
+<script src="<?= htmlspecialchars(assetUrl('/assets/js/sidebar-toggle.js')) ?>"></script>
 <script src="<?= htmlspecialchars(assetUrl('/bac/assets/js/bac.js')) ?>"></script>
 </body>
 </html>

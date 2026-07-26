@@ -19,7 +19,7 @@ $stmt = $pdo->prepare("
         (SELECT ph.file_path FROM engineer_progress_photos ph WHERE ph.project_id = p.id ORDER BY ph.created_at DESC LIMIT 1) as latest_photo_path,
         (SELECT ph.title FROM engineer_progress_photos ph WHERE ph.project_id = p.id ORDER BY ph.created_at DESC LIMIT 1) as latest_photo_title
     FROM projects p
-    WHERE p.status IN ('approved','bidding','awarded','assigned','active','delayed','on_hold','completed')
+    WHERE p.status IN ('approved','bidding','awarded','assigned','active','delayed','on_hold','completion_inspection','completed','turnover')
     ORDER BY p.created_at DESC
 ");
 $stmt->execute();

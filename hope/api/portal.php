@@ -24,6 +24,7 @@ requireCsrfProtection();
 $db = getDB();
 projectWorkflowEnsureProjectStatusSchema($db);
 projectWorkflowEnsureRoleConnectionTables($db);
+projectDeletionEnsureSchema($db);
 contractorRefreshPerformanceScores($db);
 
 $user = currentUser();
@@ -82,6 +83,7 @@ if ($method === 'GET') {
         // already cleared Engineering Review.
         $pending = (int) $db->query("SELECT COUNT(*) FROM projects WHERE status = 'endorsed'")->fetchColumn();
         $pendingAwards = (int) $db->query("SELECT COUNT(*) FROM bac_award_recommendations WHERE status = 'sent_to_admin'")->fetchColumn();
+        $pendingDeletions = (int) $db->query("SELECT COUNT(*) FROM project_deletion_requests WHERE status = 'pending'")->fetchColumn();
         $approvedThisMonth = (int) $db->query("
             SELECT COUNT(*) FROM projects
             WHERE status IN ('approved','bidding','awarded','assigned','active','delayed','on_hold','completion_inspection','completed','turnover')
@@ -139,10 +141,26 @@ if ($method === 'GET') {
         usort($highRisk, static fn (array $a, array $b): int => $b['risk_factors'] <=> $a['risk_factors']);
         $highRisk = array_slice($highRisk, 0, 5);
 
+        // Dashboard charts: full portfolio by status, and HOPE decision
+        // volume over the last six months (same log actions the Decision
+        // History module lists).
+        $statusMix = $db->query("
+            SELECT status, COUNT(*) AS total FROM projects GROUP BY status
+        ")->fetchAll();
+
+        $monthlyDecisions = $db->query("
+            SELECT DATE_FORMAT(created_at, '%Y-%m') AS ym, action, COUNT(*) AS total
+            FROM bac_procurement_logs
+            WHERE action IN ('Project approved', 'Project returned', 'Project rejected')
+              AND created_at >= DATE_SUB(DATE_FORMAT(NOW(), '%Y-%m-01'), INTERVAL 5 MONTH)
+            GROUP BY ym, action
+        ")->fetchAll();
+
         respond([
             'stats' => [
                 'pending_project_approvals' => $pending,
                 'pending_award_approvals' => $pendingAwards,
+                'pending_deletion_requests' => $pendingDeletions,
                 'approved_this_month' => $approvedThisMonth,
                 'returned' => $returned,
                 'rejected' => $rejected,
@@ -152,6 +170,8 @@ if ($method === 'GET') {
             ],
             'pending_preview' => $pendingStmt->fetchAll(),
             'high_risk_projects' => $highRisk,
+            'status_mix' => $statusMix,
+            'monthly_decisions' => $monthlyDecisions,
         ]);
     }
 
@@ -230,6 +250,20 @@ if ($method === 'GET') {
         ]);
     }
 
+    if ($action === 'list_deletion_requests') {
+        $stmt = $db->query("
+            SELECT r.id, r.project_id, r.project_code, r.project_name, r.reason, r.created_at,
+                   u.full_name AS requested_by_name,
+                   p.status AS project_status, p.budget, p.location
+            FROM project_deletion_requests r
+            LEFT JOIN users u ON u.id = r.requested_by
+            LEFT JOIN projects p ON p.id = r.project_id
+            WHERE r.status = 'pending'
+            ORDER BY r.created_at ASC
+        ");
+        respond(['data' => $stmt->fetchAll()]);
+    }
+
     if ($action === 'decision_history') {
         $page = max(1, (int) ($_GET['page'] ?? 1));
         $perPage = min(50, max(1, (int) ($_GET['per_page'] ?? 15)));
@@ -238,20 +272,35 @@ if ($method === 'GET') {
         // upsertable bac_award_recommendations row — a re-recommend cycle
         // overwrites that row's own history, but every decision HOPE has
         // ever made is still preserved here via projectWorkflowLog().
-        $actions = ['Project approved', 'Project returned', 'Project rejected', 'Contract award approved', 'Contract award returned', 'Contract award rejected'];
+        $actions = ['Project approved', 'Project returned', 'Project rejected', 'Contract award approved', 'Contract award returned', 'Contract award rejected', 'Project deletion approved', 'Project deletion rejected'];
         $placeholders = implode(',', array_fill(0, count($actions), '?'));
+
+        // Optional search over action text, details, and project code/name.
+        $search = trim((string) ($_GET['search'] ?? ''));
+        $searchSql = '';
+        $params = $actions;
+        if ($search !== '') {
+            $searchSql = " AND (l.action LIKE ? OR l.details LIKE ? OR p.project_code LIKE ? OR p.name LIKE ?)";
+            $like = '%' . $search . '%';
+            $params = array_merge($actions, [$like, $like, $like, $like]);
+        }
 
         $select = "
             SELECT l.id, l.created_at, l.action, l.details, p.project_code, p.name AS project_name, u.full_name AS actor_name
             FROM bac_procurement_logs l
             LEFT JOIN projects p ON p.id = l.project_id
             LEFT JOIN users u ON u.id = l.actor_id
-            WHERE l.action IN ($placeholders)
+            WHERE l.action IN ($placeholders)$searchSql
             ORDER BY l.created_at DESC, l.id DESC
         ";
-        $count = "SELECT COUNT(*) FROM bac_procurement_logs l WHERE l.action IN ($placeholders)";
+        $count = "
+            SELECT COUNT(*)
+            FROM bac_procurement_logs l
+            LEFT JOIN projects p ON p.id = l.project_id
+            WHERE l.action IN ($placeholders)$searchSql
+        ";
 
-        respond(paginate($db, $select, $count, $actions, $page, $perPage));
+        respond(paginate($db, $select, $count, $params, $page, $perPage));
     }
 
     if ($action === 'budget_summary') {
@@ -415,6 +464,65 @@ if ($action === 'decide_award') {
 
     if ($decision !== 'approve' && !empty($rec['recommended_by'])) {
         notifyUser((int) $rec['recommended_by'], 'warning', 'Contract award ' . $pastTense[$decision], $details);
+    }
+
+    respond(['success' => true, 'status' => $pastTense[$decision]]);
+}
+
+if ($action === 'decide_deletion') {
+    // Re-narrow within the file's broader ['hope','super_admin'] read gate —
+    // same pattern as decide_award: super_admin keeps oversight visibility
+    // via the GET actions above but has no authority to decide a deletion.
+    requireAnyRole(['hope']);
+
+    $body = requestBody();
+    $validated = Validator::make($body, [
+        'request_id' => 'required|integer',
+        'decision' => 'required|in:approve,reject',
+        'remarks' => 'nullable|string|max:1000',
+    ])->stopOnFailure();
+
+    $requestId = (int) $validated['request_id'];
+    $decision = (string) $validated['decision'];
+    $remarks = trim((string) ($validated['remarks'] ?? ''));
+
+    if ($decision === 'reject' && $remarks === '') {
+        respond(['error' => 'A remark is required to reject a deletion request.'], 422);
+    }
+
+    $stmt = $db->prepare("SELECT * FROM project_deletion_requests WHERE id = ?");
+    $stmt->execute([$requestId]);
+    $request = $stmt->fetch();
+    if (!$request) {
+        respond(['error' => 'Deletion request not found.'], 404);
+    }
+    if ($request['status'] !== 'pending') {
+        respond(['error' => 'This request has already been decided.'], 422);
+    }
+
+    $pastTense = ['approve' => 'approved', 'reject' => 'rejected'];
+
+    $db->prepare("
+        UPDATE project_deletion_requests
+        SET status = ?, decided_by = ?, decided_at = NOW(), decision_remarks = ?
+        WHERE id = ?
+    ")->execute([$pastTense[$decision], $actorId ?: null, $remarks !== '' ? $remarks : null, $requestId]);
+
+    $details = $request['project_name'] . ' (' . $request['project_code'] . ') deletion request was ' . $pastTense[$decision] . ($remarks !== '' ? ' — ' . $remarks : '') . '.';
+
+    // Log before deleting — bac_procurement_logs.project_id has an ON DELETE
+    // SET NULL FK to projects, so a log row referencing this project must be
+    // written while it still exists, not after.
+    projectWorkflowLog($db, 'Project deletion ' . $pastTense[$decision], $request['project_id'] ? (int) $request['project_id'] : null, $details, $actorId ?: null);
+
+    if ($decision === 'approve' && $request['project_id']) {
+        $db->prepare("DELETE FROM projects WHERE id = ?")->execute([(int) $request['project_id']]);
+    }
+
+    logActivity($actorId, 'project_deletion_' . $pastTense[$decision], $details);
+
+    if (!empty($request['requested_by'])) {
+        notifyUser((int) $request['requested_by'], $decision === 'approve' ? 'info' : 'warning', 'Project deletion ' . $pastTense[$decision], $details);
     }
 
     respond(['success' => true, 'status' => $pastTense[$decision]]);

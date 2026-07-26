@@ -275,3 +275,10 @@
   background-color: rgba(37,99,235,.04);
   border-radius: var(--radius-sm);
 }
+
+/* Dark mode: the light #f8fafc card/box tints above invert to a slate wash
+   so titles stay readable (they were white-on-white). */
+:root[data-theme="dark"] .contractor-project-card,
+:root[data-theme="dark"] .contractor-detail-box {
+  background: rgba(148, 163, 184, .08);
+}
