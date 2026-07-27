@@ -83,5 +83,13 @@
           <span class="nav-badge" data-badge="cancelled-projects"></span>
         </a>
       </div>
+
+      <div class="nav-group">
+        <p class="nav-group-label">System Integrations</p>
+        <a href="#" class="nav-item" data-page="public-facilities-integration">
+          <span class="nav-icon"><svg viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M4 16V4a1 1 0 011-1h5a1 1 0 011 1v3h4a1 1 0 011 1v8h1a1 1 0 110 2H3a1 1 0 110-2h1zm3-10a1 1 0 000 2h1a1 1 0 100-2H7zm0 4a1 1 0 000 2h1a1 1 0 100-2H7zm5 2a1 1 0 011-1h1a1 1 0 110 2h-1a1 1 0 01-1-1zm1 3a1 1 0 100 2h1a1 1 0 100-2h-1zM7 12a1 1 0 100 2h1a1 1 0 100-2H7z" clip-rule="evenodd"/></svg></span>
+          <span class="nav-label">Public Facilities Integration</span>
+        </a>
+      </div>
     </nav>
   </aside>

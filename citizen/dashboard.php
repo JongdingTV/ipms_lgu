@@ -3,7 +3,10 @@ require_once __DIR__ . '/../auth/session.php';
 
 $user = requireLogin(['citizen']);
 // filemtime as cache-buster so style/behavior changes show up without a hard refresh
-$extraStylesheets = ['citizen/assets/css/citizen.css?v=' . filemtime(__DIR__ . '/assets/css/citizen.css')];
+$extraStylesheets = [
+    'citizen/assets/css/citizen.css?v=' . filemtime(__DIR__ . '/assets/css/citizen.css'),
+    'assets/css/chatbot-widget.css?v=' . filemtime(dirname(__DIR__) . '/assets/css/chatbot-widget.css'),
+];
 
 require_once __DIR__ . '/includes/qc-locations.php';
 require_once __DIR__ . '/includes/feedback-categories.php';
@@ -628,7 +631,7 @@ $statusChip = [
                     <textarea id="cimmsIssue" name="issue" placeholder="Describe the problem in detail..." required></textarea>
                   </div>
                   <div class="cimms-input-group cimms-full-width">
-                    <label>EVIDENCE PHOTOS</label>
+                    <label>EVIDENCE PHOTOS <span class="cimms-req">*</span></label>
                     <div class="cimms-dropzone" id="cimmsDropzone">
                       <input type="file" id="cimmsEvidence" accept="image/*" multiple hidden>
                       <span class="cimms-dropzone-icon" aria-hidden="true">
@@ -760,10 +763,11 @@ $statusChip = [
               <th>Location</th>
               <th>Submitted</th>
               <th>Status</th>
+              <th>Actions</th>
             </tr>
           </thead>
           <tbody id="trackedFeedbackBody">
-            <tr><td colspan="6" class="table-empty">Loading your submissions…</td></tr>
+            <tr><td colspan="7" class="table-empty">Loading your submissions…</td></tr>
           </tbody>
         </table>
       </div>
@@ -1066,6 +1070,22 @@ $statusChip = [
   </div>
 </div>
 
+<!-- Feedback Detail Modal (full view of a citizen's own submitted report) -->
+<div class="modal-overlay" id="feedbackDetailModal" style="display: none;">
+  <div class="modal-card modal-card-wide">
+    <div class="modal-head">
+      <h3>
+        <svg width="17" height="17" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M18 10c0 3.866-3.582 7-8 7a8.841 8.841 0 01-4.083-.98L2 17l1.338-3.123C2.493 12.767 2 11.434 2 10c0-3.866 3.582-7 8-7s8 3.134 8 7z" clip-rule="evenodd"/></svg>
+        Report Details
+      </h3>
+      <button type="button" class="modal-close" id="feedbackDetailClose" title="Close">&times;</button>
+    </div>
+    <div class="project-detail-body" id="feedbackDetailBody">
+      <p class="empty-state">Loading report details...</p>
+    </div>
+  </div>
+</div>
+
 <!-- Logout Confirmation Modal -->
 <div class="modal-overlay" id="logoutConfirmModal" style="display: none;">
   <div class="modal-card">
@@ -1112,3 +1132,7 @@ $statusChip = [
 <script>window.SIDEBAR_BADGES_PORTAL = 'citizen';</script>
 <script src="<?= htmlspecialchars(assetUrl('/assets/js/sidebar-badges.js')) ?>"></script>
 <script src="<?= htmlspecialchars(assetUrl('/citizen/assets/js/citizen.js')) ?>"></script>
+<script>
+  window.CHATBOT_ENDPOINT = <?= json_encode(appUrl('/api/chatbot.php')) ?>;
+</script>
+<script src="<?= htmlspecialchars(assetUrl('/assets/js/chatbot-widget.js')) ?>"></script>

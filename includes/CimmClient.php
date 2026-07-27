@@ -11,6 +11,16 @@
  */
 class CimmClient
 {
+    /**
+     * CIMMS `requests.infrastructure` is a closed enum — mirrors
+     * $allowedInfra in the LGU repo's ipms-requests.php exactly. CIMMS has
+     * no "Other" option; anything outside this list gets a 422 from the
+     * receiver, so callers must map or drop free text before sending it.
+     */
+    public const ALLOWED_INFRASTRUCTURE = [
+        'Roads', 'Street Lights', 'Drainage', 'Public Facilities', 'Water Supply', 'Electrical',
+    ];
+
     public static function isEnabled(): bool
     {
         return defined('CIMM_API_ENABLED')
@@ -110,7 +120,14 @@ class CimmClient
         // Callers that already collected the CIMMS-native values (the citizen
         // portal's replica request form) pass them directly; otherwise they
         // are derived from the IPMS category and district/barangay pair.
+        // Values outside CIMMS' closed enum (e.g. IPMS's "Other" free-text
+        // option) are discarded here too, so mapInfrastructure() below
+        // supplies a valid fallback instead of CIMMS rejecting the whole
+        // request with a 422.
         $infrastructure = trim((string) ($payload['infrastructure'] ?? ''));
+        if ($infrastructure !== '' && !in_array($infrastructure, self::ALLOWED_INFRASTRUCTURE, true)) {
+            $infrastructure = '';
+        }
         $location = trim((string) ($payload['location'] ?? ''));
 
         $fields = [

@@ -3,6 +3,7 @@ require_once __DIR__ . '/../../auth/session.php';
 require_once __DIR__ . '/../includes/qc-locations.php';
 require_once __DIR__ . '/../includes/feedback-categories.php';
 require_once __DIR__ . '/../../includes/CimmClient.php';
+require_once __DIR__ . '/../../includes/workflow.php';
 
 header('Content-Type: application/json');
 
@@ -14,6 +15,7 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
 
 $user = requireLogin(['citizen']);
 $pdo = getDB();
+feedbackEnsureSchema($pdo);
 
 const FEEDBACK_MAX_PHOTOS = 4; // matches the CIMMS request form's evidence limit
 const FEEDBACK_MAX_PHOTO_BYTES = 3 * 1024 * 1024; // 3MB, must match the client-side limit
@@ -72,7 +74,6 @@ if (!in_array($concernType, ['project', 'maintenance'], true)) {
 // Maintenance reports mirror the CIMMS request form: the affected
 // infrastructure is required ("specify" text wins over the dropdown).
 $infrastructureType = null;
-$maintenanceLocation = '';
 if ($concernType === 'maintenance') {
     $infraOther = trim($_POST['infrastructure_other'] ?? '');
     $infrastructureType = $infraOther !== '' ? $infraOther : trim($_POST['infrastructure'] ?? '');
@@ -81,16 +82,6 @@ if ($concernType === 'maintenance') {
     } elseif (mb_strlen($infrastructureType) > 100) {
         $errors[] = 'Infrastructure type must be 100 characters or fewer';
     }
-
-    // The CIMMS form uses a single free-text location instead of the IPMS
-    // district/barangay pair. It travels in the existing barangay column;
-    // district stays NULL for maintenance reports.
-    $maintenanceLocation = trim($_POST['location'] ?? '');
-    if ($maintenanceLocation === '') {
-        $errors[] = 'Location is required';
-    }
-    $district = '';
-    $barangay = mb_substr($maintenanceLocation, 0, 100);
 }
 if (empty($category) || !array_key_exists($category, feedbackCategories())) {
     $errors[] = 'Invalid category';
@@ -101,16 +92,26 @@ if (empty($priority) || !in_array($priority, ['low', 'medium', 'high', 'urgent']
 if (empty($message) || strlen($message) < 10) {
     $errors[] = 'Message must be at least 10 characters';
 }
-if ($concernType !== 'maintenance') {
-    if ($district === '' || $barangay === '') {
-        $errors[] = 'Please select your district and barangay';
-    } elseif (!qcIsValidLocation($district, $barangay)) {
-        // Rejects mismatched pairs (e.g. a D1 barangay submitted with D3) and unknown names.
-        $errors[] = 'The selected barangay does not belong to the selected district';
-    }
+// The feedback form always collects district + barangay via the QC location
+// picker — there is no separate free-text location field — for both project
+// and maintenance concerns, so both are validated and stored the same way.
+if ($district === '' || $barangay === '') {
+    $errors[] = 'Please select your district and barangay';
+} elseif (!qcIsValidLocation($district, $barangay)) {
+    // Rejects mismatched pairs (e.g. a D1 barangay submitted with D3) and unknown names.
+    $errors[] = 'The selected barangay does not belong to the selected district';
 }
 
-// Optional exact pin: both coordinates or neither, and roughly within Quezon City.
+// Maintenance reports forward straight to CIMMS, which either uses the exact
+// pin we send or has to geocode the free-text location itself — the latter
+// can resolve to a different spot each time the request is viewed, which is
+// exactly the "pin moves around" bug this required pin fixes. Regular
+// project feedback keeps the pin optional, same as before.
+if ($concernType === 'maintenance' && ($latitudeRaw === '' || $longitudeRaw === '')) {
+    $errors[] = 'Please tap the exact spot on the map to pin your location.';
+}
+
+// Both coordinates or neither, and roughly within Quezon City.
 $latitude = null;
 $longitude = null;
 if ($latitudeRaw !== '' || $longitudeRaw !== '') {
@@ -148,7 +149,8 @@ $resolvedName = $isAnonymous
     : ($contactName !== '' ? $contactName : ($citizenFullName !== '' ? $citizenFullName : null));
 $resolvedEmail = $contactEmail !== '' ? $contactEmail : (string) ($citizen['email'] ?? '');
 
-// Validate proof photos (optional, 3MB each, real images only)
+// Proof photos: required for maintenance reports (CIMMS needs evidence to
+// act on), optional for regular project feedback — 3MB each, real images only.
 $photoFiles = [];
 if (!empty($_FILES['photos']) && is_array($_FILES['photos']['name'])) {
     $count = count($_FILES['photos']['name']);
@@ -185,6 +187,9 @@ if (!empty($_FILES['photos']) && is_array($_FILES['photos']['name'])) {
 
         $photoFiles[] = ['tmp' => $tmp, 'ext' => FEEDBACK_ALLOWED_PHOTO_MIME[$imageInfo['mime']]];
     }
+}
+if ($concernType === 'maintenance' && $photoFiles === []) {
+    $errors[] = 'Please attach at least one photo as evidence.';
 }
 
 if (!empty($errors)) {
@@ -264,17 +269,37 @@ try {
     // outage never rolls back the citizen's IPMS submission.
     if ($concernType === 'maintenance') {
         if (CimmClient::isEnabled()) {
+            // CIMMS' own request form only offers 6 fixed infrastructure
+            // types (see ipms-requests.php's $allowedInfra) — it has no
+            // "Other" option and rejects anything outside that enum with a
+            // 422. Our replica form adds an "Other" free-text option for
+            // IPMS's own records, so only forward the value when it's one
+            // CIMMS actually recognizes; otherwise let CimmClient derive a
+            // safe fallback from the category and keep the citizen's exact
+            // wording in the issue text instead of silently losing it.
+            $cimmInfrastructure = in_array($infrastructureType, CimmClient::ALLOWED_INFRASTRUCTURE, true)
+                ? $infrastructureType
+                : '';
+            $cimmMessage = $message;
+            if ($cimmInfrastructure === '' && $infrastructureType !== '') {
+                $cimmMessage = '[' . $infrastructureType . '] ' . $message;
+            }
+
             $result = CimmClient::submitRequest([
                 'feedback_id' => $feedbackId,
                 'category' => $category,
                 'priority' => $priority,
-                'message' => $message,
+                'message' => $cimmMessage,
                 'district' => $district,
                 'barangay' => $barangay,
-                // The replica form already collects the exact CIMMS values —
-                // pass them through instead of re-deriving from category.
-                'infrastructure' => $infrastructureType,
-                'location' => $maintenanceLocation,
+                // Pass through only when it matches CIMMS' closed enum;
+                // otherwise leave it blank so CimmClient falls back to
+                // mapInfrastructure($category).
+                'infrastructure' => $cimmInfrastructure,
+                // Leave blank so CimmClient::buildLocation() composes
+                // "Brgy. X, District Y, Quezon City" from the district/
+                // barangay actually collected by the form.
+                'location' => '',
                 'latitude' => $latitude,
                 'longitude' => $longitude,
                 'name' => $resolvedName,

@@ -909,7 +909,7 @@ body {
 }
 
 .logo-title {
-    color: #fff;
+    color: var(--text-primary, #1e293b);
     font-size: .95rem;
 }
 
@@ -963,14 +963,20 @@ body {
 
 .btn-logout {
     min-height: 46px;
-    background: rgba(239, 68, 68, .12);
-    color: #fecaca;
     border-radius: var(--radius-sm, 8px);
     font-size: .92rem;
     font-weight: 600;
 }
 
-.btn-logout:hover {
+/* The pale-on-transparent treatment below only reads against a dark sidebar —
+   scoped to dark mode so light mode keeps the readable `#fee`/`--danger`
+   pairing from the .btn-logout rule earlier in this file. */
+:root[data-theme="dark"] .btn-logout {
+    background: rgba(239, 68, 68, .12);
+    color: #fecaca;
+}
+
+:root[data-theme="dark"] .btn-logout:hover {
     background: rgba(239, 68, 68, .18);
     color: #fff;
 }

@@ -52,7 +52,6 @@ function setupEventListeners() {
     setupFeedbackWizard();
     setupChangePassword();
     setupProjectDetailModal();
-    setupFeedbackDetailModal();
     setupSidebarToggle();
     setupLogoutConfirm();
     setupIdleLogout();
@@ -827,92 +826,6 @@ function renderProjectDetail(data) {
     `;
 }
 
-// ===== Feedback detail modal (full view of a citizen's own submitted report) =====
-// Reuses the array already fetched by loadTrackedFeedback() / listStates —
-// no extra round trip needed since the citizen can only ever view their own
-// reports, which are already sitting in the Track Complaints list cache.
-function setupFeedbackDetailModal() {
-    const modal = document.getElementById('feedbackDetailModal');
-    if (!modal) return;
-
-    const closeModal = () => { modal.style.display = 'none'; };
-    document.getElementById('feedbackDetailClose').addEventListener('click', closeModal);
-    modal.addEventListener('click', (e) => {
-        if (e.target === modal) closeModal();
-    });
-    document.addEventListener('keydown', (e) => {
-        if (e.key === 'Escape' && modal.style.display !== 'none') closeModal();
-    });
-}
-
-function openFeedbackDetail(feedbackId) {
-    const modal = document.getElementById('feedbackDetailModal');
-    const body = document.getElementById('feedbackDetailBody');
-    if (!modal || !body) return;
-
-    const item = (listStates.trackedFeedback?.data || []).find(f => Number(f.id) === Number(feedbackId));
-    if (!item) {
-        body.innerHTML = '<p class="empty-state">Could not find this report. Please refresh and try again.</p>';
-    } else {
-        body.innerHTML = renderFeedbackDetail(item);
-    }
-    modal.style.display = 'flex';
-}
-
-function renderFeedbackDetail(f) {
-    const photos = Array.isArray(f.photos) ? f.photos : [];
-    const isMaintenance = f.concern_type === 'maintenance';
-    const title = f.project_name || (isMaintenance ? 'Maintenance Concern' : 'Community Concern');
-
-    const cimmBadge = isMaintenance ? (() => {
-        const sync = f.cimm_sync_status || 'none';
-        const ref = f.cimm_reference ? ` · ${escapeHtml(f.cimm_reference)}` : '';
-        if (sync === 'synced') return `<span class="fb-cimm-chip fb-cimm-synced">Sent to CIMMS${ref}</span>`;
-        if (sync === 'failed' || sync === 'pending') return `<span class="fb-cimm-chip fb-cimm-pending">CIMMS sync: ${escapeHtml(sync)}</span>`;
-        return `<span class="fb-cimm-chip">CIMMS route</span>`;
-    })() : '';
-
-    return `
-        <div class="detail-header">
-            <span class="feedback-status status-${escapeHtml(f.status)}">${capitalizeFirst(f.status)}</span>
-            <h4 class="detail-name">${escapeHtml(title)}</h4>
-            <p class="detail-code">${feedbackCategoryLabel(f.category)} · Submitted ${formatDate(f.created_at)}</p>
-            ${cimmBadge}
-        </div>
-
-        <div class="detail-stats">
-            <div class="detail-stat"><span class="profile-label">Priority</span><strong><span class="priority-dot priority-${escapeHtml(f.priority)}"></span> ${capitalizeFirst(f.priority)}</strong></div>
-            <div class="detail-stat"><span class="profile-label">Location</span><strong>${f.barangay ? (f.district ? 'Brgy. ' + escapeHtml(f.barangay) + ', ' + escapeHtml(f.district) : escapeHtml(f.barangay)) : 'Not specified'}</strong></div>
-        </div>
-
-        <div class="detail-section">
-            <h5>Full Report</h5>
-            <p class="detail-desc">${escapeHtml(f.message || '')}</p>
-        </div>
-
-        ${f.latitude && f.longitude ? `
-        <div class="detail-section">
-            <h5>Pinned Location</h5>
-            <a class="feedback-pin-link" href="https://www.openstreetmap.org/?mlat=${encodeURIComponent(f.latitude)}&mlon=${encodeURIComponent(f.longitude)}#map=18/${encodeURIComponent(f.latitude)}/${encodeURIComponent(f.longitude)}" target="_blank" rel="noopener">
-                <svg width="14" height="14" viewBox="0 0 20 20" fill="currentColor" class="meta-icon"><path fill-rule="evenodd" d="M12 1.586l-4 4v12.828l4-4V1.586zM3.707 3.293A1 1 0 002 4v10a1 1 0 00.293.707L6 18.414V5.586L3.707 3.293zM17.707 5.293L14 1.586v12.828l2.293 2.293A1 1 0 0018 16V6a1 1 0 00-.293-.707z" clip-rule="evenodd"/></svg>
-                View on map
-            </a>
-        </div>` : ''}
-
-        ${photos.length ? `
-        <div class="detail-section">
-            <h5>Attached Photos</h5>
-            <div class="detail-photos">
-                ${photos.map(p => `
-                    <a href="${citizenUrl(escapeHtml(p))}" target="_blank" rel="noopener" title="Report photo">
-                        <img src="${citizenUrl(escapeHtml(p))}" alt="Report photo" loading="lazy">
-                    </a>
-                `).join('')}
-            </div>
-        </div>` : '<p class="empty-state empty-state-compact">No photos attached to this report.</p>'}
-    `;
-}
-
 // ===== Profile: ID verification upload =====
 function setupIdUpload() {
     const form = document.getElementById('idUploadForm');
@@ -1602,7 +1515,7 @@ function setupListControls() {
     initListControl('trackedFeedback', {
         bodyId: 'trackedFeedbackBody', searchId: 'tfSearch',
         infoId: 'tfPagerInfo', prevId: 'tfPagerPrev', nextId: 'tfPagerNext',
-        columns: 7, emptyText: 'No feedback submissions yet',
+        columns: 6, emptyText: 'No feedback submissions yet',
         searchText: f => `${f.project_name || ''} ${f.message || ''} ${feedbackCategoryLabel(f.category)} ${f.barangay || ''} ${f.district || ''}`,
         rowHtml: f => `
             <tr>
@@ -1615,7 +1528,6 @@ function setupListControls() {
                 <td class="cell-nowrap">${f.barangay ? (f.district ? 'Brgy. ' + escapeHtml(f.barangay) : escapeHtml(f.barangay)) : '—'}</td>
                 <td class="cell-nowrap">${formatDate(f.created_at)}</td>
                 <td><span class="feedback-status status-${escapeHtml(f.status)}">${capitalizeFirst(f.status)}</span></td>
-                <td class="cell-nowrap"><button type="button" class="btn-outline" style="padding:6px 14px;font-size:.78rem;" onclick="openFeedbackDetail(${Number(f.id)})">View</button></td>
             </tr>`,
     });
 
@@ -2019,6 +1931,11 @@ const CIMMS_CATEGORY_BY_INFRA = {
     'Street Lights': 'streetlight',
     'Electrical': 'streetlight',
     'Drainage': 'drainage_flooding',
+    'Public Facilities': 'safety_hazard',
+    'Water Supply': 'safety_hazard',
+    // 'Other' (free text) has no dedicated category — falls through to the
+    // 'complaint' default below, same as CimmClient::mapInfrastructure()'s
+    // own catch-all.
 };
 
 let cimmsSelectedFiles = [];
@@ -2114,8 +2031,6 @@ function setupCimmsMaintenanceForm() {
     let cimmsMap = null;
     let cimmsMapMarker = null;
     let cimmsPickedAddress = '';
-    let cimmsPickedLat = null;
-    let cimmsPickedLng = null;
     let debounceTimer = null;
 
     function cimmsSetAddress(address) {
@@ -2139,17 +2054,10 @@ function setupCimmsMaintenanceForm() {
         if (!cimmsMap) return;
         if (!cimmsMapMarker) {
             cimmsMapMarker = L.marker(latlng, { draggable: true }).addTo(cimmsMap);
-            cimmsMapMarker.on('dragend', () => {
-                const dragged = cimmsMapMarker.getLatLng();
-                cimmsPickedLat = dragged.lat;
-                cimmsPickedLng = dragged.lng;
-                cimmsReverseGeocode(dragged);
-            });
+            cimmsMapMarker.on('dragend', () => cimmsReverseGeocode(cimmsMapMarker.getLatLng()));
         } else {
             cimmsMapMarker.setLatLng(latlng);
         }
-        cimmsPickedLat = latlng.lat;
-        cimmsPickedLng = latlng.lng;
         if (knownAddress) cimmsSetAddress(knownAddress);
         else cimmsReverseGeocode(latlng);
     }
@@ -2388,27 +2296,11 @@ function setupCimmsMaintenanceForm() {
             openCimmsMap();
             return false;
         }
-        // A typed/suggested address alone isn't enough — CIMMS needs a real
-        // pinned coordinate, or it has to geocode the free-text address
-        // itself on its end, which can resolve to a different spot each time
-        // the request is viewed. Requiring the pin here is what actually
-        // fixes that instability, not just a stricter validation message.
-        if (cimmsPickedLat === null || cimmsPickedLng === null) {
-            cimmsNotify('error', 'Please tap the exact spot on the map to pin your location.');
-            openCimmsMap();
-            return false;
-        }
 
         const val = (phoneInput?.value || '').replace(/\D/g, '');
         if (!/^09\d{9}$/.test(val)) {
             cimmsNotify('error', 'Contact number must be 11 digits and start with 09.');
             phoneInput?.focus();
-            return false;
-        }
-
-        if (cimmsSelectedFiles.length === 0) {
-            cimmsNotify('error', 'Please attach at least one photo as evidence.');
-            dropzone?.scrollIntoView({ behavior: 'smooth', block: 'center' });
             return false;
         }
 
@@ -2438,8 +2330,6 @@ function setupCimmsMaintenanceForm() {
         formData.append('infrastructure', infraSelect?.value || '');
         formData.append('infrastructure_other', (infraOther && infraOther.style.display !== 'none') ? infraOther.value.trim() : '');
         formData.append('location', document.getElementById('cimmsLocationInput')?.value.trim() || '');
-        formData.append('latitude', cimmsPickedLat !== null ? String(cimmsPickedLat) : '');
-        formData.append('longitude', cimmsPickedLng !== null ? String(cimmsPickedLng) : '');
         formData.append('contact_name', document.getElementById('cimmsName')?.value.trim() || '');
         formData.append('contact_phone', phoneInput?.value.trim() || '');
         formData.append('contact_email', document.getElementById('cimmsEmail')?.value.trim() || '');

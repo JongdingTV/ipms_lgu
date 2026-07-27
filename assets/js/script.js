@@ -24,6 +24,7 @@ const API = {
   users:       window.BASE_PATH + 'api/users.php',
   workflow:    window.BASE_PATH + 'api/workflow.php',
   staffAccounts: window.BASE_PATH + 'superadmin/api/accounts.php',
+  publicFacilities: window.BASE_PATH + 'api/public-facilities.php',
 };
 
 const CSRF_HEADERS = window.CSRF_TOKEN ? { 'X-CSRF-Token': window.CSRF_TOKEN } : {};
@@ -150,6 +151,10 @@ const PROJECT_STATUS_LABELS = {
   cancelled: 'Cancelled',
 };
 
+// Must match PROJECT_CATEGORIES/PROJECT_FUNDING_SOURCES in api/projects.php.
+const PROJECT_CATEGORIES = ['Roads and Bridges', 'Drainage and Flood Control', 'Water Supply', 'Public Buildings and Facilities', 'Street Lighting', 'Parks and Recreation', 'Other'];
+const PROJECT_FUNDING_SOURCES = ['LGU General Fund', '20% Development Fund', 'National Government Fund', 'Grant/Donor Fund', 'Special Education Fund', 'Other'];
+
 function projectStatusOptions(selected = 'draft') {
   return PROJECT_STATUSES.map(status =>
     `<option value="${status}" ${selected === status ? 'selected' : ''}>${PROJECT_STATUS_LABELS[status] || formatStatus(status)}</option>`
@@ -233,8 +238,9 @@ function navigate(page) {
     'ai-risk-insights': loadAIRiskInsightsPage,
     'citizen-feedback': () => loadFeedbackPage('page-citizen-feedback', 'Citizen Feedback Review', false),
     'staff-requests': loadStaffRequestsPage,
-    'completed-projects': () => loadStatusFilteredProjectsPage('page-completed-projects', 'Completed Projects', 'turnover'),
+    'completed-projects': () => loadStatusFilteredProjectsPage('page-completed-projects', 'Completed Projects', 'completed,turnover'),
     'cancelled-projects': () => loadStatusFilteredProjectsPage('page-cancelled-projects', 'Cancelled Projects', 'cancelled'),
+    'public-facilities-integration': loadPublicFacilitiesPage,
   };
   if (loaders[page]) loaders[page]();
 }
@@ -744,7 +750,7 @@ async function openProjectModal(id) {
         </div>` : ''}
         <div>
           <p class="modal-label">SUPPORTING DOCUMENTS</p>
-          <div id="projectDocList" style="display:flex;flex-direction:column;gap:6px;margin-top:6px;">
+          <div id="projectDocList" class="doc-list-scroll" style="display:flex;flex-direction:column;gap:6px;margin-top:6px;">
             ${p.documents?.length ? p.documents.map(d => `
               <div style="display:flex;align-items:center;gap:8px;font-size:.8rem;padding:8px 10px;background:#f8fafc;border-radius:6px;">
                 <a href="${window.BASE_PATH || ''}${d.file_path}" target="_blank" rel="noopener" style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${escapeHtml(d.title)}</a>
@@ -843,17 +849,33 @@ function projectDocRowHtml(index) {
   `;
 }
 
+const PROJECT_DOC_ROW_LIMIT = 3;
+
 function wireProjectDocRows(container, addBtn) {
   let nextIndex = 1;
+
+  const syncAddBtn = () => {
+    const atLimit = container.querySelectorAll('.doc-row').length >= PROJECT_DOC_ROW_LIMIT;
+    addBtn.disabled = atLimit;
+    addBtn.textContent = atLimit ? `Limit reached (${PROJECT_DOC_ROW_LIMIT} documents max)` : '+ Add another document';
+  };
+
   addBtn.addEventListener('click', () => {
+    if (container.querySelectorAll('.doc-row').length >= PROJECT_DOC_ROW_LIMIT) return;
     container.insertAdjacentHTML('beforeend', projectDocRowHtml(nextIndex));
     nextIndex += 1;
+    syncAddBtn();
   });
   container.addEventListener('click', event => {
     if (event.target.classList.contains('doc-row-remove')) {
+      // Always keep at least one row so the form never submits with none.
+      if (container.querySelectorAll('.doc-row').length <= 1) return;
       event.target.closest('.doc-row')?.remove();
+      syncAddBtn();
     }
   });
+
+  syncAddBtn();
 }
 
 async function loadProjectsPage(containerId = 'page-project-registration', title = 'Project Registration') {
@@ -934,7 +956,7 @@ function renderProjectsTable(rows) {
               <div class="action-btns">
                 <button class="btn-icon" title="View" onclick="openProjectModal(${p.id})"><svg viewBox="0 0 20 20" fill="currentColor" width="14" height="14"><path d="M10 12.5a2.5 2.5 0 100-5 2.5 2.5 0 000 5z"/><path fill-rule="evenodd" d="M.664 10.59a1.651 1.651 0 010-1.186A10.004 10.004 0 0110 3c4.257 0 7.893 2.66 9.336 6.41.147.381.146.804 0 1.186A10.004 10.004 0 0110 17c-4.257 0-7.893-2.66-9.336-6.41zM14 10a4 4 0 11-8 0 4 4 0 018 0z" clip-rule="evenodd"/></svg></button>
                 <button class="btn-icon" title="Edit" onclick="showProjectForm(${p.id})"><svg viewBox="0 0 20 20" fill="currentColor" width="14" height="14"><path d="M13.586 3.586a2 2 0 112.828 2.828l-.793.793-2.828-2.828.793-.793z"/><path d="M11.379 5.793L3 14.172V17h2.828l8.38-8.379-2.83-2.828z"/></svg></button>
-                <button class="btn-icon btn-danger" title="Delete" onclick="deleteProject(${p.id})"><svg viewBox="0 0 20 20" fill="currentColor" width="14" height="14"><path fill-rule="evenodd" d="M9 2a1 1 0 00-.894.553L7.382 4H4a1 1 0 000 2v10a2 2 0 002 2h8a2 2 0 002-2V6a1 1 0 100-2h-3.382l-.724-1.447A1 1 0 0011 2H9zM7 8a1 1 0 012 0v6a1 1 0 11-2 0V8zm5-1a1 1 0 00-1 1v6a1 1 0 102 0V8a1 1 0 00-1-1z" clip-rule="evenodd"/></svg></button>
+                <button class="btn-icon btn-danger" title="Request Deletion (requires HOPE approval)" onclick="deleteProject(${p.id})"><svg viewBox="0 0 20 20" fill="currentColor" width="14" height="14"><path fill-rule="evenodd" d="M9 2a1 1 0 00-.894.553L7.382 4H4a1 1 0 000 2v10a2 2 0 002 2h8a2 2 0 002-2V6a1 1 0 100-2h-3.382l-.724-1.447A1 1 0 0011 2H9zM7 8a1 1 0 012 0v6a1 1 0 11-2 0V8zm5-1a1 1 0 00-1 1v6a1 1 0 102 0V8a1 1 0 00-1-1z" clip-rule="evenodd"/></svg></button>
               </div>
             </td>
           </tr>`;
@@ -950,25 +972,66 @@ async function showProjectForm(id = null) {
     if (id) p = await get(API.projects, { id });
   } catch {}
 
+  const districts = Object.keys(window.QC_DISTRICTS || {});
   const title = id ? `Edit Project #${id}` : 'New Project';
   openModal(title, `
     <form id="projectForm" onsubmit="submitProjectForm(event, ${id})">
       <div class="form-grid">
-        <div class="form-group">
+        <div class="form-group" style="grid-column: span 2;">
           <label>Project Name *</label>
           <input name="name" class="form-input" required value="${p?.name||''}" />
         </div>
-        <div class="form-group">
+      </div>
+
+      <div class="proj-location-fieldset" style="border:1px solid var(--border);border-radius:var(--radius);padding:14px;margin-top:8px;">
+        <p style="font-weight:700;font-size:.85rem;margin-bottom:10px;">Location in Quezon City *</p>
+        <div class="form-grid">
+          <div class="form-group">
+            <label for="projDistrict">District</label>
+            <select id="projDistrict" class="form-input">
+              <option value="">Select district</option>
+              ${districts.map(d => `<option value="${escapeHtml(d)}">${escapeHtml(d)}</option>`).join('')}
+            </select>
+          </div>
+          <div class="form-group">
+            <label for="projBarangay">Barangay</label>
+            <select id="projBarangay" class="form-input" disabled>
+              <option value="">Select a district first</option>
+            </select>
+          </div>
+        </div>
+        <p style="font-size:.75rem;color:var(--text-muted);margin:8px 0;">Tap the exact spot on the map to drop a pin — drag it to fine-tune. The location below fills in automatically; you can still edit it for more specific detail (e.g. a street or landmark).</p>
+        <div id="projQcMap" style="height:280px;border-radius:var(--radius);overflow:hidden;border:1px solid var(--border);"></div>
+        <div class="form-group" style="margin-top:10px;">
           <label>Location *</label>
-          <input name="location" class="form-input" required value="${p?.location||''}" />
+          <input name="location" id="projLocationText" class="form-input" required value="${escapeHtml(p?.location||'')}" />
+        </div>
+        <input type="hidden" name="latitude" id="projLat" value="${p?.latitude ?? ''}" />
+        <input type="hidden" name="longitude" id="projLng" value="${p?.longitude ?? ''}" />
+      </div>
+
+      <div class="form-grid" style="margin-top:8px;">
+        <div class="form-group">
+          <label>Project Category</label>
+          <select name="category" class="form-input">
+            <option value="">Select category</option>
+            ${PROJECT_CATEGORIES.map(c => `<option value="${c}" ${p?.category===c?'selected':''}>${c}</option>`).join('')}
+          </select>
         </div>
         <div class="form-group">
-          <label>Latitude <small>(for GIS map, optional)</small></label>
-          <input name="latitude" type="number" step="0.0000001" min="-90" max="90" class="form-input" placeholder="e.g. 14.6760" value="${p?.latitude ?? ''}" />
+          <label>Funding Source</label>
+          <select name="funding_source" class="form-input">
+            <option value="">Select funding source</option>
+            ${PROJECT_FUNDING_SOURCES.map(f => `<option value="${f}" ${p?.funding_source===f?'selected':''}>${f}</option>`).join('')}
+          </select>
         </div>
         <div class="form-group">
-          <label>Longitude <small>(for GIS map, optional)</small></label>
-          <input name="longitude" type="number" step="0.0000001" min="-180" max="180" class="form-input" placeholder="e.g. 121.0437" value="${p?.longitude ?? ''}" />
+          <label>Implementing Office</label>
+          <input name="implementing_office" class="form-input" placeholder="e.g. City Engineering Office" value="${escapeHtml(p?.implementing_office||'')}" />
+        </div>
+        <div class="form-group">
+          <label>Physical Target / Scope</label>
+          <input name="physical_target" class="form-input" placeholder="e.g. 2.5 km road rehabilitation" value="${escapeHtml(p?.physical_target||'')}" />
         </div>
         <div class="form-group">
           <label>Budget (₱) *</label>
@@ -993,13 +1056,16 @@ async function showProjectForm(id = null) {
           </div>
         ` : '<input type="hidden" name="status" value="draft" />'}
       </div>
+
+      ${roadGeometrySectionHtml(p)}
+
       <div class="form-group" style="margin-top:8px;">
         <label>Description *</label>
         <textarea name="description" class="form-input" rows="3" required>${p?.description||''}</textarea>
       </div>
       ${!id ? `
         <div class="form-group" style="margin-top:8px;">
-          <label>Supporting Documents * <small>(at least one required — feasibility study, site assessment, budget justification, etc.)</small></label>
+          <label>Supporting Documents * <small>(1–3 documents — feasibility study, site assessment, budget justification, etc. Max 10MB each.)</small></label>
           <div class="doc-rows" id="projectDocRows">${projectDocRowHtml(0)}</div>
           <button type="button" class="doc-add-btn" id="projectDocAddBtn">+ Add another document</button>
         </div>
@@ -1011,13 +1077,713 @@ async function showProjectForm(id = null) {
     </form>
   `);
 
+  setupProjectLocationPicker(p);
+  setupRoadGeometryModule(p);
+
   if (!id) {
     wireProjectDocRows(document.getElementById('projectDocRows'), document.getElementById('projectDocAddBtn'));
   }
 }
 
+/* ============================================================
+   PROJECT LOCATION PICKER — District -> Barangay -> map pin.
+   Same QC boundary geojson + interaction model as Citizen Feedback's own
+   picker (click a barangay or the map to drop a pin, dropdowns cascade),
+   adapted for this modal, which is destroyed/rebuilt each time the form
+   opens rather than being a persistent page like citizen's.
+   ============================================================ */
+let projectQcMap = null;
+let projectQcGeoLayer = null;
+const projectQcLayersByGeo = {};
+let projectQcPinMarker = null;
+
+function projectBarangayIndex() {
+  const index = {};
+  Object.keys(window.QC_DISTRICTS || {}).forEach(district => {
+    (window.QC_DISTRICTS[district] || []).forEach(entry => {
+      index[entry.geo || entry.name] = { district, name: entry.name };
+    });
+  });
+  return index;
+}
+
+async function setupProjectLocationPicker(existingProject) {
+  // Tear down any previous instance — the modal DOM is rebuilt each time,
+  // so a leftover map bound to a now-detached container would leak/error.
+  if (projectQcMap) {
+    projectQcMap.remove();
+    projectQcMap = null;
+    projectQcGeoLayer = null;
+    projectQcPinMarker = null;
+    Object.keys(projectQcLayersByGeo).forEach(k => delete projectQcLayersByGeo[k]);
+  }
+
+  const districtSel = document.getElementById('projDistrict');
+  const barangaySel = document.getElementById('projBarangay');
+  if (!districtSel || !barangaySel) return;
+
+  districtSel.addEventListener('change', () => {
+    populateProjectBarangayOptions(districtSel.value);
+    clearProjectPin();
+    updateProjectLocationText();
+    if (projectQcMap) focusProjectDistrictOnMap(districtSel.value);
+  });
+
+  barangaySel.addEventListener('change', () => {
+    updateProjectLocationText();
+    if (projectQcMap) focusProjectBarangayOnMap(districtSel.value, barangaySel.value);
+  });
+
+  try {
+    const geojson = await loadQcBoundaryGeoJson();
+    const container = document.getElementById('projQcMap');
+    if (!container) return; // modal was closed while the geojson was loading
+
+    projectQcMap = L.map('projQcMap', { minZoom: 11, maxZoom: 17 });
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      attribution: '&copy; OpenStreetMap contributors',
+    }).addTo(projectQcMap);
+
+    const barangayIndex = projectBarangayIndex();
+    projectQcGeoLayer = L.geoJSON(geojson, {
+      style: { color: '#fff', weight: 1, fillColor: '#94a3b8', fillOpacity: 0.35 },
+      onEachFeature: (feature, layer) => {
+        const geoName = feature.properties.adm4_en;
+        const info = barangayIndex[geoName];
+        projectQcLayersByGeo[geoName] = layer;
+        if (!info) return;
+
+        layer.on('click', (e) => {
+          districtSel.value = info.district;
+          populateProjectBarangayOptions(info.district);
+          barangaySel.value = info.name;
+          updateProjectLocationText();
+          focusProjectBarangayOnMap(info.district, info.name, false);
+          placeProjectPin(e.latlng);
+        });
+      },
+    }).addTo(projectQcMap);
+
+    projectQcMap.setMaxBounds(projectQcGeoLayer.getBounds().pad(0.3));
+
+    if (existingProject?.latitude && existingProject?.longitude) {
+      const latlng = L.latLng(Number(existingProject.latitude), Number(existingProject.longitude));
+      projectQcMap.setView(latlng, 15);
+      placeProjectPin(latlng);
+    } else {
+      projectQcMap.fitBounds(projectQcGeoLayer.getBounds());
+    }
+
+    setTimeout(() => projectQcMap.invalidateSize(), 100);
+  } catch {
+    // Map is a convenience layer on top of the dropdowns — the dropdowns
+    // and typed location text still work fine without it.
+  }
+}
+
+function populateProjectBarangayOptions(district) {
+  const barangaySel = document.getElementById('projBarangay');
+  if (!barangaySel) return;
+
+  if (!district || !(window.QC_DISTRICTS || {})[district]) {
+    barangaySel.innerHTML = '<option value="">Select a district first</option>';
+    barangaySel.disabled = true;
+    return;
+  }
+
+  barangaySel.innerHTML = '<option value="">Select barangay</option>' +
+    window.QC_DISTRICTS[district].map(entry => `<option value="${escapeHtml(entry.name)}">${escapeHtml(entry.name)}</option>`).join('');
+  barangaySel.disabled = false;
+}
+
+function focusProjectDistrictOnMap(district, zoom = true) {
+  if (!projectQcGeoLayer) return;
+  projectQcGeoLayer.eachLayer(layer => projectQcGeoLayer.resetStyle(layer));
+  if (!district) {
+    if (zoom) projectQcMap.fitBounds(projectQcGeoLayer.getBounds());
+    return;
+  }
+  const barangayIndex = projectBarangayIndex();
+  const districtLayers = Object.keys(barangayIndex)
+    .filter(geo => barangayIndex[geo].district === district)
+    .map(geo => projectQcLayersByGeo[geo])
+    .filter(Boolean);
+  if (zoom && districtLayers.length) {
+    projectQcMap.fitBounds(L.featureGroup(districtLayers).getBounds().pad(0.1));
+  }
+}
+
+function focusProjectBarangayOnMap(district, barangayName, zoom = true) {
+  if (!projectQcGeoLayer || !district || !barangayName) return;
+  focusProjectDistrictOnMap(district, false);
+
+  const entry = (window.QC_DISTRICTS[district] || []).find(e => e.name === barangayName);
+  if (!entry) return;
+  const geoName = entry.geo || entry.name;
+  const layer = projectQcLayersByGeo[geoName];
+  if (!layer) return;
+
+  layer.setStyle({ fillOpacity: 0.75, weight: 3, color: '#1e293b' });
+  if (layer.bringToFront) layer.bringToFront();
+  if (zoom) projectQcMap.fitBounds(layer.getBounds().pad(0.4), { maxZoom: 15 });
+}
+
+function placeProjectPin(latlng) {
+  if (!projectQcMap) return;
+  if (!projectQcPinMarker) {
+    projectQcPinMarker = L.marker(latlng, { draggable: true, title: 'Exact spot (drag to adjust)' }).addTo(projectQcMap);
+    projectQcPinMarker.on('dragend', () => setProjectPinInputs(projectQcPinMarker.getLatLng()));
+  } else {
+    projectQcPinMarker.setLatLng(latlng);
+  }
+  setProjectPinInputs(latlng);
+}
+
+function clearProjectPin() {
+  if (projectQcPinMarker && projectQcMap) {
+    projectQcMap.removeLayer(projectQcPinMarker);
+  }
+  projectQcPinMarker = null;
+  setProjectPinInputs(null);
+}
+
+function setProjectPinInputs(latlng) {
+  const latInput = document.getElementById('projLat');
+  const lngInput = document.getElementById('projLng');
+  if (latInput) latInput.value = latlng ? latlng.lat.toFixed(7) : '';
+  if (lngInput) lngInput.value = latlng ? latlng.lng.toFixed(7) : '';
+}
+
+function updateProjectLocationText() {
+  const districtSel = document.getElementById('projDistrict');
+  const barangaySel = document.getElementById('projBarangay');
+  const locationInput = document.getElementById('projLocationText');
+  if (!districtSel || !barangaySel || !locationInput) return;
+  if (districtSel.value && barangaySel.value) {
+    locationInput.value = `Barangay ${barangaySel.value}, ${districtSel.value}, Quezon City`;
+  }
+}
+
+/* ============================================================
+   ROAD GEOMETRY — conditional module on Project Registration/Edit, visible
+   only when Project Category = 'Roads and Bridges'. Every other category's
+   form and submission flow is completely untouched by this module.
+   Shared with the Urban Planning System via integrations/urban-planning/
+   road-geometry-feed.php (read-only on their side — IPMS remains the owner
+   of the project and its geometry).
+   ============================================================ */
+const ROAD_TYPES = ['National Road', 'City Road', 'Barangay Road', 'Secondary Road', 'Bridge', 'Intersection'];
+const ROAD_STATUSES = ['Existing Road', 'Road Widening', 'New Road', 'Rehabilitation', 'Bridge Construction'];
+const ROAD_SURFACES = ['Concrete', 'Asphalt', 'Gravel', 'Mixed'];
+
+function roadToggleHtml(id, label, checked) {
+  return `
+    <label class="form-checkbox-label road-toggle">
+      <span class="toggle-switch">
+        <input type="checkbox" id="${id}" ${checked ? 'checked' : ''}>
+        <span class="toggle-slider"></span>
+      </span>
+      ${label}
+    </label>
+  `;
+}
+
+function roadGeometrySectionHtml(p) {
+  const g = p?.road_geometry || null;
+  return `
+    <div class="road-geometry-card" id="roadGeometrySection" style="display:none;">
+      <div class="road-geometry-header">
+        <h3>Road Geometry</h3>
+        <small>Visible only for Roads and Bridges — this data is shared with the Urban Planning System integration.</small>
+      </div>
+      <div class="form-grid">
+        <div class="form-group">
+          <label>Road Name *</label>
+          <input id="roadName" class="form-input" placeholder="e.g. Commonwealth Avenue Extension" value="${escapeHtml(g?.road_name || '')}" />
+        </div>
+        <div class="form-group">
+          <label>Road Type</label>
+          <select id="roadType" class="form-input">
+            <option value="">Select road type</option>
+            ${ROAD_TYPES.map(t => `<option value="${t}" ${g?.road_type === t ? 'selected' : ''}>${t}</option>`).join('')}
+          </select>
+        </div>
+        <div class="form-group">
+          <label>Road Status</label>
+          <select id="roadStatus" class="form-input">
+            <option value="">Select road status</option>
+            ${ROAD_STATUSES.map(s => `<option value="${s}" ${g?.road_status === s ? 'selected' : ''}>${s}</option>`).join('')}
+          </select>
+        </div>
+      </div>
+
+      <div class="road-map-toolbar">
+        <input class="filter-input" id="roadMapSearch" placeholder="Search a location..." autocomplete="off">
+        <div id="roadMapSuggestions" class="road-map-suggestions"></div>
+        <button type="button" class="btn-secondary btn-compact" id="roadMapUndo">Undo Last Point</button>
+        <button type="button" class="btn-secondary btn-compact" id="roadMapClear">Clear Road</button>
+        <span class="road-point-count" id="roadPointCount">0 points</span>
+      </div>
+      <p style="font-size:.75rem;color:var(--text-muted);margin:6px 0;">Click the map to place points along the road, in order from start to end — they connect automatically into one continuous line.</p>
+      <div id="roadGeometryMap" style="height:340px;border-radius:var(--radius);overflow:hidden;border:1px solid var(--border);"></div>
+
+      <div class="road-geometry-readouts">
+        <div><span class="modal-label">START</span><p class="modal-val" id="roadStartReadout">Not set</p></div>
+        <div><span class="modal-label">END</span><p class="modal-val" id="roadEndReadout">Not set</p></div>
+        <div><span class="modal-label">LENGTH</span><p class="modal-val" id="roadLengthReadout">—</p></div>
+        <div><span class="modal-label">SEGMENTS</span><p class="modal-val" id="roadSegmentsReadout">0</p></div>
+      </div>
+
+      <div id="roadGeometrySummary" class="road-summary-card" style="display:none;"></div>
+
+      <p style="font-weight:700;font-size:.85rem;margin:14px 0 8px;">Optional Details</p>
+      <div class="form-grid">
+        <div class="form-group"><label>Road Width (meters)</label><input id="roadWidth" type="number" step="0.1" min="0" class="form-input" value="${g?.road_width ?? ''}" /></div>
+        <div class="form-group"><label>Number of Lanes</label><input id="roadLanes" type="number" min="0" class="form-input" value="${g?.num_lanes ?? ''}" /></div>
+        <div class="form-group">
+          <label>Road Surface</label>
+          <select id="roadSurface" class="form-input">
+            <option value="">Select surface</option>
+            ${ROAD_SURFACES.map(s => `<option value="${s}" ${g?.road_surface === s ? 'selected' : ''}>${s}</option>`).join('')}
+          </select>
+        </div>
+      </div>
+      <div class="road-toggle-grid">
+        ${roadToggleHtml('roadBridgeIncluded', 'Bridge Included', g?.bridge_included == 1)}
+        ${roadToggleHtml('roadDrainageIncluded', 'Drainage Included', g?.drainage_included == 1)}
+        ${roadToggleHtml('roadBikeLane', 'Bike Lane', g?.bike_lane == 1)}
+        ${roadToggleHtml('roadSidewalk', 'Sidewalk', g?.sidewalk == 1)}
+        ${roadToggleHtml('roadStreetlights', 'Streetlights', g?.streetlights == 1)}
+      </div>
+
+      <input type="hidden" name="road_geometry" id="roadGeometryJson" />
+    </div>
+  `;
+}
+
+// Mutable drawing state — reset each time the map (re)initializes.
+let roadGeoMap = null;
+let roadGeoGeoLayer = null;
+const roadGeoLayersByGeo = {};
+let roadGeoPoints = []; // [[lat,lng], ...] in click order
+let roadGeoPointMarkers = [];
+let roadGeoPolyline = null;
+let roadGeoStartMarker = null;
+let roadGeoEndMarker = null;
+let roadGeoStartInfo = null; // {lat,lng,address,barangay,district}
+let roadGeoEndInfo = null;
+
+function roadGeoBarangayIndex() {
+  const index = {};
+  Object.keys(window.QC_DISTRICTS || {}).forEach(district => {
+    (window.QC_DISTRICTS[district] || []).forEach(entry => {
+      index[entry.geo || entry.name] = { district, name: entry.name };
+    });
+  });
+  return index;
+}
+
+/** Standard ray-casting point-in-polygon test against a single [lng,lat] ring. */
+function roadGeoPointInRing(lat, lng, ring) {
+  let inside = false;
+  for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
+    const xi = ring[i][0], yi = ring[i][1];
+    const xj = ring[j][0], yj = ring[j][1];
+    const intersect = ((yi > lat) !== (yj > lat)) &&
+      (lng < (xj - xi) * (lat - yi) / (yj - yi) + xi);
+    if (intersect) inside = !inside;
+  }
+  return inside;
+}
+
+function roadGeoPointInGeometry(lat, lng, geometry) {
+  if (!geometry) return false;
+  const polygons = geometry.type === 'Polygon' ? [geometry.coordinates]
+    : geometry.type === 'MultiPolygon' ? geometry.coordinates : [];
+  return polygons.some(rings => rings.length && roadGeoPointInRing(lat, lng, rings[0]));
+}
+
+/** Finds which QC barangay/district a lat/lng falls in, using our own boundary
+    data — more reliable than a third-party geocoder's approximate guess,
+    and it's already loaded for the map anyway. */
+function roadGeoLocateBarangay(lat, lng) {
+  const index = roadGeoBarangayIndex();
+  for (const geoName of Object.keys(roadGeoLayersByGeo)) {
+    const feature = roadGeoLayersByGeo[geoName]?.feature;
+    if (feature && roadGeoPointInGeometry(lat, lng, feature.geometry)) {
+      const info = index[geoName];
+      if (info) return { barangay: info.name, district: info.district };
+    }
+  }
+  return { barangay: null, district: null };
+}
+
+function roadGeoHaversineMeters(a, b) {
+  const R = 6371000;
+  const dLat = (b[0] - a[0]) * Math.PI / 180;
+  const dLng = (b[1] - a[1]) * Math.PI / 180;
+  const lat1 = a[0] * Math.PI / 180, lat2 = b[0] * Math.PI / 180;
+  const h = Math.sin(dLat / 2) ** 2 + Math.cos(lat1) * Math.cos(lat2) * Math.sin(dLng / 2) ** 2;
+  return R * 2 * Math.atan2(Math.sqrt(h), Math.sqrt(1 - h));
+}
+
+function roadGeoTotalLengthMeters(points) {
+  let total = 0;
+  for (let i = 1; i < points.length; i++) total += roadGeoHaversineMeters(points[i - 1], points[i]);
+  return total;
+}
+
+function roadGeoFormatLength(meters) {
+  return meters >= 1000 ? (meters / 1000).toFixed(2) + ' km' : Math.round(meters) + ' m';
+}
+
+async function roadGeoReverseGeocode(lat, lng) {
+  try {
+    const res = await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}&addressdetails=1`);
+    const data = await res.json();
+    return data.display_name || `${lat.toFixed(5)}, ${lng.toFixed(5)}`;
+  } catch {
+    return `${lat.toFixed(5)}, ${lng.toFixed(5)}`;
+  }
+}
+
+function roadGeoUpdatePointCount() {
+  const el = document.getElementById('roadPointCount');
+  if (el) el.textContent = `${roadGeoPoints.length} point${roadGeoPoints.length === 1 ? '' : 's'}`;
+}
+
+function roadGeoRenderPolyline() {
+  if (!roadGeoMap) return;
+  if (roadGeoPolyline) { roadGeoMap.removeLayer(roadGeoPolyline); roadGeoPolyline = null; }
+  if (roadGeoPoints.length >= 2) {
+    roadGeoPolyline = L.polyline(roadGeoPoints, { color: '#2563eb', weight: 4 }).addTo(roadGeoMap);
+  }
+}
+
+function roadGeoRenderStartEndMarkers() {
+  if (!roadGeoMap) return;
+  if (roadGeoStartMarker) { roadGeoMap.removeLayer(roadGeoStartMarker); roadGeoStartMarker = null; }
+  if (roadGeoEndMarker) { roadGeoMap.removeLayer(roadGeoEndMarker); roadGeoEndMarker = null; }
+
+  if (roadGeoPoints.length >= 1) {
+    roadGeoStartMarker = L.circleMarker(roadGeoPoints[0], { radius: 8, color: '#1e40af', fillColor: '#3b82f6', fillOpacity: 1, weight: 2 })
+      .bindTooltip('Start', { permanent: false }).addTo(roadGeoMap);
+  }
+  if (roadGeoPoints.length >= 2) {
+    roadGeoEndMarker = L.circleMarker(roadGeoPoints[roadGeoPoints.length - 1], { radius: 8, color: '#991b1b', fillColor: '#ef4444', fillOpacity: 1, weight: 2 })
+      .bindTooltip('End', { permanent: false }).addTo(roadGeoMap);
+  }
+}
+
+function roadGeoBarangaysCovered() {
+  const set = new Set();
+  roadGeoPoints.forEach(pt => {
+    const loc = roadGeoLocateBarangay(pt[0], pt[1]);
+    if (loc.barangay) set.add(loc.barangay);
+  });
+  return Array.from(set);
+}
+
+function roadGeoDistrictsCovered() {
+  const set = new Set();
+  roadGeoPoints.forEach(pt => {
+    const loc = roadGeoLocateBarangay(pt[0], pt[1]);
+    if (loc.district) set.add(loc.district);
+  });
+  return Array.from(set);
+}
+
+/** Recomputes start (first point, set once) and end (last point, changes as
+    points are added/removed) — avoids re-geocoding points that haven't moved. */
+async function roadGeoRecomputeEndpoints() {
+  if (roadGeoPoints.length === 0) {
+    roadGeoStartInfo = null;
+    roadGeoEndInfo = null;
+    return;
+  }
+  const startPt = roadGeoPoints[0];
+  const endPt = roadGeoPoints[roadGeoPoints.length - 1];
+
+  if (!roadGeoStartInfo || roadGeoStartInfo.lat !== startPt[0] || roadGeoStartInfo.lng !== startPt[1]) {
+    const loc = roadGeoLocateBarangay(startPt[0], startPt[1]);
+    roadGeoStartInfo = { lat: startPt[0], lng: startPt[1], address: `${startPt[0].toFixed(5)}, ${startPt[1].toFixed(5)}`, ...loc };
+    roadGeoReverseGeocode(startPt[0], startPt[1]).then(addr => {
+      if (roadGeoStartInfo && roadGeoStartInfo.lat === startPt[0] && roadGeoStartInfo.lng === startPt[1]) {
+        roadGeoStartInfo.address = addr;
+        roadGeoRefresh();
+      }
+    });
+  }
+
+  if (roadGeoPoints.length >= 2) {
+    if (!roadGeoEndInfo || roadGeoEndInfo.lat !== endPt[0] || roadGeoEndInfo.lng !== endPt[1]) {
+      const loc = roadGeoLocateBarangay(endPt[0], endPt[1]);
+      roadGeoEndInfo = { lat: endPt[0], lng: endPt[1], address: `${endPt[0].toFixed(5)}, ${endPt[1].toFixed(5)}`, ...loc };
+      roadGeoReverseGeocode(endPt[0], endPt[1]).then(addr => {
+        if (roadGeoEndInfo && roadGeoEndInfo.lat === endPt[0] && roadGeoEndInfo.lng === endPt[1]) {
+          roadGeoEndInfo.address = addr;
+          roadGeoRefresh();
+        }
+      });
+    }
+  } else {
+    roadGeoEndInfo = null;
+  }
+}
+
+function roadGeoRenderReadouts() {
+  const startEl = document.getElementById('roadStartReadout');
+  const endEl = document.getElementById('roadEndReadout');
+  const lengthEl = document.getElementById('roadLengthReadout');
+  const segEl = document.getElementById('roadSegmentsReadout');
+  const summaryEl = document.getElementById('roadGeometrySummary');
+
+  if (startEl) startEl.textContent = roadGeoStartInfo ? roadGeoStartInfo.address : 'Not set';
+  if (endEl) endEl.textContent = roadGeoEndInfo ? roadGeoEndInfo.address : 'Not set';
+
+  const length = roadGeoTotalLengthMeters(roadGeoPoints);
+  if (lengthEl) lengthEl.textContent = roadGeoPoints.length >= 2 ? roadGeoFormatLength(length) : '—';
+  if (segEl) segEl.textContent = String(Math.max(0, roadGeoPoints.length - 1));
+
+  if (!summaryEl) return;
+  if (roadGeoPoints.length >= 2 && roadGeoStartInfo && roadGeoEndInfo) {
+    const barangays = roadGeoBarangaysCovered();
+    const districts = roadGeoDistrictsCovered();
+    const roadNameVal = document.getElementById('roadName')?.value || '(unnamed road)';
+    summaryEl.style.display = 'block';
+    summaryEl.innerHTML = `
+      <p class="modal-label">ROAD SUMMARY</p>
+      <div class="road-summary-grid">
+        <div><span class="modal-label">ROAD NAME</span><p class="modal-val">${escapeHtml(roadNameVal)}</p></div>
+        <div><span class="modal-label">LENGTH</span><p class="modal-val">${roadGeoFormatLength(length)}</p></div>
+        <div><span class="modal-label">START</span><p class="modal-val">${escapeHtml(roadGeoStartInfo.address)}</p></div>
+        <div><span class="modal-label">END</span><p class="modal-val">${escapeHtml(roadGeoEndInfo.address)}</p></div>
+        <div><span class="modal-label">BARANGAYS COVERED</span><p class="modal-val">${barangays.length ? barangays.map(escapeHtml).join(', ') : '-'}</p></div>
+        <div><span class="modal-label">DISTRICTS COVERED</span><p class="modal-val">${districts.length ? districts.map(escapeHtml).join(', ') : '-'}</p></div>
+      </div>
+    `;
+  } else {
+    summaryEl.style.display = 'none';
+  }
+}
+
+function roadGeoSyncHiddenInput() {
+  const input = document.getElementById('roadGeometryJson');
+  if (!input) return;
+  if (roadGeoPoints.length < 2 || !roadGeoStartInfo || !roadGeoEndInfo) {
+    input.value = '';
+    return;
+  }
+  const payload = {
+    road_name: document.getElementById('roadName')?.value.trim() || '',
+    road_type: document.getElementById('roadType')?.value || '',
+    road_status: document.getElementById('roadStatus')?.value || '',
+    points: roadGeoPoints,
+    start: roadGeoStartInfo,
+    end: roadGeoEndInfo,
+    barangays_covered: roadGeoBarangaysCovered(),
+    districts_covered: roadGeoDistrictsCovered(),
+    estimated_length_meters: roadGeoTotalLengthMeters(roadGeoPoints),
+    num_segments: roadGeoPoints.length - 1,
+    road_width: document.getElementById('roadWidth')?.value || null,
+    num_lanes: document.getElementById('roadLanes')?.value || null,
+    road_surface: document.getElementById('roadSurface')?.value || '',
+    bridge_included: document.getElementById('roadBridgeIncluded')?.checked || false,
+    drainage_included: document.getElementById('roadDrainageIncluded')?.checked || false,
+    bike_lane: document.getElementById('roadBikeLane')?.checked || false,
+    sidewalk: document.getElementById('roadSidewalk')?.checked || false,
+    streetlights: document.getElementById('roadStreetlights')?.checked || false,
+  };
+  input.value = JSON.stringify(payload);
+}
+
+function roadGeoRefresh() {
+  roadGeoRenderReadouts();
+  roadGeoSyncHiddenInput();
+}
+
+async function roadGeoAddPoint(latlng) {
+  roadGeoPoints.push([latlng.lat, latlng.lng]);
+  const marker = L.circleMarker(latlng, { radius: 5, color: '#1e293b', fillColor: '#fff', fillOpacity: 1, weight: 2 }).addTo(roadGeoMap);
+  roadGeoPointMarkers.push(marker);
+
+  roadGeoRenderPolyline();
+  roadGeoRenderStartEndMarkers();
+  roadGeoUpdatePointCount();
+  await roadGeoRecomputeEndpoints();
+  roadGeoRefresh();
+}
+
+async function roadGeoUndoLastPoint() {
+  if (!roadGeoPoints.length) return;
+  roadGeoPoints.pop();
+  const marker = roadGeoPointMarkers.pop();
+  if (marker && roadGeoMap) roadGeoMap.removeLayer(marker);
+
+  roadGeoRenderPolyline();
+  roadGeoRenderStartEndMarkers();
+  roadGeoUpdatePointCount();
+  roadGeoEndInfo = null; // the "last point" just changed — force a fresh lookup
+  await roadGeoRecomputeEndpoints();
+  roadGeoRefresh();
+}
+
+function roadGeoClearAll() {
+  roadGeoPoints = [];
+  roadGeoPointMarkers.forEach(m => roadGeoMap?.removeLayer(m));
+  roadGeoPointMarkers = [];
+  if (roadGeoPolyline) { roadGeoMap?.removeLayer(roadGeoPolyline); roadGeoPolyline = null; }
+  if (roadGeoStartMarker) { roadGeoMap?.removeLayer(roadGeoStartMarker); roadGeoStartMarker = null; }
+  if (roadGeoEndMarker) { roadGeoMap?.removeLayer(roadGeoEndMarker); roadGeoEndMarker = null; }
+  roadGeoStartInfo = null;
+  roadGeoEndInfo = null;
+  roadGeoUpdatePointCount();
+  roadGeoRefresh();
+}
+
+async function initRoadGeometryMap(existingGeometry) {
+  if (roadGeoMap) {
+    roadGeoMap.remove();
+    roadGeoMap = null;
+    roadGeoGeoLayer = null;
+    Object.keys(roadGeoLayersByGeo).forEach(k => delete roadGeoLayersByGeo[k]);
+  }
+  roadGeoPoints = [];
+  roadGeoPointMarkers = [];
+  roadGeoPolyline = null;
+  roadGeoStartMarker = null;
+  roadGeoEndMarker = null;
+  roadGeoStartInfo = null;
+  roadGeoEndInfo = null;
+
+  if (!document.getElementById('roadGeometryMap')) return;
+
+  try {
+    const geojson = await loadQcBoundaryGeoJson();
+    if (!document.getElementById('roadGeometryMap')) return; // modal closed while loading
+
+    roadGeoMap = L.map('roadGeometryMap', { minZoom: 11, maxZoom: 18 });
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      attribution: '&copy; OpenStreetMap contributors',
+    }).addTo(roadGeoMap);
+
+    roadGeoGeoLayer = L.geoJSON(geojson, {
+      style: { color: '#94a3b8', weight: 1, fillColor: '#94a3b8', fillOpacity: 0.06 },
+      onEachFeature: (feature, layer) => {
+        roadGeoLayersByGeo[feature.properties.adm4_en] = layer;
+      },
+    }).addTo(roadGeoMap);
+    roadGeoMap.setMaxBounds(roadGeoGeoLayer.getBounds().pad(0.3));
+    roadGeoMap.fitBounds(roadGeoGeoLayer.getBounds());
+
+    roadGeoMap.on('click', (e) => { roadGeoAddPoint(e.latlng); });
+
+    setTimeout(() => roadGeoMap.invalidateSize(), 100);
+
+    if (existingGeometry?.polyline_coordinates?.length) {
+      existingGeometry.polyline_coordinates.forEach(pt => {
+        const marker = L.circleMarker(pt, { radius: 5, color: '#1e293b', fillColor: '#fff', fillOpacity: 1, weight: 2 }).addTo(roadGeoMap);
+        roadGeoPointMarkers.push(marker);
+        roadGeoPoints.push(pt);
+      });
+      roadGeoRenderPolyline();
+      roadGeoRenderStartEndMarkers();
+      roadGeoUpdatePointCount();
+      roadGeoStartInfo = {
+        lat: existingGeometry.start_latitude, lng: existingGeometry.start_longitude,
+        address: existingGeometry.start_address, barangay: existingGeometry.start_barangay, district: existingGeometry.start_district,
+      };
+      roadGeoEndInfo = {
+        lat: existingGeometry.end_latitude, lng: existingGeometry.end_longitude,
+        address: existingGeometry.end_address, barangay: existingGeometry.end_barangay, district: existingGeometry.end_district,
+      };
+      roadGeoRefresh();
+      roadGeoMap.fitBounds(L.polyline(roadGeoPoints).getBounds().pad(0.3));
+    }
+  } catch {
+    // The map is a convenience layer for drawing; if it fails to load there's
+    // nothing meaningful to draw with, but this must not crash the whole form.
+  }
+}
+
+function setupRoadGeometryModule(p) {
+  const form = document.getElementById('projectForm');
+  const categorySelect = form?.querySelector('select[name="category"]');
+  const section = document.getElementById('roadGeometrySection');
+  if (!categorySelect || !section) return;
+
+  const applyVisibility = async () => {
+    const isRoads = categorySelect.value === 'Roads and Bridges';
+    section.style.display = isRoads ? 'block' : 'none';
+    if (isRoads && !roadGeoMap) {
+      await initRoadGeometryMap(p?.road_geometry || null);
+    } else if (isRoads && roadGeoMap) {
+      setTimeout(() => roadGeoMap.invalidateSize(), 50);
+    }
+  };
+
+  categorySelect.addEventListener('change', applyVisibility);
+  applyVisibility(); // pre-fill case: editing an existing Roads and Bridges project
+
+  ['roadName', 'roadType', 'roadStatus', 'roadWidth', 'roadLanes', 'roadSurface',
+    'roadBridgeIncluded', 'roadDrainageIncluded', 'roadBikeLane', 'roadSidewalk', 'roadStreetlights']
+    .forEach(fieldId => {
+      const el = document.getElementById(fieldId);
+      el?.addEventListener('input', roadGeoRefresh);
+      el?.addEventListener('change', roadGeoRefresh);
+    });
+
+  document.getElementById('roadMapUndo')?.addEventListener('click', roadGeoUndoLastPoint);
+  document.getElementById('roadMapClear')?.addEventListener('click', roadGeoClearAll);
+
+  // Search box — jumps the map to a place, same Nominatim pattern as the
+  // CIMMS map picker. Navigation only; clicking the map is still what places
+  // a road point, so a search never accidentally adds one.
+  const searchInput = document.getElementById('roadMapSearch');
+  const suggestionBox = document.getElementById('roadMapSuggestions');
+  let roadSearchDebounce = null;
+  searchInput?.addEventListener('input', () => {
+    const query = searchInput.value.trim();
+    clearTimeout(roadSearchDebounce);
+    if (query.length < 3 || !suggestionBox) {
+      if (suggestionBox) suggestionBox.style.display = 'none';
+      return;
+    }
+    roadSearchDebounce = setTimeout(() => {
+      fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(query + ', Quezon City')}&limit=6`)
+        .then(res => res.json())
+        .then(results => {
+          suggestionBox.innerHTML = '';
+          if (!results.length) { suggestionBox.style.display = 'none'; return; }
+          results.forEach(place => {
+            const div = document.createElement('div');
+            div.textContent = place.display_name;
+            div.onclick = () => {
+              suggestionBox.style.display = 'none';
+              searchInput.value = place.display_name;
+              if (roadGeoMap) roadGeoMap.setView([parseFloat(place.lat), parseFloat(place.lon)], 16);
+            };
+            suggestionBox.appendChild(div);
+          });
+          suggestionBox.style.display = 'block';
+        })
+        .catch(() => { suggestionBox.style.display = 'none'; });
+    }, 350);
+  });
+}
+
 async function submitProjectForm(e, id) {
   e.preventDefault();
+
+  const categoryValue = e.target.querySelector('select[name="category"]')?.value;
+  if (categoryValue === 'Roads and Bridges') {
+    const roadName = document.getElementById('roadName')?.value.trim();
+    if (!roadName) { toast('Road Name is required for Roads and Bridges projects.', 'error'); return; }
+    if (roadGeoPoints.length < 2) { toast('Draw at least two points (a start and an end) to define the road.', 'error'); return; }
+    if (!roadGeoStartInfo || !roadGeoEndInfo) { toast('Please wait a moment for the road\'s start/end location to finish loading before submitting.', 'error'); return; }
+    roadGeoSyncHiddenInput();
+  }
+
   try {
     let res;
     if (id) {
@@ -1034,14 +1800,39 @@ async function submitProjectForm(e, id) {
   } catch { toast('Something went wrong', 'error'); }
 }
 
-async function deleteProject(id) {
-  if (!confirm('Delete this project? This will also delete related expenses and milestones.')) return;
-  try {
-    const res = await del(API.projects, id);
-    if (res.error) { toast(res.error, 'error'); return; }
-    toast('Project deleted');
-    fetchProjects();
-  } catch { toast('Delete failed', 'error'); }
+function deleteProject(id) {
+  openModal('Request Project Deletion', `
+    <form id="deleteProjectForm">
+      <p class="empty-state" style="margin-bottom:10px;">Deleting a project now requires HOPE's approval. Submit a reason below — the project (and its related expenses/milestones) is only removed once HOPE approves the request.</p>
+      <div class="form-group">
+        <label>Reason for Deletion *</label>
+        <textarea name="reason" class="form-input" rows="4" required placeholder="Explain why this project should be permanently deleted"></textarea>
+      </div>
+      <div class="form-actions">
+        <button type="button" class="btn-secondary" onclick="closeModal()">Cancel</button>
+        <button type="submit" class="btn-primary">Submit Deletion Request</button>
+      </div>
+    </form>
+  `);
+
+  document.getElementById('deleteProjectForm').addEventListener('submit', async event => {
+    event.preventDefault();
+    const reason = new FormData(event.target).get('reason') || '';
+    try {
+      const res = await fetch(`${API.projects}?action=request_deletion&id=${id}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...CSRF_HEADERS },
+        body: JSON.stringify({ reason }),
+      });
+      const result = await res.json();
+      if (!res.ok || result.error) { toast(result.error || 'Failed to submit deletion request', 'error'); return; }
+      toast('Deletion request submitted for HOPE review.');
+      closeModal();
+      fetchProjects();
+    } catch {
+      toast('Failed to submit deletion request', 'error');
+    }
+  });
 }
 
 /* ============================================================
@@ -1223,7 +2014,7 @@ async function fetchStatusFilteredProjects(containerId, statusParam) {
   const state = statusListState[containerId] || { page: 1, search: '' };
 
   try {
-    const d = await get(API.projects, { page: state.page, search: state.search, status: statusParam });
+    const d = await get(API.projects, { page: state.page, search: state.search, status_in: statusParam });
     renderStatusFilteredTable(containerId, d.data || []);
     renderPager(`${containerId}Pager`, d.page, d.last_page, p => {
       statusListState[containerId].page = p;
@@ -1267,6 +2058,308 @@ function renderStatusFilteredTable(containerId, rows) {
 }
 
 /* ============================================================
+   PUBLIC FACILITIES INTEGRATION — read-only, Barangay Culiat only.
+   Not a core IPMS module: this is a filtered lens over IPMS's own projects,
+   standing in for what would be synchronized to the separate "Public
+   Facilities Management System" capstone project. Everything here is
+   GET-only against api/public-facilities.php, which has no write actions
+   at all — there is nothing on this page that can create, edit, delete,
+   approve, assign, or otherwise mutate a project.
+   ============================================================ */
+const PUBLIC_FACILITIES_VIEWS = [
+  { key: 'planned', label: 'Planned Projects', badge: 'pf-badge-planned', badgeLabel: 'PLANNED' },
+  { key: 'ongoing', label: 'Ongoing Projects', badge: 'pf-badge-ongoing', badgeLabel: 'ONGOING' },
+  { key: 'completed', label: 'Completed Projects', badge: 'pf-badge-completed', badgeLabel: 'COMPLETED' },
+  { key: 'cancelled', label: 'Cancelled Projects', badge: 'pf-badge-cancelled', badgeLabel: 'CANCELLED' },
+];
+let publicFacilitiesState = { view: 'planned', page: 1, search: '', engineer: '', contractor: '', year: '', min_budget: '', max_budget: '' };
+
+function publicFacilitiesViewBadge(viewKey) {
+  const v = PUBLIC_FACILITIES_VIEWS.find(x => x.key === viewKey);
+  return v ? `<span class="pf-badge ${v.badge}">${v.badgeLabel}</span>` : '';
+}
+
+function publicFacilitiesSyncBadge() {
+  return `<span class="pf-sync-badge" title="This is a read-only view of IPMS's own project data.">Synced from IPMS</span>`;
+}
+
+async function loadPublicFacilitiesPage() {
+  const container = document.getElementById('page-public-facilities-integration');
+  if (!container) return;
+
+  container.innerHTML = `
+    <div class="page-header">
+      <div>
+        <h2 class="page-title">Public Facilities Integration</h2>
+        <p style="font-size:.8rem;color:var(--text-muted);margin-top:4px;max-width:640px;">
+          Read-only view for the Public Facilities Management System capstone integration — Barangay Culiat only.
+          IPMS is the source of truth; nothing here can create, edit, delete, approve, assign, or otherwise change a project.
+        </p>
+      </div>
+      ${publicFacilitiesSyncBadge()}
+    </div>
+
+    <div class="pf-tabs" id="pfTabs">
+      ${PUBLIC_FACILITIES_VIEWS.map(v => `
+        <button type="button" class="pf-tab${v.key === publicFacilitiesState.view ? ' active' : ''}" data-view="${v.key}">${v.label}</button>
+      `).join('')}
+    </div>
+
+    <div class="filter-bar" style="flex-wrap:wrap;">
+      <input class="filter-input" id="pfSearch" placeholder="Search project name, ID, or category..." value="${escapeHtml(publicFacilitiesState.search)}">
+      <input class="filter-input" id="pfEngineer" placeholder="Engineer..." value="${escapeHtml(publicFacilitiesState.engineer)}" style="max-width:160px;">
+      <input class="filter-input" id="pfContractor" placeholder="Contractor..." value="${escapeHtml(publicFacilitiesState.contractor)}" style="max-width:160px;">
+      <input class="filter-input" id="pfYear" placeholder="Year..." value="${escapeHtml(publicFacilitiesState.year)}" style="max-width:100px;">
+      <input class="filter-input" id="pfMinBudget" type="number" placeholder="Min budget" value="${escapeHtml(publicFacilitiesState.min_budget)}" style="max-width:130px;">
+      <input class="filter-input" id="pfMaxBudget" type="number" placeholder="Max budget" value="${escapeHtml(publicFacilitiesState.max_budget)}" style="max-width:130px;">
+      <input class="filter-input" disabled value="Barangay: Culiat" title="Locked — Future Ready: additional barangays can be enabled later" style="max-width:160px;opacity:.7;">
+    </div>
+
+    <div id="pfTable" class="table-card"></div>
+    <div id="pfPager" class="pager"></div>
+  `;
+
+  document.getElementById('pfTabs').addEventListener('click', e => {
+    const btn = e.target.closest('.pf-tab');
+    if (!btn) return;
+    publicFacilitiesState.view = btn.dataset.view;
+    publicFacilitiesState.page = 1;
+    document.querySelectorAll('#pfTabs .pf-tab').forEach(t => t.classList.toggle('active', t === btn));
+    fetchPublicFacilities();
+  });
+
+  const bindFilter = (id, key, transform = v => v) => {
+    document.getElementById(id)?.addEventListener('input', e => {
+      publicFacilitiesState[key] = transform(e.target.value);
+      publicFacilitiesState.page = 1;
+      fetchPublicFacilities();
+    });
+  };
+  bindFilter('pfSearch', 'search');
+  bindFilter('pfEngineer', 'engineer');
+  bindFilter('pfContractor', 'contractor');
+  bindFilter('pfYear', 'year');
+  bindFilter('pfMinBudget', 'min_budget');
+  bindFilter('pfMaxBudget', 'max_budget');
+
+  await fetchPublicFacilities();
+}
+
+async function fetchPublicFacilities() {
+  const wrap = document.getElementById('pfTable');
+  if (!wrap) return;
+  setLoading(wrap, true);
+  const s = publicFacilitiesState;
+
+  try {
+    const result = await get(API.publicFacilities, {
+      action: 'list', view: s.view, page: s.page, search: s.search,
+      engineer: s.engineer, contractor: s.contractor, year: s.year,
+      min_budget: s.min_budget, max_budget: s.max_budget,
+    });
+    renderPublicFacilitiesTable(s.view, result.data || []);
+    renderPager('pfPager', result.page, result.last_page, p => {
+      publicFacilitiesState.page = p;
+      fetchPublicFacilities();
+    });
+  } catch {
+    wrap.innerHTML = '<p class="empty-state">Failed to load Public Facilities Integration data.</p>';
+  } finally {
+    setLoading(wrap, false);
+  }
+}
+
+function renderPublicFacilitiesTable(view, rows) {
+  const wrap = document.getElementById('pfTable');
+  if (!wrap) return;
+  if (!rows.length) {
+    wrap.innerHTML = '<p class="empty-state">No Barangay Culiat projects found for this view.</p>';
+    return;
+  }
+
+  const columnsByView = {
+    planned: {
+      head: ['Project', 'Category', 'District / Barangay', 'Budget', 'Start Date', 'Expected Completion', 'Status', ''],
+      row: p => `
+        <td><span class="proj-id">${p.project_code}</span><br><strong>${escapeHtml(p.name)}</strong></td>
+        <td>${escapeHtml(p.category || '-')}</td>
+        <td>${escapeHtml(p.barangay)}</td>
+        <td>${formatMoney(p.budget)}</td>
+        <td>${formatDate(p.start_date)}</td>
+        <td>${formatDate(p.end_date)}</td>
+        <td>${statusBadge(p.status)}</td>
+      `,
+    },
+    ongoing: {
+      head: ['Project', 'Progress', 'Engineer', 'Contractor', 'Budget Utilization', 'Inspection Status', 'Expected Completion', ''],
+      row: p => {
+        const util = p.budget > 0 ? Math.round((p.total_spent / p.budget) * 100) : 0;
+        return `
+          <td><span class="proj-id">${p.project_code}</span><br><strong>${escapeHtml(p.name)}</strong></td>
+          <td>${p.progress}%</td>
+          <td>${escapeHtml(p.engineer_name || 'Unassigned')}</td>
+          <td>${escapeHtml(p.contractor_name || 'Unassigned')}</td>
+          <td>${util}%</td>
+          <td>${p.inspection_status ? formatStatus(p.inspection_status.recommendation) : 'No inspection yet'}</td>
+          <td>${formatDate(p.end_date)}</td>
+        `;
+      },
+    },
+    completed: {
+      head: ['Project', 'Completion Date', 'Final Budget', 'Duration', 'Status', ''],
+      row: p => `
+        <td><span class="proj-id">${p.project_code}</span><br><strong>${escapeHtml(p.name)}</strong></td>
+        <td>${formatDate(p.end_date)}</td>
+        <td>${formatMoney(p.budget)}</td>
+        <td>${formatDate(p.start_date)} — ${formatDate(p.end_date)}</td>
+        <td>${statusBadge(p.status)}</td>
+      `,
+    },
+    cancelled: {
+      head: ['Project', 'Reason', 'Cancelled Date', 'Previous Status', ''],
+      row: p => `
+        <td><span class="proj-id">${p.project_code}</span><br><strong>${escapeHtml(p.name)}</strong></td>
+        <td>${escapeHtml(p.rejection_reason || '-')}</td>
+        <td>${formatDate(p.cancelled_date)}</td>
+        <td>${p.previous_status ? formatStatus(p.previous_status) : '-'}</td>
+      `,
+    },
+  };
+  const cfg = columnsByView[view];
+
+  wrap.innerHTML = `
+    <table class="data-table">
+      <thead><tr>${cfg.head.map(h => `<th>${h}</th>`).join('')}</tr></thead>
+      <tbody>
+        ${rows.map(p => `
+          <tr>
+            ${cfg.row(p)}
+            <td><button class="btn-secondary btn-compact" onclick="openPublicFacilitiesDetailModal(${p.id})">View Details</button></td>
+          </tr>
+        `).join('')}
+      </tbody>
+    </table>
+  `;
+}
+
+async function openPublicFacilitiesDetailModal(id) {
+  try {
+    const p = await get(API.publicFacilities, { action: 'detail', id });
+
+    const photos = p.photos || [];
+    const docs = p.documents || [];
+    const fb = p.feedback_summary || {};
+
+    openModal(p.name, `
+      <div style="display:flex;flex-direction:column;gap:14px;">
+        <div>${publicFacilitiesSyncBadge()}</div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">
+          <div><p class="modal-label">PROJECT ID</p><p class="modal-val">${p.project_code}</p></div>
+          <div><p class="modal-label">STATUS</p><p class="modal-val">${statusBadge(p.status)}</p></div>
+          <div><p class="modal-label">CATEGORY</p><p class="modal-val">${escapeHtml(p.category || '-')}</p></div>
+          <div><p class="modal-label">BARANGAY</p><p class="modal-val">${escapeHtml(p.barangay)}</p></div>
+          <div><p class="modal-label">LOCATION</p><p class="modal-val">${escapeHtml(p.location || '-')}</p></div>
+          <div><p class="modal-label">BUDGET</p><p class="modal-val">${formatMoney(p.budget)}</p></div>
+          <div><p class="modal-label">START DATE</p><p class="modal-val">${formatDate(p.start_date)}</p></div>
+          <div><p class="modal-label">EXPECTED COMPLETION</p><p class="modal-val">${formatDate(p.end_date)}</p></div>
+          <div><p class="modal-label">PROGRESS</p><p class="modal-val">${p.progress}%</p></div>
+          <div><p class="modal-label">BUDGET UTILIZATION</p><p class="modal-val">${p.budget > 0 ? Math.round((p.total_spent / p.budget) * 100) : 0}%</p></div>
+        </div>
+
+        <div><p class="modal-label">DESCRIPTION</p><p class="modal-val" style="font-weight:400;">${escapeHtml(p.description || 'No description on file.')}</p></div>
+
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">
+          <div><p class="modal-label">ENGINEER ASSIGNED</p><p class="modal-val">${p.engineer ? escapeHtml(p.engineer.full_name) : 'Unassigned'}</p></div>
+          <div><p class="modal-label">CONTRACTOR</p><p class="modal-val">${escapeHtml(p.contractor_name || 'Unassigned')}${p.contractor_name ? ` (score ${p.performance_score}/100)` : ''}</p></div>
+        </div>
+
+        ${p.status === 'cancelled' ? `
+          <div class="pf-cancel-box">
+            <p class="modal-label">CANCELLATION</p>
+            <p class="modal-val" style="font-weight:400;">
+              Reason: ${escapeHtml(p.rejection_reason || '-')}<br>
+              Cancelled: ${formatDate(p.approved_at)}${p.approved_by_name ? ' by ' + escapeHtml(p.approved_by_name) : ''}<br>
+              ${p.previous_status ? 'Previous status: ' + formatStatus(p.previous_status) : ''}
+            </p>
+          </div>
+        ` : ''}
+
+        <div>
+          <p class="modal-label">PROJECT TIMELINE / MILESTONES</p>
+          <div style="display:flex;flex-direction:column;gap:4px;margin-top:6px;">
+            ${(p.milestones || []).length ? p.milestones.map(m => `
+              <div style="display:flex;align-items:center;gap:8px;font-size:.8rem;">
+                <span style="color:${m.completed ? '#22c55e' : '#94a3b8'};">${m.completed ? '✓' : '○'}</span>
+                <span>${escapeHtml(m.title)}</span>
+                <span style="margin-left:auto;color:#94a3b8;">${formatDate(m.due_date)}</span>
+              </div>
+            `).join('') : '<p class="empty-state">No milestones on file.</p>'}
+          </div>
+        </div>
+
+        <div>
+          <p class="modal-label">INSPECTION HISTORY</p>
+          <div style="display:flex;flex-direction:column;gap:4px;margin-top:6px;">
+            ${(p.inspection_history || []).length ? p.inspection_history.map(i => `
+              <div style="font-size:.8rem;display:flex;justify-content:space-between;gap:8px;">
+                <span>${formatDate(i.inspection_date)} — ${formatStatus(i.recommendation)} (${i.actual_progress_percent}%)</span>
+              </div>
+            `).join('') : '<p class="empty-state">No inspections on file.</p>'}
+          </div>
+        </div>
+
+        <div>
+          <p class="modal-label">PROGRESS HISTORY</p>
+          <div style="display:flex;flex-direction:column;gap:4px;margin-top:6px;">
+            ${(p.progress_history || []).length ? p.progress_history.map(r => `
+              <div style="font-size:.8rem;">${formatDate(r.report_date)} — ${r.progress_percent}%: ${escapeHtml(r.accomplishments || '')}</div>
+            `).join('') : '<p class="empty-state">No progress reports on file.</p>'}
+          </div>
+        </div>
+
+        <div>
+          <p class="modal-label">SUPPORTING DOCUMENTS</p>
+          <div style="display:flex;flex-direction:column;gap:4px;margin-top:6px;">
+            ${docs.length ? docs.map(d => `
+              <div style="display:flex;align-items:center;gap:8px;font-size:.8rem;">
+                <a href="${window.BASE_PATH || ''}${d.file_path}" target="_blank" rel="noopener">${escapeHtml(d.title)}</a>
+                <span style="color:#94a3b8;">${escapeHtml(d.document_type)}</span>
+              </div>
+            `).join('') : '<p class="empty-state">No documents attached.</p>'}
+          </div>
+        </div>
+
+        <div>
+          <p class="modal-label">PROJECT PHOTOS</p>
+          ${photos.length ? `
+            <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(90px,1fr));gap:6px;margin-top:6px;">
+              ${photos.map(ph => `<a href="${window.BASE_PATH || ''}${ph.file_path}" target="_blank" rel="noopener"><img src="${window.BASE_PATH || ''}${ph.file_path}" alt="${escapeHtml(ph.title || '')}" style="width:100%;height:70px;object-fit:cover;border-radius:6px;"></a>`).join('')}
+            </div>
+          ` : '<p class="empty-state">No photos on file.</p>'}
+        </div>
+
+        <div>
+          <p class="modal-label">GIS LOCATION</p>
+          <p class="modal-val" style="font-weight:400;">${p.latitude && p.longitude ? `${p.latitude}, ${p.longitude}` : 'No pinned location on file.'}</p>
+        </div>
+
+        <div>
+          <p class="modal-label">CITIZEN FEEDBACK SUMMARY</p>
+          <p class="modal-val" style="font-weight:400;">${fb.total > 0 ? `${fb.total} total (${fb.open_count || 0} open, ${fb.resolved_count || 0} resolved)` : 'No citizen feedback on file for this project.'}</p>
+        </div>
+
+        <div>
+          <p class="modal-label">LATEST UPDATE</p>
+          <p class="modal-val" style="font-weight:400;">${p.latest_update ? `${p.latest_update.action}${p.latest_update.details ? ' — ' + escapeHtml(p.latest_update.details) : ''} (${formatDate(p.latest_update.created_at)})` : 'No workflow history on file.'}</p>
+        </div>
+      </div>
+    `);
+  } catch {
+    toast('Failed to load project details', 'error');
+  }
+}
+
+/* ============================================================
    CONTRACTOR ASSIGNMENT
    ============================================================ */
 let assignmentState = { page: 1, search: '', contractor_id: '' };
@@ -1280,7 +2373,6 @@ async function loadContractorAssignmentPage() {
   container.innerHTML = `
     <div class="page-header">
       <h2 class="page-title">Contractor Assignment</h2>
-      <button class="btn-primary" onclick="showContractorForm()">+ Add Contractor</button>
     </div>
     <div class="filter-bar">
       <input class="filter-input" placeholder="Search projects..."
@@ -1538,6 +2630,26 @@ const GIS_STATUS_COLORS = {
   turnover: '#16a34a',
 };
 const GIS_DEFAULT_COLOR = '#3b82f6'; // everything still in progress (active, assigned, bidding, etc.)
+// Same QC bounding box (with a little slack) as api/projects.php's
+// projectQcCoordinatesValid() and citizen/api/submit-feedback.php — this map
+// is Quezon-City-only, so it neither pans/zooms elsewhere nor plots a pin
+// that's outside the city (old bad data included, since nothing here is
+// re-validated on the way out of the database).
+const QC_BOUNDS = [[14.55, 120.96], [14.82, 121.16]];
+function isWithinQc(lat, lng) {
+  return lat >= 14.55 && lat <= 14.82 && lng >= 120.96 && lng <= 121.16;
+}
+// Same boundary file the Citizen portal's Submit Feedback map uses (its own
+// Leaflet instance draws it per-barangay with district colors/interactivity
+// for picking a barangay; here it's just a plain outline for orientation).
+const QC_GEOJSON_URL = (window.BASE_PATH || '/') + 'citizen/assets/data/qc-barangays.geojson';
+let qcBoundaryGeoJsonCache = null;
+async function loadQcBoundaryGeoJson() {
+  if (qcBoundaryGeoJsonCache) return qcBoundaryGeoJsonCache;
+  const res = await fetch(QC_GEOJSON_URL);
+  qcBoundaryGeoJsonCache = await res.json();
+  return qcBoundaryGeoJsonCache;
+}
 let gisMapInstance = null;
 let gisMarkers = [];
 let gisFilterState = { status: '', contractor_id: '', search: '', min_budget: '', max_budget: '' };
@@ -1574,14 +2686,15 @@ async function loadGisMapPage() {
       <input class="filter-input" id="gisMaxBudget" type="number" placeholder="Max budget (₱)" style="max-width:150px;">
       <button class="btn-secondary btn-compact" id="gisApplyFilters" type="button">Apply</button>
     </div>
-    <div class="gis-legend" style="display:flex;gap:16px;margin:12px 0;font-size:.78rem;color:var(--text-muted);">
-      <span><span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:${GIS_DEFAULT_COLOR};margin-right:5px;"></span>Active / In Progress</span>
-      <span><span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:${GIS_STATUS_COLORS.delayed};margin-right:5px;"></span>Delayed</span>
-      <span><span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:${GIS_STATUS_COLORS.completed};margin-right:5px;"></span>Completed / Turned Over</span>
-      <span><span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:${GIS_STATUS_COLORS.cancelled};margin-right:5px;"></span>Cancelled</span>
+    <div class="gis-legend">
+      <span class="gis-legend-item"><span class="gis-legend-dot" style="background:${GIS_DEFAULT_COLOR};"></span>Active / In Progress</span>
+      <span class="gis-legend-item"><span class="gis-legend-dot" style="background:${GIS_STATUS_COLORS.delayed};"></span>Delayed</span>
+      <span class="gis-legend-item"><span class="gis-legend-dot" style="background:${GIS_STATUS_COLORS.completed};"></span>Completed / Turned Over</span>
+      <span class="gis-legend-item"><span class="gis-legend-dot" style="background:${GIS_STATUS_COLORS.cancelled};"></span>Cancelled</span>
     </div>
     <div id="gisMapContainer" style="height:520px;border-radius:var(--radius);overflow:hidden;border:1px solid var(--border);"></div>
     <p id="gisEmptyState" class="empty-state" style="display:none;">No projects with map coordinates match this filter. Add latitude/longitude when registering or editing a project to place it here.</p>
+    <p id="gisOutOfBoundsWarning" class="empty-state" style="display:none;color:var(--orange);"></p>
   `;
 
   document.getElementById('gisApplyFilters').addEventListener('click', () => {
@@ -1602,20 +2715,36 @@ async function fetchGisProjects() {
   const emptyState = document.getElementById('gisEmptyState');
   try {
     const result = await get(API.projects, { ...gisFilterState, has_coordinates: 1, _limit: 100 });
-    renderGisMap(result.data || []);
+    await renderGisMap(result.data || []);
     emptyState.style.display = (result.data || []).length ? 'none' : 'block';
   } catch {
     toast('Failed to load projects for the map', 'error');
   }
 }
 
-function renderGisMap(projects) {
+async function renderGisMap(projects) {
+  let skippedOutOfBounds = 0;
+
   if (!gisMapInstance) {
-    gisMapInstance = L.map('gisMapContainer').setView([14.6760, 121.0437], 12); // Quezon City
+    gisMapInstance = L.map('gisMapContainer', {
+      maxBounds: QC_BOUNDS,
+      maxBoundsViscosity: 1.0, // hard stop — panning cannot drag the map past the city limits
+      minZoom: 11,             // roughly "all of QC visible" — zooming out further would just show ocean/other cities
+    }).setView([14.6760, 121.0437], 12); // Quezon City
     L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
       attribution: '&copy; OpenStreetMap contributors',
       maxZoom: 19,
     }).addTo(gisMapInstance);
+
+    try {
+      const geojson = await loadQcBoundaryGeoJson();
+      L.geoJSON(geojson, {
+        style: { color: '#2563eb', weight: 1.5, fill: false },
+        interactive: false, // outline only — clicks/hover should pass through to project markers underneath
+      }).addTo(gisMapInstance);
+    } catch {
+      // Purely decorative — the maxBounds restriction above already keeps the map QC-only either way.
+    }
   }
 
   gisMarkers.forEach(m => gisMapInstance.removeLayer(m));
@@ -1623,8 +2752,15 @@ function renderGisMap(projects) {
 
   projects.forEach(p => {
     if (p.latitude === null || p.longitude === null || p.latitude === undefined || p.longitude === undefined) return;
+    const lat = Number(p.latitude);
+    const lng = Number(p.longitude);
+    // Older rows saved before coordinate validation existed can still have
+    // stray non-QC values — skip them here rather than plot a wrong pin or
+    // force the map to zoom out past the city to fit an obviously bad point.
+    if (!isWithinQc(lat, lng)) { skippedOutOfBounds++; return; }
+
     const color = GIS_STATUS_COLORS[p.status] || GIS_DEFAULT_COLOR;
-    const marker = L.circleMarker([Number(p.latitude), Number(p.longitude)], {
+    const marker = L.circleMarker([lat, lng], {
       radius: 9,
       color: '#fff',
       weight: 2,
@@ -1643,7 +2779,15 @@ function renderGisMap(projects) {
 
   if (gisMarkers.length) {
     const group = L.featureGroup(gisMarkers);
-    gisMapInstance.fitBounds(group.getBounds().pad(0.2));
+    gisMapInstance.fitBounds(group.getBounds().pad(0.2)); // clamped to QC_BOUNDS automatically since maxBounds is already set
+  }
+
+  const warning = document.getElementById('gisOutOfBoundsWarning');
+  if (warning) {
+    warning.style.display = skippedOutOfBounds > 0 ? 'block' : 'none';
+    warning.textContent = skippedOutOfBounds === 1
+      ? '1 project has a pinned location outside Quezon City and is not shown. Edit its coordinates to fix this.'
+      : `${skippedOutOfBounds} projects have pinned locations outside Quezon City and are not shown. Edit their coordinates to fix this.`;
   }
 
   // Leaflet paints into a container that was just made visible; without this
@@ -1655,6 +2799,12 @@ function renderGisMap(projects) {
 /* ============================================================
    REPORTS
    ============================================================ */
+let reportsPageData = null; // cached last-loaded payload, reused by exportReportsCsv()
+let reportsDelayedChartInst = null;
+let reportsContractorsChartInst = null;
+let reportsUsageChartInst = null;
+let reportsFundingChartInst = null;
+
 async function loadReportsPage() {
   const container = document.getElementById('page-reports');
   if (!container) return;
@@ -1662,7 +2812,10 @@ async function loadReportsPage() {
   container.innerHTML = `
     <div class="page-header">
       <h2 class="page-title">Reports</h2>
-      <button class="btn-secondary" onclick="window.print()">Print</button>
+      <div style="display:flex;gap:10px;">
+        <button class="btn-secondary" onclick="exportReportsCsv()">Export CSV</button>
+        <button class="btn-secondary" onclick="window.print()">Print</button>
+      </div>
     </div>
     <div id="reportsContent" class="reports-layout"></div>
   `;
@@ -1677,6 +2830,7 @@ async function loadReportsPage() {
       get(API.feedback, { status: 'open' }),
       get(API.expenses, { summary: 1 }),
     ]);
+    reportsPageData = { dashboard, contractors: contractors.data || [], openFeedback, expenseSummary: expenseSummary.data || [] };
     renderReports(dashboard, contractors.data || [], openFeedback, expenseSummary.data || []);
   } catch {
     wrap.innerHTML = '<p class="empty-state">Failed to build reports.</p>';
@@ -1692,6 +2846,8 @@ function renderReports(dashboard, contractors, openFeedback, expenseSummary) {
   const delayed = dashboard.top_delayed || [];
   const topContractors = contractors.slice(0, 5);
   const highestSpend = expenseSummary.slice(0, 5);
+  const fundingSources = dashboard.funding_source_breakdown || [];
+  const recentActivity = (dashboard.recent_workflow || []).slice(0, 5);
 
   wrap.innerHTML = `
     <section class="admin-summary-grid">
@@ -1704,36 +2860,190 @@ function renderReports(dashboard, contractors, openFeedback, expenseSummary) {
     <section class="report-columns">
       <article class="report-panel">
         <h3>Delayed Projects</h3>
-        ${delayed.length ? delayed.map(p => `
-          <div class="report-row">
-            <span>${escapeHtml(p.name)}</span>
-            <strong>${p.days_overdue || 0} days</strong>
-          </div>
-        `).join('') : '<p class="empty-state">No delayed projects.</p>'}
+        ${delayed.length ? '<div class="chart-body report-chart-body"><canvas id="reportsDelayedChart"></canvas></div>' : '<p class="empty-state">No delayed projects.</p>'}
       </article>
       <article class="report-panel">
         <h3>Top Contractors</h3>
-        ${topContractors.length ? topContractors.map(c => `
-          <div class="report-row">
-            <span>${escapeHtml(c.name)}</span>
-            <strong>${c.performance_score}</strong>
-          </div>
-        `).join('') : '<p class="empty-state">No contractor data.</p>'}
+        ${topContractors.length ? '<div class="chart-body report-chart-body"><canvas id="reportsContractorsChart"></canvas></div>' : '<p class="empty-state">No contractor data.</p>'}
       </article>
       <article class="report-panel">
         <h3>Highest Budget Usage</h3>
-        ${highestSpend.length ? highestSpend.map(r => {
-          const pct = r.budget > 0 ? Math.round((r.total_spent / r.budget) * 100) : 0;
-          return `
-            <div class="report-row">
-              <span>${r.project_name}</span>
-              <strong>${pct}%</strong>
-            </div>
-          `;
-        }).join('') : '<p class="empty-state">No budget data.</p>'}
+        ${highestSpend.length ? '<div class="chart-body report-chart-body"><canvas id="reportsUsageChart"></canvas></div>' : '<p class="empty-state">No budget data.</p>'}
+      </article>
+    </section>
+
+    <section class="report-columns-2">
+      <article class="report-panel">
+        <h3>Funding Source Breakdown</h3>
+        ${fundingSources.length ? '<div class="chart-body report-chart-body"><canvas id="reportsFundingChart"></canvas></div>' : '<p class="empty-state">No funding source data.</p>'}
+      </article>
+      <article class="report-panel">
+        <h3>Recent Workflow Activity</h3>
+        ${recentActivity.length ? recentActivity.map(r => `
+          <div class="report-row">
+            <span>${escapeHtml(r.record_type)} · ${escapeHtml(r.project_name)}</span>
+            <strong>${formatStatus(r.status)}</strong>
+          </div>
+        `).join('') : '<p class="empty-state">No recent activity.</p>'}
       </article>
     </section>
   `;
+
+  renderReportsCharts(dashboard, topContractors, highestSpend);
+}
+
+function renderReportsCharts(dashboard, topContractors, highestSpend) {
+  const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
+  const gridColor = isDark ? 'rgba(148,163,184,.18)' : 'rgba(100,116,139,.12)';
+
+  const delayedCtx = document.getElementById('reportsDelayedChart')?.getContext('2d');
+  if (delayedCtx) {
+    if (reportsDelayedChartInst) reportsDelayedChartInst.destroy();
+    const rows = dashboard.top_delayed || [];
+    reportsDelayedChartInst = new Chart(delayedCtx, {
+      type: 'bar',
+      data: {
+        labels: rows.map(p => p.name.length > 22 ? p.name.slice(0, 20) + '…' : p.name),
+        datasets: [{ data: rows.map(p => Number(p.days_overdue) || 0), backgroundColor: 'rgba(239,68,68,.75)', hoverBackgroundColor: '#ef4444', borderRadius: 6, maxBarThickness: 26 }],
+      },
+      options: {
+        indexAxis: 'y',
+        responsive: true, maintainAspectRatio: false,
+        animation: { duration: 900, easing: 'easeOutQuart' },
+        plugins: { legend: { display: false }, tooltip: { backgroundColor: '#1e2a3b', callbacks: { label: c => ` ${c.raw} days overdue` } } },
+        scales: {
+          x: { beginAtZero: true, ticks: { color: '#94a3b8', precision: 0 }, grid: { color: gridColor }, border: { display: false } },
+          y: { grid: { display: false }, ticks: { color: '#94a3b8', font: { size: 10.5 } }, border: { display: false } },
+        },
+      },
+    });
+  }
+
+  const contractorsCtx = document.getElementById('reportsContractorsChart')?.getContext('2d');
+  if (contractorsCtx) {
+    if (reportsContractorsChartInst) reportsContractorsChartInst.destroy();
+    const rows = topContractors || [];
+    reportsContractorsChartInst = new Chart(contractorsCtx, {
+      type: 'bar',
+      data: {
+        labels: rows.map(c => c.name.length > 22 ? c.name.slice(0, 20) + '…' : c.name),
+        datasets: [{ data: rows.map(c => Number(c.performance_score) || 0), backgroundColor: 'rgba(34,197,94,.75)', hoverBackgroundColor: '#22c55e', borderRadius: 6, maxBarThickness: 26 }],
+      },
+      options: {
+        indexAxis: 'y',
+        responsive: true, maintainAspectRatio: false,
+        animation: { duration: 900, easing: 'easeOutQuart' },
+        plugins: { legend: { display: false }, tooltip: { backgroundColor: '#1e2a3b', callbacks: { label: c => ` Score: ${c.raw}/100` } } },
+        scales: {
+          x: { beginAtZero: true, max: 100, ticks: { color: '#94a3b8', precision: 0 }, grid: { color: gridColor }, border: { display: false } },
+          y: { grid: { display: false }, ticks: { color: '#94a3b8', font: { size: 10.5 } }, border: { display: false } },
+        },
+      },
+    });
+  }
+
+  const usageCtx = document.getElementById('reportsUsageChart')?.getContext('2d');
+  if (usageCtx) {
+    if (reportsUsageChartInst) reportsUsageChartInst.destroy();
+    const rows = highestSpend || [];
+    reportsUsageChartInst = new Chart(usageCtx, {
+      type: 'bar',
+      data: {
+        labels: rows.map(r => String(r.project_name).length > 22 ? String(r.project_name).slice(0, 20) + '…' : r.project_name),
+        datasets: [{
+          data: rows.map(r => r.budget > 0 ? Math.round((r.total_spent / r.budget) * 100) : 0),
+          backgroundColor: 'rgba(249,115,22,.75)', hoverBackgroundColor: '#f97316', borderRadius: 6, maxBarThickness: 26,
+        }],
+      },
+      options: {
+        indexAxis: 'y',
+        responsive: true, maintainAspectRatio: false,
+        animation: { duration: 900, easing: 'easeOutQuart' },
+        plugins: { legend: { display: false }, tooltip: { backgroundColor: '#1e2a3b', callbacks: { label: c => ` ${c.raw}% of budget used` } } },
+        scales: {
+          x: { beginAtZero: true, ticks: { color: '#94a3b8', callback: v => v + '%' }, grid: { color: gridColor }, border: { display: false } },
+          y: { grid: { display: false }, ticks: { color: '#94a3b8', font: { size: 10.5 } }, border: { display: false } },
+        },
+      },
+    });
+  }
+
+  const fundingCtx = document.getElementById('reportsFundingChart')?.getContext('2d');
+  if (fundingCtx) {
+    if (reportsFundingChartInst) reportsFundingChartInst.destroy();
+    const rows = (dashboard.funding_source_breakdown || []).filter(r => Number(r.total) > 0);
+    reportsFundingChartInst = new Chart(fundingCtx, {
+      type: 'doughnut',
+      data: {
+        labels: rows.map(r => r.label),
+        datasets: [{
+          data: rows.map(r => Number(r.total_budget)),
+          backgroundColor: ['#14b8a6', '#3b82f6', '#a855f7', '#f97316', '#22c55e', '#ef4444', '#94a3b8'],
+          borderColor: '#fff', borderWidth: 3, hoverOffset: 6,
+        }],
+      },
+      options: {
+        responsive: true, maintainAspectRatio: false, animation: { duration: 900 },
+        plugins: {
+          legend: { position: 'bottom', labels: { color: '#94a3b8', boxWidth: 10, boxHeight: 10, font: { size: 11 } } },
+          tooltip: { backgroundColor: '#1e2a3b', callbacks: { label: c => ` ${c.label}: ${formatMoney(c.raw)}` } },
+        },
+      },
+    });
+  }
+}
+
+function exportReportsCsv() {
+  if (!reportsPageData) {
+    toast('Reports data is still loading.', 'error');
+    return;
+  }
+  const { dashboard, contractors, expenseSummary } = reportsPageData;
+  const lines = [];
+  const addSection = (title, header, rows) => {
+    lines.push([title]);
+    lines.push(header);
+    rows.forEach(r => lines.push(r));
+    lines.push([]);
+  };
+
+  addSection('Summary', ['Metric', 'Value'], [
+    ['Active Projects', dashboard.active_projects],
+    ['Delayed Projects', dashboard.delayed_projects],
+    ['Budget Used %', dashboard.budget_pct],
+    ['Total Budget', dashboard.total_budget],
+    ['Total Spent', dashboard.total_spent],
+  ]);
+
+  addSection('Projects by Status', ['Status', 'Total'],
+    (dashboard.status_mix || []).map(r => [PROJECT_STATUS_LABELS[r.status] || r.status, r.total]));
+
+  addSection('Projects by Category', ['Category', 'Total Projects', 'Total Budget'],
+    (dashboard.category_breakdown || []).map(r => [r.label, r.total, r.total_budget]));
+
+  addSection('Funding Source Breakdown', ['Funding Source', 'Total Projects', 'Total Budget'],
+    (dashboard.funding_source_breakdown || []).map(r => [r.label, r.total, r.total_budget]));
+
+  addSection('Monthly Spending', ['Month', 'Total'],
+    (dashboard.monthly_spending || []).map(r => [r.month, r.total]));
+
+  addSection('Delayed Projects', ['Project', 'Days Overdue', 'Contractor'],
+    (dashboard.top_delayed || []).map(p => [p.name, p.days_overdue || 0, p.contractor_name || '']));
+
+  addSection('Top Contractors', ['Contractor', 'Performance Score'],
+    contractors.slice(0, 10).map(c => [c.name, c.performance_score]));
+
+  addSection('Highest Budget Usage', ['Project', 'Budget', 'Spent'],
+    expenseSummary.slice(0, 10).map(r => [r.project_name, r.budget, r.total_spent]));
+
+  const csv = lines.map(row => row.map(v => `"${String(v ?? '').replace(/"/g, '""')}"`).join(',')).join('\n');
+  const blob = new Blob([csv], { type: 'text/csv' });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = `ipms-reports-${new Date().toISOString().slice(0, 10)}.csv`;
+  link.click();
+  URL.revokeObjectURL(url);
 }
 
 /* ============================================================
@@ -1854,7 +3164,7 @@ async function fetchBudgetSummary() {
       return `
         <div class="budget-summary-card">
           <p class="budget-proj-name">${r.project_name}</p>
-          <div style="display:flex;justify-content:space-between;font-size:.75rem;color:#64748b;margin:4px 0;">
+          <div style="display:flex;flex-wrap:wrap;justify-content:space-between;gap:4px;font-size:.75rem;color:#64748b;margin:4px 0;">
             <span>₱${Number(r.total_spent).toLocaleString()} spent</span>
             <span>₱${Number(r.budget).toLocaleString()} budget</span>
           </div>
@@ -2001,12 +3311,14 @@ async function loadStaffRequestsPage() {
 
   container.innerHTML = `
     <div class="page-header">
-      <h2 class="page-title">Staff Requests</h2>
+      <div>
+        <h2 class="page-title">Staff Requests</h2>
+        <p style="font-size:.8rem;color:var(--text-muted);margin-top:4px;max-width:640px;">
+          Request a new Engineer or BAC account. A Super Admin must review and approve the
+          request before the login is created — you cannot create staff accounts directly.
+        </p>
+      </div>
     </div>
-    <p style="color:#64748b;margin-bottom:16px;max-width:640px;">
-      Request a new Engineer or BAC account. A Super Admin must review and approve the
-      request before the login is created — you cannot create staff accounts directly.
-    </p>
     <div class="table-card" style="padding:20px;max-width:520px;">
       <form id="staffRequestForm">
         <div class="form-group">
@@ -2045,74 +3357,6 @@ async function loadStaffRequestsPage() {
       e.target.reset();
     } catch { toast('Something went wrong', 'error'); }
   });
-}
-
-/* ============================================================
-   CONTRACTOR FORM (used by the "+ Add Contractor" button on the
-   Contractor Assignment page — there is no standalone contractors
-   list page; that was removed as dead/unreachable code)
-   ============================================================ */
-
-async function showContractorForm(id = null) {
-  let c = null;
-  if (id) try { c = await get(API.contractors, { id }); } catch {}
-
-  openModal(id ? `Edit Contractor` : 'New Contractor', `
-    <form id="contractorForm" onsubmit="submitContractorForm(event, ${id})">
-      <div class="form-grid">
-        <div class="form-group">
-          <label>Company Name *</label>
-          <input name="name" class="form-input" required value="${c?.name||''}" />
-        </div>
-        <div class="form-group">
-          <label>Contact Person</label>
-          <input name="contact_person" class="form-input" value="${c?.contact_person||''}" />
-        </div>
-        <div class="form-group">
-          <label>Email</label>
-          <input name="email" type="email" class="form-input" value="${c?.email||''}" />
-        </div>
-        <div class="form-group">
-          <label>Phone</label>
-          <input name="phone" class="form-input" value="${c?.phone||''}" />
-        </div>
-        <div class="form-group">
-          <label>Performance Score</label>
-          <input class="form-input" disabled value="${id ? `${c?.performance_score||0} / 100 (computed from project history)` : 'Computed after first project assignment'}" />
-        </div>
-        <div class="form-group">
-          <label>Status</label>
-          <select name="status" class="form-input">
-            ${['active','inactive','blacklisted'].map(s =>
-              `<option value="${s}" ${c?.status===s?'selected':''}>${s}</option>`).join('')}
-          </select>
-        </div>
-      </div>
-      <div class="form-group">
-        <label>Address</label>
-        <textarea name="address" class="form-input" rows="2">${c?.address||''}</textarea>
-      </div>
-      <div class="form-actions">
-        <button type="button" class="btn-secondary" onclick="closeModal()">Cancel</button>
-        <button type="submit" class="btn-primary">${id ? 'Update' : 'Add'} Contractor</button>
-      </div>
-    </form>
-  `);
-}
-
-async function submitContractorForm(e, id) {
-  e.preventDefault();
-  const body = Object.fromEntries(new FormData(e.target).entries());
-  try {
-    const res = id ? await put(API.contractors, id, body) : await post(API.contractors, body);
-    if (res.error) { toast(res.error, 'error'); return; }
-    toast(id ? 'Contractor updated!' : 'Contractor added!');
-    closeModal();
-    if (document.getElementById('assignmentTable')) {
-      await loadAssignmentContractors();
-      fetchAssignmentProjects();
-    }
-  } catch { toast('Something went wrong', 'error'); }
 }
 
 /* ============================================================
@@ -2327,23 +3571,7 @@ function renderPager(containerId, page, lastPage, onPage) {
   });
 }
 
-// ── Sidebar toggle: desktop collapses the fixed sidebar (citizen behavior),
-//    mobile keeps the off-canvas drawer ──
-document.getElementById('sidebarToggle')?.addEventListener('click', () => {
-  if (window.matchMedia('(min-width: 769px)').matches) {
-    document.body.classList.toggle('sidebar-collapsed');
-    return;
-  }
-  document.getElementById('sidebar')?.classList.toggle('open');
-});
-document.addEventListener('click', e => {
-  const sidebar = document.getElementById('sidebar');
-  const toggle  = document.getElementById('sidebarToggle');
-  if (window.innerWidth <= 768 && sidebar?.classList.contains('open')
-      && !sidebar.contains(e.target) && !toggle?.contains(e.target)) {
-    sidebar.classList.remove('open');
-  }
-});
+// ── Sidebar toggle (open/close + backdrop) is handled by assets/js/sidebar-toggle.js. ──
 
 // ── Nav ──
 document.querySelectorAll('.nav-item').forEach(item => {
@@ -2411,6 +3639,7 @@ document.addEventListener('DOMContentLoaded', () => {
     <div id="page-staff-requests" class="page-section" style="display:none;"></div>
     <div id="page-completed-projects" class="page-section" style="display:none;"></div>
     <div id="page-cancelled-projects" class="page-section" style="display:none;"></div>
+    <div id="page-public-facilities-integration" class="page-section" style="display:none;"></div>
   `;
 
   // The re-wrap above just replaced every node scroll-reveal.js observed at

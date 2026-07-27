@@ -1276,6 +1276,8 @@ function engineerShowPage(page, selectedProjectId = '') {
   if (page === 'delay-report') engineerRenderDelayPage();
   if (page === 'issue-reporting') engineerRenderIssuePage();
   if (page === 'status-tracker') engineerRenderStatusTracker(selectedProjectId);
+  if (page === 'urban-planning-inspection') engineerRenderUrbanPlanningPage();
+  if (page === 'road-inspection-history') engineerRenderRoadHistoryPage();
 }
 
 async function engineerSubmitMilestone(event) {
@@ -1450,13 +1452,7 @@ window.GLOBAL_SEARCH_SOURCES = [
 ];
 
 function engineerWireShell() {
-  document.getElementById('sidebarToggle')?.addEventListener('click', () => {
-    if (window.matchMedia('(min-width: 769px)').matches) {
-      document.body.classList.toggle('sidebar-collapsed');
-      return;
-    }
-    document.getElementById('sidebar')?.classList.toggle('open');
-  });
+  // Sidebar toggle (open/close + backdrop) is handled by assets/js/sidebar-toggle.js.
 
   document.querySelectorAll('.nav-item').forEach(item => {
     item.addEventListener('click', event => {
@@ -1610,6 +1606,459 @@ async function submitPasswordForm(event) {
     engineerToast(error.message, 'error');
   }
 }
+
+/* ============================================================
+   URBAN PLANNING SYSTEM INTEGRATION
+   Additive, separate from the native Engineer Portal modules above: its
+   own API file (engineer/api/urban-planning.php), its own state, its own
+   render functions. Road/request fields (road_id, road_name, barangay,
+   district, road_type, road_length, priority, requested_by, request_date,
+   map location) are read-only here — owned by the Urban Planning System.
+   Only the inspection result (everything in the form below) is ever
+   written from this portal.
+   ============================================================ */
+const ENGINEER_UP_API = window.BASE_PATH + 'engineer/api/urban-planning.php';
+const ENGINEER_UP_CONDITIONS = ['Excellent', 'Good', 'Fair', 'Poor', 'Critical'];
+const ENGINEER_UP_SEVERITIES = ['low', 'medium', 'high', 'critical'];
+const ENGINEER_UP_RECOMMENDATIONS = ['Routine Maintenance', 'Repair', 'Rehabilitation', 'Road Reconstruction', 'Further Investigation', 'No Action Needed'];
+
+let engineerUpListState = { page: 1, perPage: 10 };
+let engineerUpHistoryState = { page: 1, perPage: 10, search: '', status: '', overall_condition: '', recommendation: '', date_from: '', date_to: '' };
+let engineerUpMapInstance = null;
+
+async function engineerUpGet(action, params = {}) {
+  const qs = new URLSearchParams({ action, ...params }).toString();
+  const response = await fetch(`${ENGINEER_UP_API}?${qs}`);
+  const data = await response.json();
+  if (!response.ok || data.error) throw engineerErrorFrom(data, response);
+  return data;
+}
+
+async function engineerUpPostForm(action, formData) {
+  const response = await fetch(`${ENGINEER_UP_API}?action=${encodeURIComponent(action)}`, {
+    method: 'POST',
+    headers: { ...ENGINEER_CSRF_HEADERS },
+    body: formData,
+  });
+  const data = await response.json();
+  if (!response.ok || data.error) throw engineerErrorFrom(data, response);
+  return data;
+}
+
+function engineerUpConditionBadge(value) {
+  if (!value) return '—';
+  const classes = { Excellent: 'status-completed', Good: 'status-active', Fair: 'status-planning', Poor: 'status-delayed', Critical: 'status-cancelled' };
+  return `<span class="badge ${classes[value] || ''}">${engineerEscape(value)}</span>`;
+}
+
+function engineerUpStatusBadge(status) {
+  const labels = { pending: 'Pending', assigned: 'Assigned', in_progress: 'In Progress', completed: 'Completed', returned: 'Returned' };
+  const classes = { pending: 'status-draft', assigned: 'status-planning', in_progress: 'status-active', completed: 'status-completed', returned: 'status-returned' };
+  return `<span class="badge ${classes[status] || ''}">${labels[status] || engineerEscape(status)}</span>`;
+}
+
+function engineerUpPriorityBadge(priority) {
+  const classes = { low: 'status-completed', medium: 'status-planning', high: 'status-delayed', urgent: 'status-cancelled' };
+  const label = String(priority || '').charAt(0).toUpperCase() + String(priority || '').slice(1);
+  return `<span class="badge ${classes[priority] || ''}">${engineerEscape(label)}</span>`;
+}
+
+function engineerUpConditionOptions(selected = '') {
+  return '<option value="">Select</option>' + ENGINEER_UP_CONDITIONS.map(c =>
+    `<option value="${c}" ${selected === c ? 'selected' : ''}>${c}</option>`).join('');
+}
+
+/* ---- Urban Planning Inspection: incoming requests + inspection form ---- */
+
+function engineerRenderUrbanPlanningPage() {
+  const page = document.getElementById('page-urban-planning-inspection');
+  page.innerHTML = `
+    <div class="page-header">
+      <div>
+        <h1 class="page-title">Urban Planning Inspection</h1>
+        <p class="engineer-scope-note">Incoming road inspection requests from the Urban Planning System. Road data below is theirs — only the inspection result is ours to fill in.</p>
+      </div>
+    </div>
+    <article class="engineer-history-card">
+      <div id="engineerUpList"><p class="empty-state">Loading...</p></div>
+      <div class="pagination-wrap" id="engineerUpPager"></div>
+    </article>
+  `;
+  engineerUpListState.page = 1;
+  engineerLoadUpList();
+}
+
+async function engineerLoadUpList() {
+  const container = document.getElementById('engineerUpList');
+  const pager = document.getElementById('engineerUpPager');
+  if (!container) return;
+
+  try {
+    const result = await engineerUpGet('list_requests', { page: engineerUpListState.page, per_page: engineerUpListState.perPage });
+
+    container.innerHTML = result.data.length ? `
+      <div class="table-card">
+        <table class="data-table">
+          <thead>
+            <tr>
+              <th>Road ID</th><th>Road Name</th><th>Barangay</th><th>District</th><th>Type</th>
+              <th>Length</th><th>Priority</th><th>Status</th><th>Requested By</th><th>Request Date</th><th>Map</th><th>Action</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${result.data.map(row => `
+              <tr>
+                <td><span class="proj-id">${engineerEscape(row.road_id)}</span></td>
+                <td>${engineerEscape(row.road_name)}</td>
+                <td>${engineerEscape(row.barangay)}</td>
+                <td>${engineerEscape(row.district)}</td>
+                <td>${engineerEscape(row.road_type || '—')}</td>
+                <td>${row.road_length ? Number(row.road_length).toFixed(1) + ' km' : '—'}</td>
+                <td>${engineerUpPriorityBadge(row.priority)}</td>
+                <td>${engineerUpStatusBadge(row.status)}</td>
+                <td>${engineerEscape(row.requested_by || '—')}</td>
+                <td>${engineerDate(row.request_date)}</td>
+                <td>${row.road_latitude && row.road_longitude
+                  ? `<button type="button" class="btn-secondary btn-compact" onclick="engineerUpShowMap(${row.road_latitude}, ${row.road_longitude}, '${engineerEscape(row.road_name).replace(/'/g, "\\'")}')">View</button>`
+                  : '—'}</td>
+                <td><button type="button" class="btn-primary btn-compact" onclick="engineerUpOpenInspectionForm(${row.id})">Inspect</button></td>
+              </tr>
+            `).join('')}
+          </tbody>
+        </table>
+      </div>
+    ` : '<p class="empty-state">No pending inspection requests from the Urban Planning System.</p>';
+
+    renderPagination(pager, {
+      page: result.page, lastPage: result.last_page, total: result.total, perPage: result.per_page,
+      onPageChange: nextPage => { engineerUpListState.page = nextPage; engineerLoadUpList(); },
+    });
+  } catch (error) {
+    container.innerHTML = '<p class="empty-state">Unable to load inspection requests.</p>';
+  }
+}
+
+function engineerUpShowMap(lat, lng, label) {
+  engineerOpenModal(`Map Location — ${label}`, `<div id="engineerUpMapView" style="height:320px;border-radius:8px;overflow:hidden;"></div>`);
+  if (engineerUpMapInstance) {
+    engineerUpMapInstance.remove();
+    engineerUpMapInstance = null;
+  }
+  setTimeout(() => {
+    const container = document.getElementById('engineerUpMapView');
+    if (!container || typeof L === 'undefined') return;
+    engineerUpMapInstance = L.map('engineerUpMapView').setView([lat, lng], 15);
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { attribution: '&copy; OpenStreetMap contributors' }).addTo(engineerUpMapInstance);
+    L.marker([lat, lng]).addTo(engineerUpMapInstance);
+    setTimeout(() => engineerUpMapInstance.invalidateSize(), 50);
+  }, 50);
+}
+
+async function engineerUpOpenInspectionForm(id) {
+  let detail;
+  try {
+    detail = await engineerUpGet('detail', { id });
+  } catch (error) {
+    engineerToast(error.message, 'error');
+    return;
+  }
+
+  const engineerName = document.querySelector('.user-name')?.textContent?.trim() || 'You';
+
+  engineerOpenModal(`Inspect — ${engineerEscape(detail.road_name)}`, `
+    <div class="engineer-up-detail" style="margin-bottom:14px;">
+      <div class="form-grid">
+        <div><p class="modal-label">ROAD ID</p><p class="modal-val">${engineerEscape(detail.road_id)}</p></div>
+        <div><p class="modal-label">BARANGAY / DISTRICT</p><p class="modal-val">${engineerEscape(detail.barangay)}, ${engineerEscape(detail.district)}</p></div>
+        <div><p class="modal-label">ROAD TYPE</p><p class="modal-val">${engineerEscape(detail.road_type || '—')}</p></div>
+        <div><p class="modal-label">ROAD LENGTH</p><p class="modal-val">${detail.road_length ? Number(detail.road_length).toFixed(1) + ' km' : '—'}</p></div>
+        <div><p class="modal-label">PRIORITY</p><p class="modal-val">${engineerUpPriorityBadge(detail.priority)}</p></div>
+        <div><p class="modal-label">REQUESTED BY</p><p class="modal-val">${engineerEscape(detail.requested_by || '—')}</p></div>
+      </div>
+    </div>
+    <form id="engineerUpForm" enctype="multipart/form-data">
+      <input type="hidden" name="id" value="${detail.id}">
+      <div class="form-grid">
+        <div class="form-group">
+          <label>Inspection Date *</label>
+          <input class="form-input" type="date" name="inspection_date" required value="${new Date().toISOString().slice(0, 10)}">
+        </div>
+        <div class="form-group">
+          <label>Engineer Assigned</label>
+          <input class="form-input" disabled value="${engineerEscape(engineerName)}">
+        </div>
+        <div class="form-group">
+          <label>Road Condition *</label>
+          <select class="form-input" name="road_condition" required>${engineerUpConditionOptions()}</select>
+        </div>
+        <div class="form-group">
+          <label>Surface Condition *</label>
+          <select class="form-input" name="surface_condition" required>${engineerUpConditionOptions()}</select>
+        </div>
+        <div class="form-group">
+          <label>Drainage Condition *</label>
+          <select class="form-input" name="drainage_condition" required>${engineerUpConditionOptions()}</select>
+        </div>
+        <div class="form-group">
+          <label>Sidewalk Condition *</label>
+          <select class="form-input" name="sidewalk_condition" required>${engineerUpConditionOptions()}</select>
+        </div>
+        <div class="form-group">
+          <label>Streetlight Condition *</label>
+          <select class="form-input" name="streetlight_condition" required>${engineerUpConditionOptions()}</select>
+        </div>
+        <div class="form-group">
+          <label>Traffic Sign Condition *</label>
+          <select class="form-input" name="traffic_sign_condition" required>${engineerUpConditionOptions()}</select>
+        </div>
+        <div class="form-group">
+          <label>Overall Condition *</label>
+          <select class="form-input" name="overall_condition" required>${engineerUpConditionOptions()}</select>
+        </div>
+        <div class="form-group">
+          <label>Severity *</label>
+          <select class="form-input" name="severity" required>
+            <option value="">Select</option>
+            ${ENGINEER_UP_SEVERITIES.map(s => `<option value="${s}">${s.charAt(0).toUpperCase() + s.slice(1)}</option>`).join('')}
+          </select>
+        </div>
+        <div class="form-group" style="grid-column: span 2;">
+          <label>Recommendation *</label>
+          <select class="form-input" name="recommendation" required>
+            <option value="">Select</option>
+            ${ENGINEER_UP_RECOMMENDATIONS.map(r => `<option value="${r}">${r}</option>`).join('')}
+          </select>
+        </div>
+        <div class="form-group">
+          <label>GPS Latitude <small>(optional)</small></label>
+          <input class="form-input" type="number" step="0.0000001" name="latitude" placeholder="e.g. 14.6760">
+        </div>
+        <div class="form-group">
+          <label>GPS Longitude <small>(optional)</small></label>
+          <input class="form-input" type="number" step="0.0000001" name="longitude" placeholder="e.g. 121.0437">
+        </div>
+      </div>
+      <div class="form-group">
+        <label>Remarks</label>
+        <textarea class="form-input" name="remarks" rows="3" placeholder="Observations for the record"></textarea>
+      </div>
+      <div class="form-group">
+        <label>Upload Photos</label>
+        <input class="form-input" type="file" name="photos[]" accept=".png,.jpg,.jpeg,.webp" multiple>
+      </div>
+      <div class="form-actions">
+        <button type="button" class="btn-secondary" onclick="engineerCloseModal()">Cancel</button>
+        <button type="submit" class="btn-primary">Submit Inspection</button>
+      </div>
+    </form>
+  `);
+
+  document.getElementById('engineerUpForm').addEventListener('submit', engineerUpSubmitInspection);
+}
+
+async function engineerUpSubmitInspection(event) {
+  event.preventDefault();
+  const formEl = event.target;
+  engineerClearFieldErrors(formEl);
+  const form = new FormData(formEl);
+
+  try {
+    await engineerUpPostForm('submit_inspection', form);
+    engineerToast('Inspection submitted — now available to the Urban Planning System.');
+    engineerCloseModal();
+    engineerLoadUpList();
+  } catch (error) {
+    engineerShowFieldErrors(formEl, error.fieldErrors);
+    engineerToast(error.message, 'error');
+  }
+}
+
+/* ---- Road Inspection History: read-only, search/filter/export/print ---- */
+
+function engineerRenderRoadHistoryPage() {
+  const page = document.getElementById('page-road-inspection-history');
+  page.innerHTML = `
+    <div class="page-header">
+      <div>
+        <h1 class="page-title">Road Inspection History</h1>
+        <p class="engineer-scope-note">Read-only record of completed and returned Urban Planning inspections.</p>
+      </div>
+      <button class="btn-secondary" type="button" id="engineerUpExportBtn">Export CSV</button>
+    </div>
+    <div class="filter-bar" style="flex-wrap:wrap;">
+      <input class="filter-input" id="engineerUpSearch" placeholder="Search road, barangay, road ID...">
+      <select class="filter-select" id="engineerUpStatusFilter">
+        <option value="">All Statuses</option>
+        <option value="completed">Completed</option>
+        <option value="returned">Returned</option>
+      </select>
+      <select class="filter-select" id="engineerUpConditionFilter">
+        <option value="">All Conditions</option>
+        ${ENGINEER_UP_CONDITIONS.map(c => `<option value="${c}">${c}</option>`).join('')}
+      </select>
+      <select class="filter-select" id="engineerUpRecommendationFilter">
+        <option value="">All Recommendations</option>
+        ${ENGINEER_UP_RECOMMENDATIONS.map(r => `<option value="${r}">${r}</option>`).join('')}
+      </select>
+      <input class="filter-input" id="engineerUpDateFrom" type="date" style="max-width:150px;">
+      <input class="filter-input" id="engineerUpDateTo" type="date" style="max-width:150px;">
+      <button class="btn-secondary btn-compact" id="engineerUpApplyFilters" type="button">Apply</button>
+    </div>
+    <article class="engineer-history-card">
+      <div id="engineerUpHistoryList"><p class="empty-state">Loading...</p></div>
+      <div class="pagination-wrap" id="engineerUpHistoryPager"></div>
+    </article>
+  `;
+
+  document.getElementById('engineerUpApplyFilters').addEventListener('click', () => {
+    engineerUpHistoryState = {
+      ...engineerUpHistoryState,
+      page: 1,
+      search: document.getElementById('engineerUpSearch').value,
+      status: document.getElementById('engineerUpStatusFilter').value,
+      overall_condition: document.getElementById('engineerUpConditionFilter').value,
+      recommendation: document.getElementById('engineerUpRecommendationFilter').value,
+      date_from: document.getElementById('engineerUpDateFrom').value,
+      date_to: document.getElementById('engineerUpDateTo').value,
+    };
+    engineerLoadUpHistory();
+  });
+  document.getElementById('engineerUpExportBtn').addEventListener('click', engineerUpExportHistoryCsv);
+
+  engineerUpHistoryState.page = 1;
+  engineerLoadUpHistory();
+}
+
+async function engineerLoadUpHistory() {
+  const container = document.getElementById('engineerUpHistoryList');
+  const pager = document.getElementById('engineerUpHistoryPager');
+  if (!container) return;
+  const state = engineerUpHistoryState;
+
+  try {
+    const result = await engineerUpGet('list_history', {
+      page: state.page, per_page: state.perPage, search: state.search, status: state.status,
+      overall_condition: state.overall_condition, recommendation: state.recommendation,
+      date_from: state.date_from, date_to: state.date_to,
+    });
+
+    container.innerHTML = result.data.length ? `
+      <div class="table-card">
+        <table class="data-table">
+          <thead>
+            <tr>
+              <th>Inspection Date</th><th>Road Name</th><th>Barangay</th><th>Engineer</th>
+              <th>Condition Rating</th><th>Recommendation</th><th>Status</th><th>Photos</th><th>Report</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${result.data.map(row => `
+              <tr>
+                <td>${engineerDate(row.inspection_date)}</td>
+                <td>${engineerEscape(row.road_name)}</td>
+                <td>${engineerEscape(row.barangay)}</td>
+                <td>${engineerEscape(row.engineer_name || '—')}</td>
+                <td>${engineerUpConditionBadge(row.overall_condition)}</td>
+                <td>${engineerEscape(row.recommendation || '—')}</td>
+                <td>${engineerUpStatusBadge(row.status)}</td>
+                <td>${row.photo_count > 0 ? `${row.photo_count} photo(s)` : '—'}</td>
+                <td><button type="button" class="btn-secondary btn-compact" onclick="engineerUpPrintReport(${row.id})">Print</button></td>
+              </tr>
+            `).join('')}
+          </tbody>
+        </table>
+      </div>
+    ` : '<p class="empty-state">No inspection history matches this filter.</p>';
+
+    renderPagination(pager, {
+      page: result.page, lastPage: result.last_page, total: result.total, perPage: result.per_page,
+      onPageChange: nextPage => { engineerUpHistoryState.page = nextPage; engineerLoadUpHistory(); },
+    });
+  } catch (error) {
+    container.innerHTML = '<p class="empty-state">Unable to load inspection history.</p>';
+  }
+}
+
+async function engineerUpPrintReport(id) {
+  let detail;
+  try {
+    detail = await engineerUpGet('detail', { id });
+  } catch (error) {
+    engineerToast(error.message, 'error');
+    return;
+  }
+
+  const win = window.open('', '_blank');
+  win.document.write(`
+    <html><head><title>Inspection Report — ${detail.road_id}</title>
+    <style>
+      body { font-family: sans-serif; padding: 32px; color: #1e293b; }
+      h1 { font-size: 1.3rem; } h2 { font-size: .95rem; margin-top: 20px; color: #475569; }
+      table { width: 100%; border-collapse: collapse; margin-top: 8px; }
+      td, th { text-align: left; padding: 6px 10px; border-bottom: 1px solid #e2e8f0; font-size: .85rem; }
+      .photos img { width: 140px; height: 100px; object-fit: cover; margin: 6px 6px 0 0; border-radius: 6px; }
+    </style></head><body>
+      <h1>Road Inspection Report</h1>
+      <p>${engineerEscape(detail.road_name)} (${engineerEscape(detail.road_id)}) — ${engineerEscape(detail.barangay)}, ${engineerEscape(detail.district)}</p>
+      <h2>Inspection Summary</h2>
+      <table>
+        <tr><th>Inspection Date</th><td>${engineerDate(detail.inspection_date)}</td></tr>
+        <tr><th>Overall Condition</th><td>${engineerEscape(detail.overall_condition || '—')}</td></tr>
+        <tr><th>Severity</th><td>${engineerEscape(detail.severity || '—')}</td></tr>
+        <tr><th>Recommendation</th><td>${engineerEscape(detail.recommendation || '—')}</td></tr>
+        <tr><th>Remarks</th><td>${engineerEscape(detail.remarks || '—')}</td></tr>
+      </table>
+      <h2>Condition Detail</h2>
+      <table>
+        <tr><th>Road</th><td>${engineerEscape(detail.road_condition || '—')}</td></tr>
+        <tr><th>Surface</th><td>${engineerEscape(detail.surface_condition || '—')}</td></tr>
+        <tr><th>Drainage</th><td>${engineerEscape(detail.drainage_condition || '—')}</td></tr>
+        <tr><th>Sidewalk</th><td>${engineerEscape(detail.sidewalk_condition || '—')}</td></tr>
+        <tr><th>Streetlight</th><td>${engineerEscape(detail.streetlight_condition || '—')}</td></tr>
+        <tr><th>Traffic Sign</th><td>${engineerEscape(detail.traffic_sign_condition || '—')}</td></tr>
+      </table>
+      ${detail.photos?.length ? `<h2>Photos</h2><div class="photos">${detail.photos.map(p => `<img src="${window.BASE_PATH}${p.photo_path}">`).join('')}</div>` : ''}
+    </body></html>
+  `);
+  win.document.close();
+  win.focus();
+  setTimeout(() => win.print(), 300);
+}
+
+async function engineerUpExportHistoryCsv() {
+  const state = engineerUpHistoryState;
+  let rows = [];
+  try {
+    const result = await engineerUpGet('list_history', {
+      page: 1, per_page: 100, search: state.search, status: state.status,
+      overall_condition: state.overall_condition, recommendation: state.recommendation,
+      date_from: state.date_from, date_to: state.date_to,
+    });
+    rows = result.data;
+  } catch (error) {
+    engineerToast('Failed to export history.', 'error');
+    return;
+  }
+
+  const header = ['Inspection Date', 'Road Name', 'Barangay', 'Engineer', 'Condition Rating', 'Recommendation', 'Status'];
+  const csvRows = rows.map(row => [
+    row.inspection_date || '', row.road_name, row.barangay, row.engineer_name || '',
+    row.overall_condition || '', row.recommendation || '', row.status,
+  ]);
+  const csv = [header, ...csvRows].map(r => r.map(v => `"${String(v).replace(/"/g, '""')}"`).join(',')).join('\n');
+
+  const blob = new Blob([csv], { type: 'text/csv' });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = 'road-inspection-history.csv';
+  link.click();
+  URL.revokeObjectURL(url);
+}
+
+window.engineerUpOpenInspectionForm = engineerUpOpenInspectionForm;
+window.engineerUpShowMap = engineerUpShowMap;
+window.engineerUpPrintReport = engineerUpPrintReport;
 
 window.engineerShowPage = engineerShowPage;
 window.engineerOpenProject = engineerOpenProject;

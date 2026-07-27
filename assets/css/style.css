@@ -214,13 +214,15 @@ button { cursor: pointer; font-family: var(--font); }
 :root[data-theme="dark"] .nav-badge-pill-urgent  { background: rgba(239,68,68,.18);  color: #f87171; }
 
 /* ── Main ── */
-.main-wrapper { margin-left: var(--sidebar-w); flex: 1; display: flex; flex-direction: column; min-height: 100vh; transition: margin-left .3s; }
+.main-wrapper { margin-left: var(--sidebar-w); flex: 1; min-width: 0; display: flex; flex-direction: column; min-height: 100vh; transition: margin-left .3s; }
 
 /* Desktop burger: body.sidebar-collapsed slides the sidebar away and gives
    the content full width — same behavior as the citizen portal. On mobile
-   the burger keeps the off-canvas .open drawer instead. */
+   the burger keeps the off-canvas .open drawer instead. No transition
+   override here anymore — the base .sidebar rule's own cubic-bezier timing
+   (which also covers background-color) already applies and is nicer than
+   the flat .3s this used to replace it with. */
 @media (min-width: 769px) {
-  .sidebar { transition: transform .3s; }
   body.sidebar-collapsed .sidebar { transform: translateX(-100%); }
   body.sidebar-collapsed .main-wrapper { margin-left: 0; }
 }
@@ -359,6 +361,18 @@ button { cursor: pointer; font-family: var(--font); }
 .chart-title { font-size: .9rem; font-weight: 700; }
 .chart-legend { display: flex; align-items: center; gap: 14px; font-size: .75rem; color: var(--text-muted); }
 .legend-dot { display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-right: 4px; }
+
+/* ── GIS Map legend: each status gets its own pill so it stays readable
+   against the map/photo backdrop, instead of plain text floating on it ── */
+.gis-legend { display: flex; flex-wrap: wrap; gap: 8px; margin: 14px 0; }
+.gis-legend-item {
+  display: inline-flex; align-items: center; gap: 7px;
+  padding: 6px 14px; border-radius: 999px;
+  background: var(--card-bg); border: 1px solid var(--border); box-shadow: var(--card-shadow);
+  font-size: .8rem; font-weight: 600; color: var(--text-primary); white-space: nowrap;
+}
+.gis-legend-dot { display: inline-block; width: 11px; height: 11px; border-radius: 50%; flex-shrink: 0; box-shadow: 0 0 0 2px rgba(255,255,255,.5); }
+:root[data-theme="dark"] .gis-legend-dot { box-shadow: 0 0 0 2px rgba(0,0,0,.35); }
 .legend-blue  { background: #3b82f6; }
 .legend-green { background: #22c55e; }
 .chart-body { position: relative; }
@@ -436,7 +450,11 @@ button { cursor: pointer; font-family: var(--font); }
 .ai-green  { background: #16a34a; color: white; }
 
 /* ── Modal ── */
-.modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,.45); z-index: 200; display: flex; align-items: center; justify-content: center; opacity: 0; pointer-events: none; transition: opacity .2s; backdrop-filter: blur(3px); }
+/* z-index 2100: comfortably above Leaflet's own default panes/controls
+   (tile/marker/popup panes up to 700, .leaflet-top/.leaflet-bottom controls
+   at 1000) — otherwise an open GIS Map's markers/popups/zoom buttons render
+   on top of this modal instead of being covered by it. */
+.modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,.45); z-index: 2100; display: flex; align-items: center; justify-content: center; opacity: 0; pointer-events: none; transition: opacity .2s; backdrop-filter: blur(3px); }
 .modal-overlay.open { opacity: 1; pointer-events: all; }
 .modal { background: var(--card-bg); color: var(--text-primary); border-radius: var(--radius); width: 560px; max-width: 94vw; max-height: 90vh; overflow-y: auto; box-shadow: 0 20px 60px rgba(0,0,0,.2); transform: scale(.94); transition: transform .2s, background-color .25s ease, color .25s ease; }
 .modal-overlay.open .modal { transform: scale(1); }
@@ -449,9 +467,10 @@ button { cursor: pointer; font-family: var(--font); }
 .modal-val { color: #1e293b; font-weight: 600; }
 
 /* ── Notification Panel ── */
-.notif-panel { position: fixed; top: var(--topbar-h); right: 16px; width: 300px; background: var(--card-bg); border: 1px solid var(--border); border-radius: var(--radius); box-shadow: 0 8px 32px rgba(0,0,0,.12); z-index: 150; opacity: 0; pointer-events: none; transform: translateY(-8px); transition: opacity .2s, transform .2s; overflow: hidden; }
+.notif-panel { position: fixed; top: var(--topbar-h); right: 16px; width: 300px; max-height: calc(100vh - var(--topbar-h) - 24px); background: var(--card-bg); border: 1px solid var(--border); border-radius: var(--radius); box-shadow: 0 8px 32px rgba(0,0,0,.12); z-index: 150; opacity: 0; pointer-events: none; transform: translateY(-8px); transition: opacity .2s, transform .2s; overflow: hidden; display: flex; flex-direction: column; }
 .notif-panel.open { opacity: 1; pointer-events: all; transform: translateY(0); }
-.notif-panel-header { display: flex; align-items: center; justify-content: space-between; padding: 14px 16px 10px; font-size: .83rem; font-weight: 700; border-bottom: 1px solid var(--border); }
+.notif-panel-header { flex: 0 0 auto; display: flex; align-items: center; justify-content: space-between; padding: 14px 16px 10px; font-size: .83rem; font-weight: 700; border-bottom: 1px solid var(--border); }
+#notifList { overflow-y: auto; flex: 1 1 auto; }
 .notif-clear { background: none; border: none; font-size: .75rem; color: var(--accent); cursor: pointer; }
 .notif-item { display: flex; align-items: flex-start; gap: 10px; padding: 12px 16px; border-bottom: 1px solid var(--border); }
 .notif-item:last-child { border-bottom: none; }
@@ -469,7 +488,7 @@ button { cursor: pointer; font-family: var(--font); }
 .gsearch-trigger kbd { background: var(--card-bg); border: 1px solid var(--border); border-radius: 4px; padding: 1px 6px; font-size: .68rem; font-family: var(--font); color: var(--text-muted); }
 .hide-tablet { display: inline; }
 
-.gsearch-overlay { position: fixed; inset: 0; background: rgba(15,23,42,.5); z-index: 300; display: flex; align-items: flex-start; justify-content: center; padding-top: 12vh; opacity: 0; pointer-events: none; transition: opacity .2s; backdrop-filter: blur(3px); }
+.gsearch-overlay { position: fixed; inset: 0; background: rgba(15,23,42,.5); z-index: 2000; display: flex; align-items: flex-start; justify-content: center; padding-top: 12vh; opacity: 0; pointer-events: none; transition: opacity .2s; backdrop-filter: blur(3px); }
 .gsearch-overlay.open { opacity: 1; pointer-events: all; }
 .gsearch-box { background: var(--card-bg); color: var(--text-primary); width: 560px; max-width: 92vw; max-height: 70vh; border-radius: var(--radius); box-shadow: 0 24px 70px rgba(0,0,0,.3); overflow: hidden; display: flex; flex-direction: column; transform: translateY(-12px) scale(.98); transition: transform .2s, background-color .25s ease, color .25s ease; }
 .gsearch-overlay.open .gsearch-box { transform: translateY(0) scale(1); }
@@ -670,7 +689,7 @@ input.search-pill {
 
 /* ── Budget Summary Cards ── */
 .budget-summary-grid { display: grid; grid-template-columns: repeat(4,1fr); gap: 14px; }
-.budget-summary-card { background: var(--card-bg); border: 1px solid var(--border); border-radius: var(--radius); padding: 14px 16px; box-shadow: var(--card-shadow); }
+.budget-summary-card { min-width: 0; background: var(--card-bg); border: 1px solid var(--border); border-radius: var(--radius); padding: 14px 16px; box-shadow: var(--card-shadow); }
 .budget-proj-name { font-size: .82rem; font-weight: 700; color: var(--text-primary); margin-bottom: 6px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
 /* ── Contractor Cards ── */
@@ -705,13 +724,57 @@ input.search-pill {
 /* ── Dynamic document rows (repeatable "+ Add another document" fields) ── */
 .doc-section { margin-top: 16px; }
 .doc-section > label { display: block; margin-bottom: 8px; font-size: .75rem; font-weight: 600; color: var(--text-muted); letter-spacing: .03em; }
-.doc-rows { display: flex; flex-direction: column; gap: 8px; }
+.doc-rows { display: flex; flex-direction: column; gap: 8px; max-height: 280px; overflow-y: auto; padding-right: 4px; }
+.doc-list-scroll { max-height: 240px; overflow-y: auto; padding-right: 4px; }
 .doc-row { display: grid; grid-template-columns: 1fr 1.4fr 1.4fr auto; gap: 8px; align-items: center; padding: 10px; border: 1px dashed var(--border); border-radius: var(--radius-sm); background: var(--bg-body); }
 .doc-row-remove { width: 28px; height: 28px; border: 1px solid var(--border); border-radius: 6px; background: var(--input-bg); color: var(--text-muted); font-size: 1rem; line-height: 1; cursor: pointer; transition: background .15s, color .15s, border-color .15s; }
 .doc-row-remove:hover { background: #fee2e2; border-color: var(--red); color: var(--red); }
 .doc-add-btn { align-self: flex-start; margin-top: 4px; padding: 7px 14px; border: 1px dashed var(--accent); border-radius: var(--radius-sm); background: var(--accent-light); color: var(--accent); font-size: .78rem; font-weight: 700; cursor: pointer; transition: background .15s; }
 .doc-add-btn:hover { background: #cfe0fc; }
+.doc-add-btn:disabled { cursor: not-allowed; opacity: .55; border-color: var(--border); background: var(--bg-body); color: var(--text-muted); }
+.doc-add-btn:disabled:hover { background: var(--bg-body); }
 @media (max-width: 640px) { .doc-row { grid-template-columns: 1fr; } }
+
+/* ── Road Geometry (conditional module — Project Category = Roads and Bridges) ── */
+.road-geometry-card {
+  border: 1px solid var(--border); border-radius: var(--radius); background: var(--bg-body);
+  padding: 16px; margin-top: 14px;
+}
+.road-geometry-header { margin-bottom: 12px; }
+.road-geometry-header h3 { font-size: .95rem; margin: 0 0 2px; }
+.road-geometry-header small { color: var(--text-muted); font-size: .75rem; }
+.road-map-toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 10px; position: relative; }
+.road-map-toolbar .filter-input { flex: 1; min-width: 180px; }
+.road-point-count { font-size: .78rem; font-weight: 700; color: var(--text-muted); white-space: nowrap; margin-left: auto; }
+.road-map-suggestions {
+  display: none; position: absolute; top: 100%; left: 0; width: 100%; max-width: 320px; z-index: 20;
+  background: var(--card-bg); border: 1px solid var(--border); border-radius: var(--radius-sm);
+  box-shadow: var(--card-shadow); max-height: 200px; overflow-y: auto; margin-top: 4px;
+}
+.road-map-suggestions div { padding: 8px 12px; font-size: .8rem; cursor: pointer; border-bottom: 1px solid var(--border); }
+.road-map-suggestions div:last-child { border-bottom: none; }
+.road-map-suggestions div:hover { background: var(--bg-sidebar-hover); }
+.road-geometry-readouts {
+  display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; margin-top: 12px;
+}
+.road-geometry-readouts > div {
+  background: var(--card-bg); border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 10px 12px;
+}
+.road-summary-card {
+  margin-top: 12px; padding: 14px; border-radius: var(--radius-sm);
+  background: var(--accent-light); border: 1px solid var(--border);
+}
+.road-summary-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; margin-top: 8px; }
+.road-toggle-grid { display: flex; flex-wrap: wrap; gap: 16px 24px; margin-top: 10px; }
+.road-toggle { font-size: .8rem; }
+@media (max-width: 900px) {
+  .road-geometry-readouts { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .road-summary-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+@media (max-width: 560px) {
+  .road-geometry-readouts { grid-template-columns: 1fr; }
+  .road-summary-grid { grid-template-columns: 1fr; }
+}
 
 /* ── Toggle switch (e.g. Settings' maintenance_mode) ── */
 .form-checkbox-label { display: flex; align-items: center; gap: 10px; font-size: .83rem; font-weight: 600; color: var(--text-primary); cursor: pointer; }
@@ -827,6 +890,42 @@ input.search-pill {
 .report-row span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .report-row strong { font-family: var(--mono); white-space: nowrap; }
 
+.report-panel .report-chart-body { height: 200px; margin-top: 10px; }
+.report-columns-2 {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+}
+
+/* ── Public Facilities Integration (read-only, Barangay Culiat) ── */
+.pf-tabs { display: flex; gap: 6px; margin: 4px 0 16px; flex-wrap: wrap; }
+.pf-tab {
+  padding: 8px 16px; border-radius: 999px; border: 1px solid var(--border);
+  background: var(--card-bg); color: var(--text-muted); font-size: .82rem; font-weight: 600;
+  cursor: pointer; transition: background .15s, color .15s, border-color .15s;
+}
+.pf-tab:hover { color: var(--text-primary); }
+.pf-tab.active { background: var(--accent); border-color: var(--accent); color: #fff; }
+.pf-badge { display: inline-block; padding: 2px 10px; border-radius: 999px; font-size: .68rem; font-weight: 700; letter-spacing: .03em; }
+.pf-badge-planned { background: #dbeafe; color: #1d4ed8; }
+.pf-badge-ongoing { background: #dcfce7; color: #15803d; }
+.pf-badge-completed { background: #e2e8f0; color: #475569; }
+.pf-badge-cancelled { background: #fee2e2; color: #b91c1c; }
+.pf-sync-badge {
+  display: inline-flex; align-items: center; gap: 5px; padding: 4px 12px;
+  border-radius: 999px; background: var(--accent-light); color: var(--accent);
+  font-size: .72rem; font-weight: 700; white-space: nowrap; height: fit-content;
+}
+.pf-sync-badge::before { content: ''; width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
+.pf-cancel-box { background: #fee2e2; border: 1px solid #fecaca; border-radius: var(--radius-sm); padding: 12px 14px; }
+.pf-cancel-box .modal-label { color: #b91c1c; }
+:root[data-theme="dark"] .pf-cancel-box { background: rgba(239,68,68,.14); border-color: rgba(239,68,68,.35); }
+:root[data-theme="dark"] .pf-cancel-box .modal-label { color: #f87171; }
+:root[data-theme="dark"] .pf-badge-planned { background: rgba(59,130,246,.18); color: #93c5fd; }
+:root[data-theme="dark"] .pf-badge-ongoing { background: rgba(34,197,94,.18); color: #86efac; }
+:root[data-theme="dark"] .pf-badge-completed { background: rgba(148,163,184,.18); color: #cbd5e1; }
+:root[data-theme="dark"] .pf-badge-cancelled { background: rgba(239,68,68,.18); color: #fca5a5; }
+
 .risk-grid {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -902,7 +1001,7 @@ input.search-pill {
    Same look as the citizen portal's modal-card dialogs; a separate class
    from .modal-overlay because these toggle display, not the .open class. */
 .confirm-overlay {
-  position: fixed; inset: 0; z-index: 400;
+  position: fixed; inset: 0; z-index: 2200; /* session-critical — must beat every other overlay, including .modal-overlay */
   display: flex; align-items: center; justify-content: center;
   padding: 16px;
   background: rgba(15,23,42,.5);
@@ -992,6 +1091,12 @@ input.search-pill {
   color: var(--text-muted);
   opacity: .75;
 }
+/* Optional icon on a group label (e.g. Engineer Portal's "System
+   Integrations" section) — plain text labels elsewhere are unaffected
+   since they simply don't include a .nav-group-icon span. */
+.nav-group-label.has-icon { display: flex; align-items: center; gap: 6px; }
+.nav-group-icon { width: 13px; height: 13px; flex-shrink: 0; display: flex; }
+.nav-group-icon svg { width: 100%; height: 100%; }
 
 .topbar {
   padding: 0 clamp(16px, 3vw, 28px);
@@ -1008,6 +1113,12 @@ input.search-pill {
   max-width: 1500px;
   gap: 22px;
   padding: clamp(18px, 2.4vw, 30px);
+  /* Flex items default to min-width:auto, which lets a wide child (an
+     uncontained table, say) force this whole column wider than the
+     viewport instead of shrinking — pushing the topbar's right side out
+     of view along with it. min-width:0 hands overflow handling back to
+     the child itself (.table-card already scrolls internally). */
+  min-width: 0;
 }
 
 .page-header {
@@ -1117,10 +1228,11 @@ input.search-pill {
   .ai-grid { grid-template-columns: 1fr; }
   .form-grid { grid-template-columns: 1fr; }
   .report-columns { grid-template-columns: 1fr; }
+  .report-columns-2 { grid-template-columns: 1fr; }
 }
 @media (max-width:768px) {
   .sidebar { transform: translateX(-100%); }
-  .sidebar.open { transform: translateX(0); }
+  .sidebar.open { transform: translateX(0); box-shadow: 0 0 44px rgba(2,8,23,.4); }
   .main-wrapper { margin-left: 0; }
   .menu-toggle { display: flex; }
   .kpi-grid { grid-template-columns: 1fr 1fr; }
@@ -1131,6 +1243,20 @@ input.search-pill {
   .gsearch-trigger kbd { display: none; }
   .budget-summary-grid { grid-template-columns: 1fr; }
   .admin-summary-grid { grid-template-columns: 1fr; }
+}
+
+/* Backdrop behind the off-canvas mobile drawer — same treatment as the
+   citizen portal's own sidebar, extended here to every other portal via
+   assets/js/sidebar-toggle.js. Hidden entirely on desktop, where there's
+   no overlay to dim anything behind. */
+.sidebar-backdrop { display: none; }
+@media (max-width:768px) {
+  .sidebar-backdrop {
+    display: block; position: fixed; inset: 0;
+    background: rgba(15,23,42,.45); z-index: 99; /* just under the sidebar's z-index 100 */
+    opacity: 0; pointer-events: none; transition: opacity .3s;
+  }
+  .sidebar-backdrop.show { opacity: 1; pointer-events: auto; }
 }
 @media (max-width:480px) {
   .topbar { gap: 8px; padding: 0 12px; }

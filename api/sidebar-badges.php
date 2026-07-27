@@ -28,6 +28,7 @@ requireCsrfProtection();
 
 $db = getDB();
 projectWorkflowEnsureRoleConnectionTables($db);
+projectDeletionEnsureSchema($db);
 sidebarBadgesEnsureViewsTable($db);
 
 $user = currentUser();
@@ -191,8 +192,18 @@ function computeAdminBadges(PDO $db, int $userId, array $lv): array
     $stmt->execute([$userId, lv($lv, 'staff-requests')]);
     $b['staff-requests'] = ['type' => 'red', 'count' => (int) $stmt->fetchColumn()];
 
-    $stmt = $db->prepare("SELECT COUNT(*) FROM projects WHERE status = 'turnover' AND turnover_at > ?");
-    $stmt->execute([lv($lv, 'completed-projects')]);
+    // 'completed' and 'turnover' are both shown on the Completed Projects
+    // archive page (see assets/js/script.js's status_in='completed,turnover'),
+    // so a project reaching either one counts as new here — checking only
+    // turnover_at missed every project that stopped at 'completed' and never
+    // formally turned over.
+    $stmt = $db->prepare("
+        SELECT COUNT(*) FROM projects
+        WHERE (status = 'completed' AND completion_inspected_at > ?)
+           OR (status = 'turnover' AND turnover_at > ?)
+    ");
+    $completedCutoff = lv($lv, 'completed-projects');
+    $stmt->execute([$completedCutoff, $completedCutoff]);
     $b['completed-projects'] = ['label' => $stmt->fetchColumn() > 0 ? 'NEW' : null];
 
     $stmt = $db->prepare("SELECT COUNT(*) FROM projects WHERE status = 'cancelled' AND updated_at > ?");
@@ -388,12 +399,16 @@ function computeHopeBadges(PDO $db, int $userId, array $lv): array
     $stmt->execute([lv($lv, 'returned-projects')]);
     $b['returned-projects'] = ['type' => 'orange', 'count' => (int) $stmt->fetchColumn()];
 
+    $stmt = $db->prepare("SELECT COUNT(*) FROM project_deletion_requests WHERE status = 'pending' AND created_at > ?");
+    $stmt->execute([lv($lv, 'deletion-requests')]);
+    $b['deletion-requests'] = ['type' => 'red', 'count' => (int) $stmt->fetchColumn()];
+
     // Reuses the same shared per-user notifications feed the topbar bell uses.
     require_once __DIR__ . '/../includes/Notifications.php';
     $b['notifications'] = ['type' => 'blue', 'count' => (int) Notifications::unreadCount($userId)];
 
     $b['dashboard'] = ['type' => 'red', 'count' =>
-        $b['project-approvals']['count'] + $b['award-approvals']['count'] + $b['returned-projects']['count']];
+        $b['project-approvals']['count'] + $b['award-approvals']['count'] + $b['returned-projects']['count'] + $b['deletion-requests']['count']];
 
     return $b;
 }

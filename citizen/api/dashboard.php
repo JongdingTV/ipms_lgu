@@ -7,6 +7,7 @@ header('Content-Type: application/json');
 $user = requireLogin(['citizen']);
 $pdo = getDB();
 projectWorkflowEnsureProjectStatusSchema($pdo);
+feedbackEnsureSchema($pdo);
 
 // Get citizen data. A missing citizens row (e.g. the seeded demo account)
 // only means "no personal submissions" — public project data still loads.

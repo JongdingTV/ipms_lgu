@@ -1,10 +1,12 @@
 <?php
 require_once __DIR__ . '/../../auth/session.php';
+require_once __DIR__ . '/../../includes/workflow.php';
 
 header('Content-Type: application/json');
 
 $user = requireLogin(['citizen']);
 $pdo = getDB();
+feedbackEnsureSchema($pdo);
 
 // Get citizen ID
 $stmt = $pdo->prepare("SELECT id FROM citizens WHERE user_id = ?");

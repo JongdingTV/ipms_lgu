@@ -777,22 +777,27 @@ async function bacRenderDocuments() {
         <h2 class="page-title">Procurement Documents</h2>
         <p class="bac-scope-note">Invitation to Bid, Approved Budget, Abstract of Bids, Notice of Award, and Board Resolution attachments, attached from the Bidding Announcements and Award Recommendation forms.</p>
       </div>
-      <div class="bac-filters">
-        <select id="bacDocOwnerFilter">
-          <option value="">All types</option>
-          <option value="project">Project (announcement stage)</option>
-          <option value="bac_bid">Bid (award stage)</option>
-        </select>
-        <select id="bacDocStatusFilter">
-          <option value="">All statuses</option>
-          <option value="pending">Pending</option>
-          <option value="verified">Verified</option>
-          <option value="rejected">Rejected</option>
-        </select>
-      </div>
     </div>
-    <div class="bac-list" id="bacDocumentsList"><p class="empty-state">Loading...</p></div>
-    <div class="pagination-wrap" id="bacDocumentsPager"></div>
+    <article class="bac-panel bac-panel-wide">
+      <div class="bac-panel-head">
+        <h2>All Documents</h2>
+        <div class="bac-filters">
+          <select id="bacDocOwnerFilter">
+            <option value="">All types</option>
+            <option value="project">Project (announcement stage)</option>
+            <option value="bac_bid">Bid (award stage)</option>
+          </select>
+          <select id="bacDocStatusFilter">
+            <option value="">All statuses</option>
+            <option value="pending">Pending</option>
+            <option value="verified">Verified</option>
+            <option value="rejected">Rejected</option>
+          </select>
+        </div>
+      </div>
+      <div class="bac-list" id="bacDocumentsList"><p class="empty-state">Loading...</p></div>
+      <div class="pagination-wrap" id="bacDocumentsPager"></div>
+    </article>
   `;
 
   document.getElementById('bacDocOwnerFilter').addEventListener('change', event => {
@@ -890,8 +895,10 @@ async function bacRenderContractorApplications() {
         <p class="bac-scope-note">Public applications submitted at /contractor/apply.php, awaiting BAC review. Approving creates their portal account and emails them; rejecting requires a reason.</p>
       </div>
     </div>
-    <div class="bac-list" id="bacContractorApplicationsList"><p class="empty-state">Loading...</p></div>
-    <div class="pagination-wrap" id="bacContractorApplicationsPager"></div>
+    <article class="bac-panel bac-panel-wide">
+      <div class="bac-list" id="bacContractorApplicationsList"><p class="empty-state">Loading...</p></div>
+      <div class="pagination-wrap" id="bacContractorApplicationsPager"></div>
+    </article>
   `;
 
   await bacLoadContractorApplications();
@@ -1308,14 +1315,7 @@ function bacWireShell() {
     });
   });
 
-  const sidebarToggle = document.getElementById('sidebarToggle');
-  sidebarToggle?.addEventListener('click', () => {
-    if (window.matchMedia('(min-width: 769px)').matches) {
-      document.body.classList.toggle('sidebar-collapsed');
-      return;
-    }
-    document.getElementById('sidebar')?.classList.toggle('open');
-  });
+  // Sidebar toggle (open/close + backdrop) is handled by assets/js/sidebar-toggle.js.
 
   const userMenuBtn = document.getElementById('userMenuBtn');
   const userMenu = document.getElementById('userMenu');
@@ -1325,13 +1325,6 @@ function bacWireShell() {
   });
 
   document.addEventListener('click', event => {
-    if (window.innerWidth <= 768) {
-      const sidebar = document.getElementById('sidebar');
-      if (sidebar?.classList.contains('open') && !sidebar.contains(event.target) && event.target !== sidebarToggle) {
-        sidebar.classList.remove('open');
-      }
-    }
-
     if (userMenu && !userMenu.contains(event.target) && event.target !== userMenuBtn) {
       userMenu.classList.remove('open');
     }
