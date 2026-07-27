@@ -20,6 +20,7 @@ function clearResetSession(): void
         $_SESSION['pending_reset_last_sent_at'],
         $_SESSION['pending_reset_fake_attempts'],
         $_SESSION['pending_reset_origin'],
+        $_SESSION['pending_reset_otp_verified'],
         $_SESSION['dev_otp_preview']
     );
 }
@@ -40,6 +41,7 @@ if (!isset($_SESSION['pending_reset_started_at'])) {
 }
 
 $origin = ($_SESSION['pending_reset_origin'] ?? '') === 'citizen' ? 'citizen' : 'staff';
+$loginPath = $origin === 'citizen' ? '/citizen/login.php' : '/auth/login.php';
 
 $startedAt = (int) ($_SESSION['pending_reset_started_at'] ?? 0);
 if ((time() - $startedAt) > PENDING_RESET_TIMEOUT_SECONDS) {
@@ -57,14 +59,20 @@ $otp = new OTPManager();
 
 if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
     requireCsrfProtection();
-    $action = $_POST['action'] ?? 'reset';
+    $action = $_POST['action'] ?? 'verify_code';
 
-    if ($action === 'resend') {
+    if ($action === 'cancel') {
+        clearResetSession();
+        header('Location: ' . appUrl($loginPath));
+        exit;
+    } elseif ($action === 'resend') {
         $wait = RESEND_COOLDOWN_SECONDS - (time() - (int) ($_SESSION['pending_reset_last_sent_at'] ?? 0));
         if ($wait > 0) {
             $error = "Please wait {$wait}s before requesting another code.";
         } else {
             $_SESSION['pending_reset_last_sent_at'] = time();
+            // A freshly sent code makes any earlier verification stale.
+            unset($_SESSION['pending_reset_otp_verified']);
 
             if ($userId !== null) {
                 $result = $otp->createOTP($userId, 'password_reset');
@@ -93,20 +101,45 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
                 $status = 'A new code has been sent to ' . maskEmail($pendingEmail) . '.';
             }
         }
-    } else {
+    } elseif ($action === 'verify_code') {
         $code = trim((string) ($_POST['otp_code'] ?? ''));
-        $newPassword = (string) ($_POST['new_password'] ?? '');
-        $confirmPassword = (string) ($_POST['confirm_password'] ?? '');
 
-        if ($code === '' || $newPassword === '' || $confirmPassword === '') {
-            $error = 'Please fill in all fields.';
-        } elseif (($strengthError = Validator::passwordStrength($newPassword)) !== null) {
-            $error = $strengthError;
-        } elseif ($newPassword !== $confirmPassword) {
-            $error = 'Passwords do not match.';
+        if ($code === '') {
+            $error = 'Please enter the verification code.';
         } elseif ($userId !== null) {
             $result = $otp->verifyOTP($userId, $code, 'password_reset');
             if ($result['success']) {
+                $_SESSION['pending_reset_otp_verified'] = true;
+            } else {
+                $error = $result['message'];
+            }
+        } else {
+            // Fake path — mirrors the real path's rejection shape exactly, never
+            // touches OTPManager or the database, and can never advance to the
+            // password step (prevents account-enumeration via this flow).
+            $attempts = (int) ($_SESSION['pending_reset_fake_attempts'] ?? 0);
+            $remaining = max(0, 2 - $attempts);
+            $_SESSION['pending_reset_fake_attempts'] = $attempts + 1;
+            $error = $remaining > 0
+                ? "Incorrect code. {$remaining} attempt(s) remaining."
+                : 'Too many incorrect attempts. Please request a new code.';
+        }
+    } elseif ($action === 'reset') {
+        if (empty($_SESSION['pending_reset_otp_verified'])) {
+            // Not reachable through the normal UI (the password form only
+            // renders after verification) — guards a direct/forged POST.
+            $error = 'Please verify your code first.';
+        } else {
+            $newPassword = (string) ($_POST['new_password'] ?? '');
+            $confirmPassword = (string) ($_POST['confirm_password'] ?? '');
+
+            if ($newPassword === '' || $confirmPassword === '') {
+                $error = 'Please fill in all fields.';
+            } elseif (($strengthError = Validator::passwordStrength($newPassword)) !== null) {
+                $error = $strengthError;
+            } elseif ($newPassword !== $confirmPassword) {
+                $error = 'Passwords do not match.';
+            } elseif ($userId !== null) {
                 $stmt = getDB()->prepare('SELECT id, role, status FROM users WHERE id = ?');
                 $stmt->execute([$userId]);
                 $freshUser = $stmt->fetch();
@@ -125,20 +158,17 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
                 $loginPath = $freshUser['role'] === 'citizen' ? '/citizen/login.php' : '/auth/login.php';
                 header('Location: ' . appUrl($loginPath . '?reset=1'));
                 exit;
+            } else {
+                // Fake path can never reach here (it never sets pending_reset_otp_verified).
+                clearResetSession();
+                header('Location: ' . appUrl('/auth/forgot-password.php?from=' . $origin));
+                exit;
             }
-            $error = $result['message'];
-        } else {
-            // Fake path — mirrors the real path's rejection shape exactly, never
-            // touches OTPManager or the database.
-            $attempts = (int) ($_SESSION['pending_reset_fake_attempts'] ?? 0);
-            $remaining = max(0, 2 - $attempts);
-            $_SESSION['pending_reset_fake_attempts'] = $attempts + 1;
-            $error = $remaining > 0
-                ? "Incorrect code. {$remaining} attempt(s) remaining."
-                : 'Too many incorrect attempts. Please request a new code.';
         }
     }
 }
+
+$otpVerified = !empty($_SESSION['pending_reset_otp_verified']);
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -193,9 +223,10 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
             --btn-shadow: rgba(37, 99, 235, 0.24);
         }
 
-        /* Citizen flow: blurred City Hall photo backdrop + glass card,
-           matching citizen/login.php. Staff flow keeps the flat background. */
-        body.theme-citizen::before {
+        /* Blurred City Hall photo backdrop + glass card, matching
+           citizen/login.php and auth/login.php on both themes. The wash tint
+           (below) is what tells staff and citizen apart — blue vs. navy. */
+        body::before {
             content: "";
             position: fixed;
             inset: -24px;
@@ -213,17 +244,22 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
             background: linear-gradient(180deg, rgba(37, 99, 235, 0.16), rgba(242, 247, 253, 0.42));
         }
 
-        body.theme-citizen .auth-card {
-            background: rgba(255, 255, 255, 0.74);
-            backdrop-filter: blur(14px) saturate(1.4);
-            -webkit-backdrop-filter: blur(14px) saturate(1.4);
-            border-color: rgba(255, 255, 255, 0.55);
+        /* Darker, more "official" navy wash for staff — same photo as the
+           citizen portal, mirrors auth/login.php's brand treatment. */
+        body.theme-staff::after {
+            content: "";
+            position: fixed;
+            inset: 0;
+            z-index: -1;
+            background: linear-gradient(180deg, rgba(24, 35, 51, 0.38), rgba(242, 247, 253, 0.35));
         }
 
         .auth-card {
             width: min(460px, 100%);
-            background: #ffffff;
-            border: 1px solid var(--line);
+            background: rgba(255, 255, 255, 0.74);
+            backdrop-filter: blur(14px) saturate(1.4);
+            -webkit-backdrop-filter: blur(14px) saturate(1.4);
+            border: 1px solid rgba(255, 255, 255, 0.55);
             border-radius: 16px;
             overflow: hidden;
             box-shadow: 0 24px 60px rgba(16, 32, 29, 0.14);
@@ -326,6 +362,16 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
             border-color: var(--accent);
             box-shadow: 0 0 0 3px var(--focus-ring);
             background: #ffffff;
+        }
+
+        /* Both themes now sit their card on a blurred photo backdrop, so an
+           input filled with --paper (near-white, same as the page) reads as
+           almost invisible against the translucent glass card. Give it a
+           solid, clearly bordered fill instead. */
+        input[type="text"],
+        input[type="password"] {
+            background: #ffffff;
+            border-color: #aebfd6;
         }
 
         button {
@@ -438,13 +484,18 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
         <div class="card-header">
             <div class="header-icon"><i class="fa-solid fa-key"></i></div>
             <h1>Reset Password</h1>
-            <p>Enter the code we sent you and choose a new password</p>
+            <p><?= $otpVerified ? 'Code verified — choose your new password' : 'Enter the code we sent you' ?></p>
         </div>
 
         <div class="card-body">
             <p class="scope-note">
-                We sent a 6-digit code to <strong><?= htmlspecialchars(maskEmail($pendingEmail)) ?></strong>.
-                It expires <?= (int) $otp->getValidityMinutes() ?> minute(s) after being sent.
+                <?php if ($otpVerified): ?>
+                    <i class="fa-solid fa-circle-check" style="color:#27ae60;"></i>
+                    Code verified for <strong><?= htmlspecialchars(maskEmail($pendingEmail)) ?></strong>. Set a new password to finish.
+                <?php else: ?>
+                    We sent a 6-digit code to <strong><?= htmlspecialchars(maskEmail($pendingEmail)) ?></strong>.
+                    It expires <?= (int) $otp->getValidityMinutes() ?> minute(s) after being sent.
+                <?php endif; ?>
             </p>
 
             <?php if ($error): ?>
@@ -461,51 +512,66 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
                 </div>
             <?php endif; ?>
 
-            <form method="POST" action="">
-                <input type="hidden" name="_csrf" value="<?= htmlspecialchars(getCsrfToken()) ?>">
-                <input type="hidden" name="action" value="reset">
-                <div class="form-group">
-                    <label for="otp_code">Verification Code</label>
-                    <input
-                        type="text"
-                        id="otp_code"
-                        name="otp_code"
-                        placeholder="000000"
-                        inputmode="numeric"
-                        autocomplete="one-time-code"
-                        maxlength="6"
-                        required
-                        autofocus
-                    >
-                </div>
-
-                <div class="form-group">
-                    <label for="password">New Password</label>
-                    <input type="password" id="password" name="new_password" required>
-                    <div class="password-requirements">
-                        <p><strong>Password must contain:</strong></p>
-                        <ul>
-                            <li id="req-length">At least 8 characters</li>
-                            <li id="req-upper">One uppercase letter (A-Z)</li>
-                            <li id="req-lower">One lowercase letter (a-z)</li>
-                            <li id="req-number">One number (0-9)</li>
-                            <li id="req-special">One special character (!@#$%^&*)</li>
-                        </ul>
+            <?php if (!$otpVerified): ?>
+                <form method="POST" action="">
+                    <input type="hidden" name="_csrf" value="<?= htmlspecialchars(getCsrfToken()) ?>">
+                    <input type="hidden" name="action" value="verify_code">
+                    <div class="form-group">
+                        <label for="otp_code">Verification Code</label>
+                        <input
+                            type="text"
+                            id="otp_code"
+                            name="otp_code"
+                            placeholder="000000"
+                            inputmode="numeric"
+                            autocomplete="one-time-code"
+                            maxlength="6"
+                            required
+                            autofocus
+                        >
                     </div>
-                </div>
 
-                <div class="form-group">
-                    <label for="confirm_password">Confirm New Password</label>
-                    <input type="password" id="confirm_password" name="confirm_password" required>
-                </div>
+                    <button type="submit">Verify Code</button>
+                </form>
 
-                <button type="submit">Reset Password</button>
-            </form>
+                <form method="POST" action="">
+                    <input type="hidden" name="_csrf" value="<?= htmlspecialchars(getCsrfToken()) ?>">
+                    <input type="hidden" name="action" value="resend">
+                    <button type="submit" class="btn-secondary">Resend Code</button>
+                </form>
+            <?php else: ?>
+                <form method="POST" action="">
+                    <input type="hidden" name="_csrf" value="<?= htmlspecialchars(getCsrfToken()) ?>">
+                    <input type="hidden" name="action" value="reset">
+
+                    <div class="form-group">
+                        <label for="password">New Password</label>
+                        <input type="password" id="password" name="new_password" required autofocus>
+                        <div class="password-requirements">
+                            <p><strong>Password must contain:</strong></p>
+                            <ul>
+                                <li id="req-length">At least 8 characters</li>
+                                <li id="req-upper">One uppercase letter (A-Z)</li>
+                                <li id="req-lower">One lowercase letter (a-z)</li>
+                                <li id="req-number">One number (0-9)</li>
+                                <li id="req-special">One special character (!@#$%^&*)</li>
+                            </ul>
+                        </div>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="confirm_password">Confirm New Password</label>
+                        <input type="password" id="confirm_password" name="confirm_password" required>
+                    </div>
+
+                    <button type="submit">Reset Password</button>
+                </form>
+            <?php endif; ?>
 
             <form method="POST" action="">
                 <input type="hidden" name="_csrf" value="<?= htmlspecialchars(getCsrfToken()) ?>">
-                <input type="hidden" name="action" value="resend">
-                <button type="submit" class="btn-secondary">Resend Code</button>
+                <input type="hidden" name="action" value="cancel">
+                <button type="submit" class="btn-secondary"><i class="fa-solid fa-arrow-left"></i> Back to Login</button>
             </form>
 
             <div class="login-footer">
@@ -522,18 +588,20 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
     <script>
         const passwordInput = document.getElementById('password');
 
-        function validatePassword() {
-            const password = passwordInput.value;
+        if (passwordInput) {
+            function validatePassword() {
+                const password = passwordInput.value;
 
-            document.getElementById('req-length').classList.toggle('unmet', password.length < 8);
-            document.getElementById('req-upper').classList.toggle('unmet', !/[A-Z]/.test(password));
-            document.getElementById('req-lower').classList.toggle('unmet', !/[a-z]/.test(password));
-            document.getElementById('req-number').classList.toggle('unmet', !/[0-9]/.test(password));
-            document.getElementById('req-special').classList.toggle('unmet', !/[!@#$%^&*]/.test(password));
+                document.getElementById('req-length').classList.toggle('unmet', password.length < 8);
+                document.getElementById('req-upper').classList.toggle('unmet', !/[A-Z]/.test(password));
+                document.getElementById('req-lower').classList.toggle('unmet', !/[a-z]/.test(password));
+                document.getElementById('req-number').classList.toggle('unmet', !/[0-9]/.test(password));
+                document.getElementById('req-special').classList.toggle('unmet', !/[!@#$%^&*]/.test(password));
+            }
+
+            passwordInput.addEventListener('input', validatePassword);
+            validatePassword();
         }
-
-        passwordInput.addEventListener('input', validatePassword);
-        validatePassword();
     </script>
 </body>
 </html>

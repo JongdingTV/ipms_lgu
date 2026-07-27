@@ -50,6 +50,34 @@ function recordRegistrationAttempt(string $ipAddress): void
     }
 }
 
+/**
+ * Derives a unique `users.username` from the citizen's email so they never
+ * have to invent or remember a separate one — login already accepts either.
+ * Falls back to appending a numeric suffix on collision.
+ */
+function generateUsernameFromEmail(PDO $pdo, string $email): string
+{
+    $localPart = strtolower(strstr($email, '@', true) ?: $email);
+    $base = preg_replace('/[^a-z0-9_-]/', '', $localPart);
+    if (strlen($base) < 5) {
+        $base = str_pad($base, 5, '0');
+    }
+    $base = substr($base, 0, 45); // leaves room for a "-NN" suffix within VARCHAR(50)
+
+    $stmt = $pdo->prepare('SELECT 1 FROM users WHERE username = ?');
+
+    $candidate = $base;
+    $suffix = 1;
+    while (true) {
+        $stmt->execute([$candidate]);
+        if (!$stmt->fetch()) {
+            return $candidate;
+        }
+        $suffix++;
+        $candidate = $base . '-' . $suffix;
+    }
+}
+
 $errors = [];
 $formData = [];
 $ipAddress = $_SERVER['REMOTE_ADDR'] ?? '0.0.0.0';
@@ -81,7 +109,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $postalCode = trim($_POST['postal_code'] ?? '');
     $idType = trim($_POST['id_type'] ?? '');
     $idNumber = trim($_POST['id_number'] ?? '');
-    $username = trim($_POST['username'] ?? '');
     $password = $_POST['password'] ?? '';
     $confirmPassword = $_POST['confirm_password'] ?? '';
 
@@ -99,7 +126,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if (empty($province)) $errors[] = 'Province is required';
     if (empty($idType)) $errors[] = 'ID type is required';
     if (empty($idNumber)) $errors[] = 'ID number is required';
-    if (empty($username)) $errors[] = 'Username is required';
     if (empty($password)) $errors[] = 'Password is required';
     if (empty($confirmPassword)) $errors[] = 'Please confirm your password';
 
@@ -124,16 +150,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             if ($age < 18) {
                 $errors[] = 'You must be at least 18 years old to register';
             }
-        }
-    }
-
-    // Username validation
-    if (!empty($username)) {
-        if (strlen($username) < 5) {
-            $errors[] = 'Username must be at least 5 characters long';
-        }
-        if (!preg_match('/^[a-zA-Z0-9_-]+$/', $username)) {
-            $errors[] = 'Username can only contain letters, numbers, hyphens, and underscores';
         }
     }
 
@@ -192,12 +208,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         try {
             $pdo = getDB();
 
-            // Check if username already exists
-            $stmt = $pdo->prepare("SELECT id FROM users WHERE username = ? OR email = ?");
-            $stmt->execute([$username, $email]);
+            // Check if the email already exists (username is derived below, so it
+            // can never collide on its own — only the email identifies the citizen).
+            $stmt = $pdo->prepare("SELECT id FROM users WHERE email = ?");
+            $stmt->execute([$email]);
             if ($stmt->fetch()) {
-                $errors[] = 'Username or email already exists. Please choose different credentials.';
+                $errors[] = 'That email is already registered. Please log in instead.';
             } else {
+                $username = generateUsernameFromEmail($pdo, $email);
                 $idPhotoPath = null;
                 $filePath = null;
 
@@ -282,7 +300,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         } catch (PDOException $e) {
             error_log('Citizen registration failed: ' . $e->getMessage());
             if ($e->getCode() === '23000') {
-                $errors[] = 'That username, email, or ID number is already registered.';
+                $errors[] = 'That email or ID number is already registered.';
             } else {
                 $errors[] = 'Registration failed due to a system error. Please try again later.';
             }
@@ -1205,9 +1223,8 @@ $civilStatuses = ['Single', 'Married', 'Divorced', 'Widowed', 'Separated'];
                     <h3 class="section-title">Account Credentials</h3>
 
                     <div class="form-group">
-                        <label for="username">Username <span class="required">*</span></label>
-                        <input type="text" id="username" name="username" value="<?= htmlspecialchars($formData['username'] ?? '') ?>" required>
-                        <small style="color: var(--muted); margin-top: 0.3rem; display: block;">We suggest one based on your Gmail so it's easy to remember — feel free to change it. 5+ characters, letters, numbers, hyphens.</small>
+                        <label>Username</label>
+                        <p style="color: var(--muted); margin: 0;">Your email address doubles as your username — one less thing to remember. Log in with either.</p>
                     </div>
 
                     <div class="form-group">
@@ -1335,22 +1352,6 @@ $civilStatuses = ['Single', 'Married', 'Divorced', 'Widowed', 'Separated'];
             }
         })();
 
-        // Suggest a username from the email's local part, since most people register
-        // with the Gmail they already remember. Only ever fills a username the user
-        // hasn't typed into themselves, and never overwrites a manual edit.
-        const emailInput = document.getElementById('email');
-        const usernameInput = document.getElementById('username');
-        let usernameTouched = usernameInput.value.trim() !== '';
-
-        usernameInput.addEventListener('input', () => {
-            usernameTouched = usernameInput.value.trim() !== '';
-        });
-
-        emailInput.addEventListener('input', () => {
-            if (usernameTouched) return;
-            const localPart = emailInput.value.split('@')[0] || '';
-            usernameInput.value = localPart.toLowerCase().replace(/[^a-z0-9_-]/g, '').slice(0, 50);
-        });
 
         const passwordInput = document.getElementById('password');
 

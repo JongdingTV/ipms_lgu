@@ -16,7 +16,7 @@ CREATE TABLE IF NOT EXISTS system_settings (
 
 INSERT INTO system_settings (setting_key, setting_value, value_type) VALUES
 ('site_name', 'LGU Infrastructure Project Management System', 'string'),
-('support_email', 'ipms.systemlgu@gmail.com', 'string'),
+('support_email', 'ipms.infragovservicesph@gmail.com', 'string'),
 ('session_timeout_minutes', '30', 'integer'),
 ('login_max_attempts', '5', 'integer'),
 ('login_lockout_minutes', '15', 'integer'),

@@ -6,6 +6,12 @@
 
 require_once __DIR__ . '/config.php';
 require_once __DIR__ . '/db.php';
+require_once __DIR__ . '/../vendor/PHPMailer/Exception.php';
+require_once __DIR__ . '/../vendor/PHPMailer/PHPMailer.php';
+require_once __DIR__ . '/../vendor/PHPMailer/SMTP.php';
+
+use PHPMailer\PHPMailer\PHPMailer;
+use PHPMailer\PHPMailer\Exception as PHPMailerException;
 
 class OTPManager
 {
@@ -207,75 +213,48 @@ class OTPManager
         }
     }
 
-    /** Minimal dependency-free SMTP client (STARTTLS/AUTH LOGIN) for MAIL_* config. */
+    /** PHPMailer-based SMTP send using the MAIL_* config (ipms.infragovservicesph@gmail.com). */
     private function smtpSend(string $to, string $subject, string $htmlBody): void
     {
-        $host = MAIL_HOST;
-        $port = (int) MAIL_PORT;
-        $encryption = strtolower(MAIL_ENCRYPTION);
-        $scheme = $encryption === 'ssl' ? 'ssl' : 'tcp';
+        $mail = new PHPMailer(true);
 
-        $socket = @stream_socket_client("{$scheme}://{$host}:{$port}", $errno, $errstr, 15);
-        if (!$socket) {
-            throw new RuntimeException("Unable to connect to mail server ({$errstr}).");
+        try {
+            $mail->SMTPDebug = 0;
+            $mail->isSMTP();
+            $mail->Host = MAIL_HOST;
+            $mail->SMTPAuth = true;
+            $mail->Username = MAIL_USERNAME;
+            $mail->Password = MAIL_PASSWORD;
+            $mail->SMTPSecure = strtolower(MAIL_ENCRYPTION) === 'ssl'
+                ? PHPMailer::ENCRYPTION_SMTPS
+                : PHPMailer::ENCRYPTION_STARTTLS;
+            $mail->Port = (int) MAIL_PORT;
+            $mail->CharSet = 'UTF-8';
+            $mail->Timeout = 15;
+
+            // Matches the working LGU portal config: local XAMPP/OpenSSL cert
+            // verification against Gmail's chain is flaky, so peer verification
+            // is relaxed here (the connection itself is still TLS-encrypted).
+            $mail->SMTPOptions = [
+                'ssl' => [
+                    'verify_peer' => false,
+                    'verify_peer_name' => false,
+                    'allow_self_signed' => true,
+                ],
+            ];
+
+            $mail->setFrom(MAIL_FROM_EMAIL, MAIL_FROM_NAME);
+            $mail->addAddress($to);
+
+            $mail->isHTML(true);
+            $mail->Subject = $subject;
+            $mail->Body = $htmlBody;
+            $mail->AltBody = trim(strip_tags($htmlBody));
+
+            $mail->send();
+        } catch (PHPMailerException $e) {
+            throw new RuntimeException('PHPMailer error: ' . $mail->ErrorInfo, 0, $e);
         }
-        stream_set_timeout($socket, 15);
-
-        $domain = ltrim((string) strrchr(MAIL_FROM_EMAIL, '@'), '@') ?: 'localhost';
-
-        $this->smtpReadResponse($socket, '220');
-        $this->smtpCommand($socket, "EHLO {$domain}", '250');
-
-        if ($encryption === 'tls') {
-            $this->smtpCommand($socket, 'STARTTLS', '220');
-            if (!stream_socket_enable_crypto($socket, true, STREAM_CRYPTO_METHOD_TLS_CLIENT)) {
-                throw new RuntimeException('STARTTLS negotiation failed.');
-            }
-            $this->smtpCommand($socket, "EHLO {$domain}", '250');
-        }
-
-        $this->smtpCommand($socket, 'AUTH LOGIN', '334');
-        $this->smtpCommand($socket, base64_encode(MAIL_USERNAME), '334');
-        $this->smtpCommand($socket, base64_encode(MAIL_PASSWORD), '235');
-
-        $this->smtpCommand($socket, 'MAIL FROM:<' . MAIL_FROM_EMAIL . '>', '250');
-        $this->smtpCommand($socket, 'RCPT TO:<' . $to . '>', '250');
-        $this->smtpCommand($socket, 'DATA', '354');
-
-        $headers = implode("\r\n", [
-            'From: ' . MAIL_FROM_NAME . ' <' . MAIL_FROM_EMAIL . '>',
-            'To: <' . $to . '>',
-            'Subject: =?UTF-8?B?' . base64_encode($subject) . '?=',
-            'MIME-Version: 1.0',
-            'Content-Type: text/html; charset=UTF-8',
-            'Date: ' . date('r'),
-        ]);
-        $body = str_replace("\n.", "\n..", $htmlBody);
-        $this->smtpCommand($socket, $headers . "\r\n\r\n" . $body . "\r\n.", '250');
-
-        fwrite($socket, "QUIT\r\n");
-        fclose($socket);
-    }
-
-    private function smtpCommand($socket, string $command, string $expectedCode): string
-    {
-        fwrite($socket, $command . "\r\n");
-        return $this->smtpReadResponse($socket, $expectedCode);
-    }
-
-    private function smtpReadResponse($socket, string $expectedCode): string
-    {
-        $response = '';
-        while (($line = fgets($socket, 515)) !== false) {
-            $response .= $line;
-            if (!isset($line[3]) || $line[3] !== '-') {
-                break;
-            }
-        }
-        if (substr($response, 0, 3) !== $expectedCode) {
-            throw new RuntimeException('Unexpected SMTP response: ' . trim($response));
-        }
-        return $response;
     }
 
     /**

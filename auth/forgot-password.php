@@ -49,6 +49,7 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
             $_SESSION['pending_reset_last_sent_at'],
             $_SESSION['pending_reset_fake_attempts'],
             $_SESSION['pending_reset_origin'],
+            $_SESSION['pending_reset_otp_verified'],
             $_SESSION['dev_otp_preview']
         );
 
@@ -136,9 +137,10 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
             --btn-shadow: rgba(37, 99, 235, 0.24);
         }
 
-        /* Citizen flow: blurred City Hall photo backdrop + glass card,
-           matching citizen/login.php. Staff flow keeps the flat background. */
-        body.theme-citizen::before {
+        /* Blurred City Hall photo backdrop + glass card, matching
+           citizen/login.php and auth/login.php on both themes. The wash tint
+           (below) is what tells staff and citizen apart — blue vs. navy. */
+        body::before {
             content: "";
             position: fixed;
             inset: -24px;
@@ -156,17 +158,22 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
             background: linear-gradient(180deg, rgba(37, 99, 235, 0.16), rgba(242, 247, 253, 0.42));
         }
 
-        body.theme-citizen .auth-card {
-            background: rgba(255, 255, 255, 0.74);
-            backdrop-filter: blur(14px) saturate(1.4);
-            -webkit-backdrop-filter: blur(14px) saturate(1.4);
-            border-color: rgba(255, 255, 255, 0.55);
+        /* Darker, more "official" navy wash for staff — same photo as the
+           citizen portal, mirrors auth/login.php's brand treatment. */
+        body.theme-staff::after {
+            content: "";
+            position: fixed;
+            inset: 0;
+            z-index: -1;
+            background: linear-gradient(180deg, rgba(24, 35, 51, 0.38), rgba(242, 247, 253, 0.35));
         }
 
         .auth-card {
             width: min(460px, 100%);
-            background: #ffffff;
-            border: 1px solid var(--line);
+            background: rgba(255, 255, 255, 0.74);
+            backdrop-filter: blur(14px) saturate(1.4);
+            -webkit-backdrop-filter: blur(14px) saturate(1.4);
+            border: 1px solid rgba(255, 255, 255, 0.55);
             border-radius: 16px;
             overflow: hidden;
             box-shadow: 0 24px 60px rgba(16, 32, 29, 0.14);
@@ -253,6 +260,14 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
             background: var(--paper);
             color: var(--ink);
             transition: border-color 0.2s, box-shadow 0.2s, background 0.2s;
+        }
+
+        /* The card now sits on a blurred photo backdrop on both themes, so a
+           --paper-filled input (near-white, same as the page) would read as
+           almost invisible against the translucent glass card. */
+        input[type="email"] {
+            background: #ffffff;
+            border-color: #aebfd6;
         }
 
         input[type="email"]:focus {
