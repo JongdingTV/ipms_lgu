@@ -58,6 +58,7 @@ $priority = $_POST['priority'] ?? 'medium';
 $message = $_POST['message'] ?? '';
 $district = trim($_POST['district'] ?? '');
 $barangay = trim($_POST['barangay'] ?? '');
+$location = trim($_POST['location'] ?? '');
 $latitudeRaw = trim($_POST['latitude'] ?? '');
 $longitudeRaw = trim($_POST['longitude'] ?? '');
 $concernType = trim($_POST['concern_type'] ?? 'project');
@@ -92,14 +93,20 @@ if (empty($priority) || !in_array($priority, ['low', 'medium', 'high', 'urgent']
 if (empty($message) || strlen($message) < 10) {
     $errors[] = 'Message must be at least 10 characters';
 }
-// The feedback form always collects district + barangay via the QC location
-// picker — there is no separate free-text location field — for both project
-// and maintenance concerns, so both are validated and stored the same way.
-if ($district === '' || $barangay === '') {
-    $errors[] = 'Please select your district and barangay';
-} elseif (!qcIsValidLocation($district, $barangay)) {
-    // Rejects mismatched pairs (e.g. a D1 barangay submitted with D3) and unknown names.
-    $errors[] = 'The selected barangay does not belong to the selected district';
+// Only the native IPMS wizard form (project concerns) collects district +
+// barangay via the QC location picker. The maintenance path is a replica of
+// CIMMS' own request form, which has no district/barangay fields at all —
+// it only ever collects a free-text location (picked on the map or typed),
+// so district/barangay must never be required there.
+if ($concernType === 'project') {
+    if ($district === '' || $barangay === '') {
+        $errors[] = 'Please select your district and barangay';
+    } elseif (!qcIsValidLocation($district, $barangay)) {
+        // Rejects mismatched pairs (e.g. a D1 barangay submitted with D3) and unknown names.
+        $errors[] = 'The selected barangay does not belong to the selected district';
+    }
+} elseif ($concernType === 'maintenance' && $location === '') {
+    $errors[] = 'Please select a location';
 }
 
 // Maintenance reports forward straight to CIMMS, which either uses the exact
@@ -221,11 +228,11 @@ try {
         INSERT INTO feedback (
             project_id, citizen_id, citizen_name, message, category, infrastructure_type, concern_type,
             anonymous, contact_name, contact_phone, contact_email,
-            cimm_sync_status, priority, district, barangay, latitude, longitude, status
+            cimm_sync_status, priority, district, barangay, location, latitude, longitude, status
         ) VALUES (
             NULL, ?, ?, ?, ?, ?, ?,
             ?, ?, ?, ?,
-            ?, ?, ?, ?, ?, ?, 'open'
+            ?, ?, ?, ?, ?, ?, ?, 'open'
         )
     ");
     $stmt->execute([
@@ -243,6 +250,7 @@ try {
         $priority,
         $district ?: null,
         $barangay ?: null,
+        $location ?: null,
         $latitude,
         $longitude,
     ]);
@@ -296,10 +304,11 @@ try {
                 // otherwise leave it blank so CimmClient falls back to
                 // mapInfrastructure($category).
                 'infrastructure' => $cimmInfrastructure,
-                // Leave blank so CimmClient::buildLocation() composes
-                // "Brgy. X, District Y, Quezon City" from the district/
-                // barangay actually collected by the form.
-                'location' => '',
+                // The maintenance form has no district/barangay fields (same as
+                // CIMMS' own request form) — forward the address the citizen
+                // actually picked/typed. CimmClient::buildLocation() is only a
+                // fallback for the project-feedback path, which never reaches here.
+                'location' => $location,
                 'latitude' => $latitude,
                 'longitude' => $longitude,
                 'name' => $resolvedName,

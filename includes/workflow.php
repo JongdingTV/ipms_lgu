@@ -146,6 +146,10 @@ function feedbackEnsureSchema(PDO $db): void
         $db->exec("ALTER TABLE feedback ADD COLUMN IF NOT EXISTS barangay VARCHAR(100) NULL AFTER district");
         $db->exec("ALTER TABLE feedback ADD COLUMN IF NOT EXISTS latitude DECIMAL(10,7) NULL AFTER barangay");
         $db->exec("ALTER TABLE feedback ADD COLUMN IF NOT EXISTS longitude DECIMAL(10,7) NULL AFTER latitude");
+        // Free-text address for maintenance/CIMMS reports — these never collect a
+        // district+barangay pair (CIMMS' own form has no such fields), so the
+        // picked/typed address itself is the only location signal to keep.
+        $db->exec("ALTER TABLE feedback ADD COLUMN IF NOT EXISTS location VARCHAR(255) NULL AFTER barangay");
         $db->exec("ALTER TABLE feedback ADD INDEX IF NOT EXISTS idx_feedback_concern_type (concern_type)");
         $db->exec("ALTER TABLE feedback ADD INDEX IF NOT EXISTS idx_feedback_cimm_sync (cimm_sync_status)");
 

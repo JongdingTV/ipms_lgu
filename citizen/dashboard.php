@@ -719,17 +719,48 @@ $statusChip = [
         </div>
       </div>
 
-      <!-- CIMMS-style map picker: drop or drag the pin and the Location
-           field fills itself from OpenStreetMap reverse geocoding. -->
+      <!-- CIMMS-style map picker — replica of CIMMS' own "Select Location"
+           modal (lgu-portal citizenrepform.php): satellite basemap with a
+           street-map toggle, GPS button, address search, and a district
+           badge that auto-detects from wherever the pin lands. -->
       <div id="cimmsMapBackdrop">
         <div id="cimmsMapModal">
-          <div class="cimms-map-title">Pin the Location</div>
-          <div class="cimms-map-desc">Tap the map to drop a pin — drag it to fine-tune. The address fills in automatically.</div>
-          <div id="cimmsMapCanvas"></div>
-          <div class="cimms-map-address" id="cimmsMapAddress"></div>
+          <div class="cimms-map-header">
+            <button type="button" id="cimmsGpsBtn" title="Use my current location">📍</button>
+            <button type="button" id="cimmsLabelToggle" title="Toggle location labels">🏷️</button>
+            <h3>Select Location</h3>
+            <button type="button" id="cimmsLayerToggle">Street</button>
+          </div>
+
+          <div id="cimmsDistrictInfo" class="cimms-district-info"></div>
+
+          <div class="cimms-map-address-input">
+            <div class="cimms-map-address-row">
+              <div class="cimms-barangay-combobox" id="cimmsBarangayCombobox">
+                <div class="cimms-combobox-display" id="cimmsComboboxDisplay">
+                  <span id="cimmsComboboxLabel">Select Barangay (Quezon City)</span>
+                  <span class="cimms-combobox-arrow">▾</span>
+                </div>
+                <div class="cimms-combobox-dropdown" id="cimmsComboboxDropdown">
+                  <input type="text" id="cimmsComboboxSearch" placeholder="🔍 Search barangay or district..." autocomplete="off">
+                  <div class="cimms-combobox-list" id="cimmsComboboxList"></div>
+                </div>
+              </div>
+              <div class="cimms-map-search-wrap">
+                <input type="text" id="cimmsMapSearch" placeholder="🔍 Search address or place…" autocomplete="off">
+                <div id="cimmsMapSearchDropdown"></div>
+              </div>
+            </div>
+            <input type="text" id="cimmsManualAddress" placeholder="Type or auto-detect address">
+          </div>
+
+          <div id="cimms-map-wrapper">
+            <div id="cimmsMapCanvas"></div>
+          </div>
+
           <div class="cimms-map-btns">
             <button class="cimms-alert-btn cancel" type="button" id="cimmsMapCancel">Cancel</button>
-            <button class="cimms-alert-btn confirm" type="button" id="cimmsMapUse">Use this location</button>
+            <button class="cimms-alert-btn confirm" type="button" id="cimmsMapUse">Save Location</button>
           </div>
         </div>
       </div>

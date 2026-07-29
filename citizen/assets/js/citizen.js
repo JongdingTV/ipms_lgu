@@ -882,7 +882,7 @@ function renderFeedbackDetail(f) {
 
         <div class="detail-stats">
             <div class="detail-stat"><span class="profile-label">Priority</span><strong><span class="priority-dot priority-${escapeHtml(f.priority)}"></span> ${capitalizeFirst(f.priority)}</strong></div>
-            <div class="detail-stat"><span class="profile-label">Location</span><strong>${f.barangay ? (f.district ? 'Brgy. ' + escapeHtml(f.barangay) + ', ' + escapeHtml(f.district) : escapeHtml(f.barangay)) : 'Not specified'}</strong></div>
+            <div class="detail-stat"><span class="profile-label">Location</span><strong>${f.barangay ? (f.district ? 'Brgy. ' + escapeHtml(f.barangay) + ', ' + escapeHtml(f.district) : escapeHtml(f.barangay)) : (f.location ? escapeHtml(f.location) : 'Not specified')}</strong></div>
         </div>
 
         <div class="detail-section">
@@ -1603,7 +1603,7 @@ function setupListControls() {
         bodyId: 'trackedFeedbackBody', searchId: 'tfSearch',
         infoId: 'tfPagerInfo', prevId: 'tfPagerPrev', nextId: 'tfPagerNext',
         columns: 7, emptyText: 'No feedback submissions yet',
-        searchText: f => `${f.project_name || ''} ${f.message || ''} ${feedbackCategoryLabel(f.category)} ${f.barangay || ''} ${f.district || ''}`,
+        searchText: f => `${f.project_name || ''} ${f.message || ''} ${feedbackCategoryLabel(f.category)} ${f.barangay || ''} ${f.district || ''} ${f.location || ''}`,
         rowHtml: f => `
             <tr>
                 <td>
@@ -1612,7 +1612,7 @@ function setupListControls() {
                 </td>
                 <td class="cell-nowrap">${feedbackCategoryLabel(f.category)}</td>
                 <td class="cell-nowrap"><span class="priority-dot priority-${escapeHtml(f.priority)}"></span>${capitalizeFirst(f.priority)}</td>
-                <td class="cell-nowrap">${f.barangay ? (f.district ? 'Brgy. ' + escapeHtml(f.barangay) : escapeHtml(f.barangay)) : '—'}</td>
+                <td class="cell-nowrap">${f.barangay ? (f.district ? 'Brgy. ' + escapeHtml(f.barangay) : escapeHtml(f.barangay)) : (f.location ? escapeHtml(f.location) : '—')}</td>
                 <td class="cell-nowrap">${formatDate(f.created_at)}</td>
                 <td><span class="feedback-status status-${escapeHtml(f.status)}">${capitalizeFirst(f.status)}</span></td>
                 <td class="cell-nowrap"><button type="button" class="btn-outline" style="padding:6px 14px;font-size:.78rem;" onclick="openFeedbackDetail(${Number(f.id)})">View</button></td>
@@ -1848,10 +1848,10 @@ function createFeedbackItem(item) {
                         <svg width="14" height="14" viewBox="0 0 20 20" fill="currentColor" class="meta-icon"><path d="M9 2a1 1 0 000 2h2a1 1 0 100-2H9z"/><path fill-rule="evenodd" d="M4 5a2 2 0 012-2 3 3 0 003 3h2a3 3 0 003-3 2 2 0 012 2v11a2 2 0 01-2 2H6a2 2 0 01-2-2V5zm3 4a1 1 0 000 2h.01a1 1 0 100-2H7zm3 0a1 1 0 000 2h3a1 1 0 100-2h-3zm-3 4a1 1 0 100 2h.01a1 1 0 100-2H7zm3 0a1 1 0 100 2h3a1 1 0 100-2h-3z" clip-rule="evenodd"/></svg>
                         ${feedbackCategoryLabel(item.category)}
                     </span>
-                    ${item.barangay ? `
+                    ${item.barangay || item.location ? `
                     <span>
                         <svg width="14" height="14" viewBox="0 0 20 20" fill="currentColor" class="meta-icon"><path fill-rule="evenodd" d="M5.05 4.05a7 7 0 119.9 9.9L10 18.9l-4.95-4.95a7 7 0 010-9.9zM10 11a2 2 0 100-4 2 2 0 000 4z" clip-rule="evenodd"/></svg>
-                        ${item.district ? 'Brgy. ' + escapeHtml(item.barangay) + ', ' + escapeHtml(item.district) : escapeHtml(item.barangay)}
+                        ${item.barangay ? (item.district ? 'Brgy. ' + escapeHtml(item.barangay) + ', ' + escapeHtml(item.district) : escapeHtml(item.barangay)) : escapeHtml(item.location)}
                     </span>` : ''}
                     ${item.latitude && item.longitude ? `
                     <a class="feedback-pin-link" href="https://www.openstreetmap.org/?mlat=${encodeURIComponent(item.latitude)}&mlon=${encodeURIComponent(item.longitude)}#map=18/${encodeURIComponent(item.latitude)}/${encodeURIComponent(item.longitude)}" target="_blank" rel="noopener">
@@ -2057,10 +2057,14 @@ function cimmsResetForm() {
     if (infraSelect) { infraSelect.style.display = ''; infraSelect.value = ''; }
     const search = document.getElementById('cimmsMapSearch');
     if (search) search.value = '';
-    const addr = document.getElementById('cimmsMapAddress');
-    if (addr) addr.textContent = '';
-    const suggestions = document.getElementById('cimmsLocationSuggestions');
-    if (suggestions) suggestions.style.display = 'none';
+    const addr = document.getElementById('cimmsManualAddress');
+    if (addr) addr.value = '';
+    const suggestions = document.getElementById('cimmsMapSearchDropdown');
+    if (suggestions) suggestions.classList.remove('open');
+    const districtInfo = document.getElementById('cimmsDistrictInfo');
+    if (districtInfo) { districtInfo.style.display = 'none'; districtInfo.className = 'cimms-district-info'; }
+    const comboboxLabel = document.getElementById('cimmsComboboxLabel');
+    if (comboboxLabel) { comboboxLabel.textContent = 'Select Barangay (Quezon City)'; comboboxLabel.classList.remove('selected'); }
 }
 
 function setupCimmsMaintenanceForm() {
@@ -2102,36 +2106,315 @@ function setupCimmsMaintenanceForm() {
         });
     }
 
-    // --- Location: the readonly field opens the map picker. Inside the
-    // modal: search a place (OpenStreetMap Nominatim, Quezon City only),
-    // tap the map to drop a pin, or use GPS — every path reverse-geocodes
-    // and fills the Location field automatically. ---
+    // --- Location: the readonly field opens a replica of CIMMS' own full-
+    // screen "Select Location" modal (satellite basemap + street toggle,
+    // GPS button, address search, and a district badge that auto-detects
+    // from wherever the pin lands, same as citizenrepform.php). Every path
+    // ends up with a pinned lat/lng — CIMMS has to geocode a free-text
+    // address itself otherwise, which can drift to a different spot each
+    // time the request is viewed. ---
     const locationInput = document.getElementById('cimmsLocationInput');
     const mapBackdrop = document.getElementById('cimmsMapBackdrop');
-    const mapAddress = document.getElementById('cimmsMapAddress');
+    const manualAddress = document.getElementById('cimmsManualAddress');
     const mapSearch = document.getElementById('cimmsMapSearch');
-    const suggestionBox = document.getElementById('cimmsLocationSuggestions');
+    const suggestionBox = document.getElementById('cimmsMapSearchDropdown');
+    const gpsBtn = document.getElementById('cimmsGpsBtn');
+    const labelToggleBtn = document.getElementById('cimmsLabelToggle');
+    const layerToggleBtn = document.getElementById('cimmsLayerToggle');
+    const districtInfo = document.getElementById('cimmsDistrictInfo');
+    const comboboxWrap = document.getElementById('cimmsBarangayCombobox');
+    const comboboxDisplay = document.getElementById('cimmsComboboxDisplay');
+    const comboboxLabel = document.getElementById('cimmsComboboxLabel');
+    const comboboxDropdown = document.getElementById('cimmsComboboxDropdown');
+    const comboboxSearch = document.getElementById('cimmsComboboxSearch');
+    const comboboxList = document.getElementById('cimmsComboboxList');
     let cimmsMap = null;
+    let cimmsSatelliteLayer = null;
+    let cimmsStreetLayer = null;
+    let cimmsUsingSatellite = true;
+    let cimmsLabelsEnabled = true;
+    let cimmsLocationLabels = [];
     let cimmsMapMarker = null;
+    let cimmsGeoLayer = null;
     let cimmsPickedAddress = '';
     let cimmsPickedLat = null;
     let cimmsPickedLng = null;
+    let cimmsDetectedDistrict = '';
+    let cimmsSelectedBarangay = '';
+    let cimmsGeoJsonCache = null;
     let debounceTimer = null;
+
+    // Same hand-picked major-locations list CIMMS' own map uses (its own
+    // satellite basemap has no built-in labels either) — kept identical so
+    // the maintenance path reads exactly like the real CIMMS request form.
+    const CIMMS_MAJOR_LOCATIONS = [
+        { name: 'Fairview', lat: 14.7234, lng: 121.0667 }, { name: 'Novaliches', lat: 14.7267, lng: 121.0512 },
+        { name: 'Commonwealth', lat: 14.7045, lng: 121.1156 }, { name: 'San Martin de Porres', lat: 14.7423, lng: 121.0312 },
+        { name: 'Lagro', lat: 14.7189, lng: 121.0778 }, { name: 'Sauyo', lat: 14.7289, lng: 121.0612 },
+        { name: 'Talipapa', lat: 14.7234, lng: 121.0534 }, { name: 'Batasan Hills', lat: 14.6883, lng: 121.1089 },
+        { name: 'Payatas', lat: 14.7138, lng: 121.1034 }, { name: 'UP Diliman', lat: 14.6538, lng: 121.0682 },
+        { name: 'Cubao', lat: 14.6223, lng: 121.0500 }, { name: 'Project 6', lat: 14.6423, lng: 121.0447 },
+        { name: 'Project 8', lat: 14.6467, lng: 121.0334 }, { name: 'Tandang Sora', lat: 14.6777, lng: 121.0557 },
+        { name: 'Kamuning', lat: 14.6234, lng: 121.0371 }, { name: 'Loyola Heights', lat: 14.6398, lng: 121.0775 },
+        { name: 'Libis', lat: 14.6345, lng: 121.0612 }, { name: 'White Plains', lat: 14.6267, lng: 121.0589 },
+        { name: 'Blue Ridge', lat: 14.6956, lng: 121.0500 }, { name: 'Novaliches West', lat: 14.7167, lng: 121.0378 },
+        { name: 'Sangandaan', lat: 14.6534, lng: 121.0156 }, { name: 'Araneta Center', lat: 14.6178, lng: 121.0523 },
+        { name: 'Katipunan', lat: 14.6612, lng: 121.0443 }, { name: 'Teachers Village', lat: 14.6240, lng: 121.0501 }
+    ];
+
+    function cimmsAddLocationLabels() {
+        cimmsLocationLabels.forEach(label => cimmsMap && cimmsMap.removeLayer && cimmsMap.removeLayer(label));
+        cimmsLocationLabels = CIMMS_MAJOR_LOCATIONS.map(loc =>
+            L.marker([loc.lat, loc.lng], { icon: L.divIcon({ className: 'cimms-map-label', html: loc.name, iconSize: null }), interactive: false })
+        );
+        if (cimmsUsingSatellite && cimmsMap && cimmsLabelsEnabled) {
+            cimmsLocationLabels.forEach(label => label.addTo(cimmsMap));
+        }
+    }
+
+    function cimmsUpdateLabelsVisibility() {
+        if (!cimmsMap) return;
+        if (cimmsUsingSatellite && cimmsLabelsEnabled) {
+            cimmsLocationLabels.forEach(label => { if (!cimmsMap.hasLayer(label)) label.addTo(cimmsMap); });
+        } else {
+            cimmsLocationLabels.forEach(label => { if (cimmsMap.hasLayer(label)) cimmsMap.removeLayer(label); });
+        }
+        cimmsUpdateLabelToggleButton();
+    }
+
+    function cimmsUpdateLabelToggleButton() {
+        if (!labelToggleBtn) return;
+        if (!cimmsUsingSatellite) {
+            labelToggleBtn.classList.add('disabled');
+            labelToggleBtn.disabled = true;
+            labelToggleBtn.title = 'Labels only available in satellite view';
+        } else {
+            labelToggleBtn.classList.remove('disabled');
+            labelToggleBtn.disabled = false;
+            labelToggleBtn.title = cimmsLabelsEnabled ? 'Hide location labels' : 'Show location labels';
+        }
+    }
 
     function cimmsSetAddress(address) {
         cimmsPickedAddress = address;
-        if (mapAddress) mapAddress.textContent = '📍 ' + address;
+        if (manualAddress) manualAddress.value = address;
         if (locationInput) locationInput.value = address;
     }
 
     function cimmsReverseGeocode(latlng) {
-        if (mapAddress) mapAddress.textContent = 'Looking up address…';
+        if (manualAddress) manualAddress.value = 'Looking up address…';
         const fallback = latlng.lat.toFixed(5) + ', ' + latlng.lng.toFixed(5);
         fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${latlng.lat}&lon=${latlng.lng}&addressdetails=1`)
             .then(res => res.json())
             .then(data => cimmsSetAddress(data.display_name || fallback))
             .catch(() => cimmsSetAddress(fallback));
     }
+
+    // Ray-casting point-in-polygon test against the QC barangay GeoJSON,
+    // used to auto-detect (and color) the district the pin landed in —
+    // mirrors CIMMS' own districtInfo banner.
+    function cimmsPointInRing(lat, lng, ring) {
+        let inside = false;
+        for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
+            const xi = ring[i][0], yi = ring[i][1];
+            const xj = ring[j][0], yj = ring[j][1];
+            const intersect = ((yi > lat) !== (yj > lat)) &&
+                (lng < (xj - xi) * (lat - yi) / (yj - yi) + xi);
+            if (intersect) inside = !inside;
+        }
+        return inside;
+    }
+
+    function cimmsPointInFeature(lat, lng, feature) {
+        const geom = feature.geometry;
+        if (!geom) return false;
+        const polys = geom.type === 'Polygon' ? [geom.coordinates] : (geom.type === 'MultiPolygon' ? geom.coordinates : []);
+        return polys.some(poly => poly.length > 0 && cimmsPointInRing(lat, lng, poly[0]));
+    }
+
+    function cimmsLoadGeoJson() {
+        if (cimmsGeoJsonCache) return Promise.resolve(cimmsGeoJsonCache);
+        if (!window.QC_GEOJSON_URL) return Promise.resolve(null);
+        return fetch(window.QC_GEOJSON_URL).then(res => res.json()).then(data => {
+            cimmsGeoJsonCache = data;
+            return data;
+        }).catch(() => null);
+    }
+
+    const CIMMS_DISTRICT_BADGE_CLASS = {
+        'District 1': 'd1', 'District 2': 'd2', 'District 3': 'd3',
+        'District 4': 'd4', 'District 5': 'd5', 'District 6': 'd6'
+    };
+
+    function cimmsShowDistrict(district) {
+        cimmsDetectedDistrict = district || '';
+        if (!districtInfo) return;
+        districtInfo.className = 'cimms-district-info';
+        if (!district) {
+            districtInfo.style.display = 'none';
+            return;
+        }
+        const badgeClass = CIMMS_DISTRICT_BADGE_CLASS[district];
+        if (badgeClass) districtInfo.classList.add(badgeClass);
+        districtInfo.textContent = '📌 ' + district;
+        districtInfo.style.display = 'block';
+    }
+
+    function cimmsHighlightBarangay(geoName, district) {
+        if (!cimmsGeoLayer) return;
+        cimmsGeoLayer.eachLayer(layer => cimmsGeoLayer.resetStyle(layer));
+        if (!geoName) return;
+        const color = QC_DISTRICT_COLORS[district] || '#2b6cb0';
+        cimmsGeoLayer.eachLayer(layer => {
+            if (layer.feature && layer.feature.properties && layer.feature.properties.adm4_en === geoName) {
+                layer.setStyle({ color: color, weight: 3, fillColor: color, fillOpacity: 0.35, dashArray: null });
+                if (layer.bringToFront) layer.bringToFront();
+            }
+        });
+    }
+
+    function cimmsDetectDistrict(latlng) {
+        cimmsLoadGeoJson().then(geojson => {
+            if (!geojson) return;
+            const barangayIndex = buildBarangayIndex();
+            const match = geojson.features.find(f => cimmsPointInFeature(latlng.lat, latlng.lng, f));
+            const info = match ? barangayIndex[match.properties.adm4_en] : null;
+            cimmsShowDistrict(info ? info.district : '');
+            cimmsHighlightBarangay(match ? match.properties.adm4_en : null, info ? info.district : '');
+            cimmsSetBarangayLabel(info ? info.name : '', info ? info.district : '');
+        });
+    }
+
+    // --- Barangay quick-jump combobox — same as CIMMS' own barangaySelect:
+    // picking an entry moves the pin to that barangay's polygon centroid,
+    // fits the map to it, and fills the address/district the same way a
+    // map tap would. ---
+    function cimmsSetBarangayLabel(name, district) {
+        if (!comboboxLabel) return;
+        if (!name) {
+            comboboxLabel.textContent = 'Select Barangay (Quezon City)';
+            comboboxLabel.classList.remove('selected');
+            return;
+        }
+        comboboxLabel.textContent = name + ' (' + district + ')';
+        comboboxLabel.classList.add('selected');
+    }
+
+    function cimmsBarangayCentroid(geoName) {
+        return cimmsLoadGeoJson().then(geojson => {
+            if (!geojson) return null;
+            const feature = geojson.features.find(f => f.properties && f.properties.adm4_en === geoName);
+            if (!feature) return null;
+            try {
+                return L.geoJSON(feature).getBounds().getCenter();
+            } catch (e) {
+                return null;
+            }
+        });
+    }
+
+    function cimmsBuildBarangayList() {
+        const list = [];
+        Object.keys(window.QC_DISTRICTS || {}).forEach(district => {
+            window.QC_DISTRICTS[district].forEach(entry => {
+                list.push({ name: entry.name, district: district, geo: entry.geo || entry.name });
+            });
+        });
+        return list;
+    }
+
+    function cimmsSetupBarangayCombobox() {
+        if (!comboboxDisplay || !comboboxDropdown || !comboboxSearch || !comboboxList) return;
+        const allBarangays = cimmsBuildBarangayList();
+        let isOpen = false;
+        let highlightedIndex = -1;
+        let filtered = allBarangays;
+
+        function renderList(data) {
+            comboboxList.innerHTML = '';
+            highlightedIndex = -1;
+            if (!data.length) {
+                comboboxList.innerHTML = '<div class="cimms-combobox-no-results">No results found</div>';
+                return;
+            }
+            data.forEach(b => {
+                const item = document.createElement('div');
+                item.className = 'cimms-combobox-option' + (b.name === cimmsSelectedBarangay ? ' selected-option' : '');
+                item.innerHTML = '<span class="opt-name"></span><span class="opt-district"></span>';
+                item.querySelector('.opt-name').textContent = b.name;
+                item.querySelector('.opt-district').textContent = b.district;
+                item.addEventListener('mousedown', (e) => {
+                    e.preventDefault();
+                    cimmsSelectBarangay(b);
+                });
+                comboboxList.appendChild(item);
+            });
+        }
+
+        function filterList(query) {
+            const q = query.toLowerCase().trim();
+            filtered = q ? allBarangays.filter(b => b.name.toLowerCase().includes(q) || b.district.toLowerCase().includes(q)) : allBarangays;
+            renderList(filtered);
+        }
+
+        function openDropdown() {
+            if (isOpen) return;
+            isOpen = true;
+            comboboxDisplay.classList.add('open');
+            comboboxDropdown.classList.add('open');
+            comboboxSearch.value = '';
+            filterList('');
+            setTimeout(() => comboboxSearch.focus(), 50);
+        }
+
+        function closeDropdown() {
+            if (!isOpen) return;
+            isOpen = false;
+            comboboxDisplay.classList.remove('open');
+            comboboxDropdown.classList.remove('open');
+            comboboxSearch.value = '';
+            highlightedIndex = -1;
+        }
+
+        function updateHighlight() {
+            const items = comboboxList.querySelectorAll('.cimms-combobox-option');
+            items.forEach((el, i) => {
+                el.classList.toggle('highlighted', i === highlightedIndex);
+                if (i === highlightedIndex) el.scrollIntoView({ block: 'nearest' });
+            });
+        }
+
+        function cimmsSelectBarangay(b) {
+            cimmsSelectedBarangay = b.name;
+            cimmsSetBarangayLabel(b.name, b.district);
+            closeDropdown();
+            cimmsBarangayCentroid(b.geo).then(center => {
+                if (!center || !cimmsMap) return;
+                cimmsMap.setView(center, 15);
+                cimmsPlacePin(center);
+            });
+        }
+
+        comboboxDisplay.addEventListener('click', () => (isOpen ? closeDropdown() : openDropdown()));
+        comboboxSearch.addEventListener('input', () => filterList(comboboxSearch.value));
+        comboboxSearch.addEventListener('keydown', (e) => {
+            const items = comboboxList.querySelectorAll('.cimms-combobox-option');
+            if (!items.length) return;
+            if (e.key === 'ArrowDown') { e.preventDefault(); highlightedIndex = Math.min(highlightedIndex + 1, items.length - 1); updateHighlight(); }
+            else if (e.key === 'ArrowUp') { e.preventDefault(); highlightedIndex = Math.max(highlightedIndex - 1, 0); updateHighlight(); }
+            else if (e.key === 'Enter') {
+                e.preventDefault();
+                if (highlightedIndex >= 0 && filtered[highlightedIndex]) cimmsSelectBarangay(filtered[highlightedIndex]);
+                else if (filtered.length === 1) cimmsSelectBarangay(filtered[0]);
+            } else if (e.key === 'Escape') {
+                closeDropdown();
+            }
+        });
+        document.addEventListener('click', (e) => {
+            if (comboboxWrap && !comboboxWrap.contains(e.target)) closeDropdown();
+        });
+    }
+    cimmsSetupBarangayCombobox();
 
     // When the address is already known (a picked search suggestion), the
     // reverse lookup is skipped and the suggestion text is used as-is.
@@ -2144,6 +2427,7 @@ function setupCimmsMaintenanceForm() {
                 cimmsPickedLat = dragged.lat;
                 cimmsPickedLng = dragged.lng;
                 cimmsReverseGeocode(dragged);
+                cimmsDetectDistrict(dragged);
             });
         } else {
             cimmsMapMarker.setLatLng(latlng);
@@ -2152,6 +2436,24 @@ function setupCimmsMaintenanceForm() {
         cimmsPickedLng = latlng.lng;
         if (knownAddress) cimmsSetAddress(knownAddress);
         else cimmsReverseGeocode(latlng);
+        cimmsDetectDistrict(latlng);
+    }
+
+    // Satellite (ArcGIS World Imagery) is CIMMS' default view; the toggle
+    // button switches to plain OpenStreetMap streets, same as their
+    // #mapLayerToggle button.
+    function cimmsSetLayer(useSatellite) {
+        if (!cimmsMap || !cimmsSatelliteLayer || !cimmsStreetLayer) return;
+        cimmsUsingSatellite = useSatellite;
+        if (useSatellite) {
+            if (cimmsMap.hasLayer(cimmsStreetLayer)) cimmsMap.removeLayer(cimmsStreetLayer);
+            if (!cimmsMap.hasLayer(cimmsSatelliteLayer)) cimmsSatelliteLayer.addTo(cimmsMap);
+        } else {
+            if (cimmsMap.hasLayer(cimmsSatelliteLayer)) cimmsMap.removeLayer(cimmsSatelliteLayer);
+            if (!cimmsMap.hasLayer(cimmsStreetLayer)) cimmsStreetLayer.addTo(cimmsMap);
+        }
+        if (layerToggleBtn) layerToggleBtn.textContent = useSatellite ? 'Street' : 'Satellite';
+        cimmsUpdateLabelsVisibility();
     }
 
     function openCimmsMap() {
@@ -2159,11 +2461,29 @@ function setupCimmsMaintenanceForm() {
         mapBackdrop.classList.add('active');
         loadLeafletOnce().then(() => {
             if (!cimmsMap) {
-                cimmsMap = L.map('cimmsMapCanvas').setView([14.6760, 121.0437], 12); // Quezon City
-                L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
+                cimmsMap = L.map('cimmsMapCanvas', { minZoom: 11, maxZoom: 19 }).setView([14.6760, 121.0437], 12); // Quezon City
+
+                cimmsSatelliteLayer = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
+                    maxZoom: 19,
+                    attribution: 'Tiles &copy; Esri'
+                });
+                cimmsStreetLayer = L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
+                    maxZoom: 19,
                     attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
-                }).addTo(cimmsMap);
+                });
+                cimmsAddLocationLabels();
+                cimmsSetLayer(true);
+
                 cimmsMap.on('click', (e) => cimmsPlacePin(e.latlng));
+
+                // Faint dashed QC boundary (all barangays outlined) — the
+                // pin's own barangay gets recolored solid once detected.
+                cimmsLoadGeoJson().then(geojson => {
+                    if (!geojson || !cimmsMap) return;
+                    cimmsGeoLayer = L.geoJSON(geojson, {
+                        style: { color: '#2b6cb0', weight: 1, fillColor: '#3b82f6', fillOpacity: 0.03, dashArray: '4, 4', interactive: false }
+                    }).addTo(cimmsMap);
+                });
             }
             // Leaflet mis-sizes maps created while hidden; re-measure now that the modal is open.
             setTimeout(() => cimmsMap.invalidateSize(), 80);
@@ -2174,11 +2494,24 @@ function setupCimmsMaintenanceForm() {
     }
 
     locationInput?.addEventListener('click', openCimmsMap);
+    layerToggleBtn?.addEventListener('click', () => cimmsSetLayer(!cimmsUsingSatellite));
+    labelToggleBtn?.addEventListener('click', () => {
+        if (!cimmsUsingSatellite) return;
+        cimmsLabelsEnabled = !cimmsLabelsEnabled;
+        cimmsUpdateLabelsVisibility();
+    });
+    manualAddress?.addEventListener('input', () => { cimmsPickedAddress = manualAddress.value; });
     document.getElementById('cimmsMapCancel')?.addEventListener('click', () => {
         mapBackdrop?.classList.remove('active');
     });
     document.getElementById('cimmsMapUse')?.addEventListener('click', () => {
-        if (locationInput && cimmsPickedAddress) locationInput.value = cimmsPickedAddress;
+        const finalAddress = (manualAddress?.value || '').trim();
+        if (!finalAddress) {
+            cimmsNotify('error', 'Please select or enter a location.');
+            return;
+        }
+        if (locationInput) locationInput.value = finalAddress;
+        cimmsPickedAddress = finalAddress;
         mapBackdrop?.classList.remove('active');
     });
 
@@ -2190,7 +2523,7 @@ function setupCimmsMaintenanceForm() {
             clearTimeout(debounceTimer);
 
             if (query.length < 3) {
-                suggestionBox.style.display = 'none';
+                suggestionBox.classList.remove('open');
                 return;
             }
 
@@ -2206,15 +2539,16 @@ function setupCimmsMaintenanceForm() {
                         });
 
                         if (!qcResults.length) {
-                            suggestionBox.style.display = 'none';
+                            suggestionBox.classList.remove('open');
                             return;
                         }
 
                         qcResults.forEach(place => {
                             const div = document.createElement('div');
+                            div.className = 'cimms-map-search-item';
                             div.textContent = place.display_name;
                             div.onclick = () => {
-                                suggestionBox.style.display = 'none';
+                                suggestionBox.classList.remove('open');
                                 mapSearch.value = place.display_name;
                                 const latlng = { lat: parseFloat(place.lat), lng: parseFloat(place.lon) };
                                 if (cimmsMap) cimmsMap.setView(latlng, 17);
@@ -2223,23 +2557,23 @@ function setupCimmsMaintenanceForm() {
                             suggestionBox.appendChild(div);
                         });
 
-                        suggestionBox.style.display = 'block';
+                        suggestionBox.classList.add('open');
                     })
                     .catch(() => {
-                        suggestionBox.style.display = 'none';
+                        suggestionBox.classList.remove('open');
                     });
             }, 350);
         });
 
         document.addEventListener('click', e => {
-            if (!e.target.closest('.cimms-map-search')) {
-                suggestionBox.style.display = 'none';
+            if (!e.target.closest('.cimms-map-search-wrap')) {
+                suggestionBox.classList.remove('open');
             }
         });
     }
 
-    // "My location" — GPS pin with the same reverse-geocode fill.
-    document.getElementById('cimmsMapGeo')?.addEventListener('click', () => {
+    // "My location" — GPS pin with the same reverse-geocode + district fill.
+    gpsBtn?.addEventListener('click', () => {
         if (!navigator.geolocation) {
             cimmsNotify('error', 'Location services are not available in this browser.');
             return;
@@ -2440,6 +2774,10 @@ function setupCimmsMaintenanceForm() {
         formData.append('location', document.getElementById('cimmsLocationInput')?.value.trim() || '');
         formData.append('latitude', cimmsPickedLat !== null ? String(cimmsPickedLat) : '');
         formData.append('longitude', cimmsPickedLng !== null ? String(cimmsPickedLng) : '');
+        // Auto-detected from where the pin landed (point-in-polygon against the
+        // QC barangay GeoJSON) — informational only, never required, since
+        // CIMMS' own form has no district field for citizens to fill in.
+        formData.append('district', cimmsDetectedDistrict || '');
         formData.append('contact_name', document.getElementById('cimmsName')?.value.trim() || '');
         formData.append('contact_phone', phoneInput?.value.trim() || '');
         formData.append('contact_email', document.getElementById('cimmsEmail')?.value.trim() || '');

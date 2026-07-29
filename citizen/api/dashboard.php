@@ -53,7 +53,7 @@ $recentFeedback = [];
 if ($citizenId) {
     $stmt = $pdo->prepare("
         SELECT f.id, f.project_id, f.message, f.category, f.concern_type, f.priority,
-               f.district, f.barangay, f.latitude, f.longitude, f.status, f.created_at,
+               f.district, f.barangay, f.location, f.latitude, f.longitude, f.status, f.created_at,
                f.cimm_sync_status, f.cimm_reference, f.cimm_request_id,
                p.name as project_name
         FROM feedback f
