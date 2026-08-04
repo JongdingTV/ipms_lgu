@@ -460,7 +460,7 @@ if ($action === 'decide_award') {
 
     $details = $rec['contractor_name'] . "'s award recommendation for " . $rec['project_name'] . ' was ' . $pastTense[$decision] . ($remarks !== '' ? ' — ' . $remarks : '') . '.';
     projectWorkflowLog($db, 'Contract award ' . $pastTense[$decision], $projectId, $details, $actorId ?: null);
-    logActivity($actorId, 'contract_award_' . $pastTense[$decision], $details);
+    logActivity($actorId, 'contract_award_' . $pastTense[$decision], $details, 'Contractors', $projectId);
 
     if ($decision !== 'approve' && !empty($rec['recommended_by'])) {
         notifyUser((int) $rec['recommended_by'], 'warning', 'Contract award ' . $pastTense[$decision], $details);
@@ -519,7 +519,7 @@ if ($action === 'decide_deletion') {
         $db->prepare("DELETE FROM projects WHERE id = ?")->execute([(int) $request['project_id']]);
     }
 
-    logActivity($actorId, 'project_deletion_' . $pastTense[$decision], $details);
+    logActivity($actorId, 'project_deletion_' . $pastTense[$decision], $details, 'Projects', $request['project_id'] ? (int) $request['project_id'] : null);
 
     if (!empty($request['requested_by'])) {
         notifyUser((int) $request['requested_by'], $decision === 'approve' ? 'info' : 'warning', 'Project deletion ' . $pastTense[$decision], $details);

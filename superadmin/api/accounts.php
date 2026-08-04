@@ -249,7 +249,6 @@ if ($action === 'create_user') {
 
         $details = $validated['full_name'] . ' (' . $validated['role'] . ') account created.';
         auditLog($db, $actorId, 'user_created', 'users', $newUserId, $details);
-        logActivity($actorId, 'user_created', $details);
 
         $db->commit();
     } catch (PDOException $e) {
@@ -330,7 +329,6 @@ if ($action === 'create_contractor') {
 
         $details = $validated['name'] . ' contractor profile created' . ($createLogin ? ' with portal login.' : '.');
         auditLog($db, $actorId, 'contractor_created', 'contractors', $contractorId, $details);
-        logActivity($actorId, 'contractor_created', $details);
 
         $db->commit();
     } catch (PDOException $e) {
@@ -385,7 +383,6 @@ if ($action === 'create_engineer') {
 
         $details = $validated['full_name'] . ' engineer account created.';
         auditLog($db, $actorId, 'engineer_created', 'users', $newUserId, $details);
-        logActivity($actorId, 'engineer_created', $details);
 
         $db->commit();
     } catch (PDOException $e) {
@@ -431,7 +428,6 @@ if ($action === 'review_document') {
 
     $details = '"' . $document['title'] . '" (' . $document['owner_type'] . ' #' . $document['owner_id'] . ') ' . $decision . '.';
     auditLog($db, $actorId, 'document_reviewed', 'supporting_documents', $documentId, $details);
-    logActivity($actorId, 'document_reviewed', $details);
 
     if (!empty($document['uploaded_by']) && (int) $document['uploaded_by'] !== $actorId) {
         notifyUser(
@@ -554,7 +550,6 @@ if ($action === 'decide_staff_request') {
 
     $details = $reqRow['full_name'] . ' (' . $reqRow['requested_role'] . ') account approved and created.';
     auditLog($db, $actorId, 'staff_account_approved', 'users', $newUserId, $details);
-    logActivity($actorId, 'staff_account_approved', $details);
     if (!empty($reqRow['requested_by'])) {
         notifyUser((int) $reqRow['requested_by'], 'info', 'Staff account request approved', $details);
     }

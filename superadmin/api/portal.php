@@ -158,38 +158,135 @@ function superadminListPendingCitizens(PDO $db, int $page, int $perPage): array
     return paginate($db, $select, $count, [], $page, $perPage);
 }
 
-function superadminListAudit(PDO $db, int $page, int $perPage, string $search): array
+// Good-enough heuristic parse, not a full UA-parser library: the Audit Trail
+// just needs a readable Browser/Device label, not exhaustive device
+// detection. Order matters (Edge/Chrome UAs also contain "Safari").
+function superadminParseUserAgent(?string $ua): array
 {
-    $where = ['1=1'];
-    $params = [];
-    if ($search !== '') {
-        $where[] = '(a.action LIKE ? OR a.details LIKE ?)';
-        $like = '%' . $search . '%';
-        array_push($params, $like, $like);
+    $ua = (string) $ua;
+    if ($ua === '') {
+        return ['browser' => 'Unknown', 'device' => 'Unknown'];
     }
-    $whereSql = implode(' AND ', $where);
-    $select = "SELECT a.id, a.action, a.table_name, a.record_id, a.details, a.created_at, u.full_name AS actor_name, u.role AS actor_role
-               FROM audit_logs a LEFT JOIN users u ON u.id = a.user_id
-               WHERE $whereSql ORDER BY a.created_at DESC, a.id DESC";
-    $count = "SELECT COUNT(*) FROM audit_logs a WHERE $whereSql";
-    return paginate($db, $select, $count, $params, $page, $perPage);
+
+    if (stripos($ua, 'Edg/') !== false) {
+        $browser = 'Edge';
+    } elseif (stripos($ua, 'OPR/') !== false || stripos($ua, 'Opera') !== false) {
+        $browser = 'Opera';
+    } elseif (stripos($ua, 'Chrome/') !== false) {
+        $browser = 'Chrome';
+    } elseif (stripos($ua, 'Firefox/') !== false) {
+        $browser = 'Firefox';
+    } elseif (stripos($ua, 'Safari/') !== false) {
+        $browser = 'Safari';
+    } else {
+        $browser = 'Other';
+    }
+
+    if (stripos($ua, 'iPad') !== false || stripos($ua, 'Tablet') !== false) {
+        $device = 'Tablet';
+    } elseif (stripos($ua, 'Mobi') !== false || stripos($ua, 'iPhone') !== false || stripos($ua, 'Android') !== false) {
+        $device = 'Mobile';
+    } elseif ($ua !== '') {
+        $device = 'Desktop';
+    } else {
+        $device = 'Unknown';
+    }
+
+    return ['browser' => $browser, 'device' => $device];
 }
 
-function superadminListActivity(PDO $db, int $page, int $perPage, string $search): array
+function superadminAuditTrailWhere(string $search, string $module, string $role, string $status, string $dateFrom, string $dateTo): array
 {
     $where = ['1=1'];
     $params = [];
     if ($search !== '') {
-        $where[] = '(al.action LIKE ? OR al.details LIKE ?)';
+        $where[] = '(al.action LIKE ? OR al.details LIKE ? OR u.full_name LIKE ?)';
         $like = '%' . $search . '%';
-        array_push($params, $like, $like);
+        array_push($params, $like, $like, $like);
     }
-    $whereSql = implode(' AND ', $where);
-    $select = "SELECT al.id, al.action, al.details, al.ip_address, al.created_at, u.full_name AS actor_name, u.role AS actor_role
+    if ($module !== '') {
+        $where[] = 'al.module = ?';
+        $params[] = $module;
+    }
+    if ($role !== '') {
+        $where[] = 'u.role = ?';
+        $params[] = $role;
+    }
+    if ($status !== '') {
+        $where[] = 'al.status = ?';
+        $params[] = $status;
+    }
+    if ($dateFrom !== '') {
+        $where[] = 'al.created_at >= ?';
+        $params[] = $dateFrom . ' 00:00:00';
+    }
+    if ($dateTo !== '') {
+        $where[] = 'al.created_at <= ?';
+        $params[] = $dateTo . ' 23:59:59';
+    }
+    return [implode(' AND ', $where), $params];
+}
+
+function superadminAuditTrailMapRow(array $row): array
+{
+    $ua = superadminParseUserAgent($row['user_agent'] ?? null);
+    return [
+        'id' => (int) $row['id'],
+        'actor_name' => $row['actor_name'] ?: 'System',
+        'actor_role' => $row['actor_role'] ?: '',
+        'action' => $row['action'],
+        'module' => $row['module'] ?: 'General',
+        'record_id' => $row['record_id'],
+        'details' => $row['details'],
+        'created_at' => $row['created_at'],
+        'ip_address' => $row['ip_address'] ?: 'Unknown',
+        'browser' => $ua['browser'],
+        'device' => $ua['device'],
+        'status' => $row['status'],
+    ];
+}
+
+// The single source of truth for the Audit Trail page: activity_logs
+// carries everything now — IP/user-agent (always did), plus module/
+// record_id/status (added for this feature; see auth/session.php's
+// activityLogEnsureSchema()). Every auditLog() call site (governance
+// actions) writes here too via logActivity() internally, so this one
+// table already has full coverage without a second query against the
+// legacy audit_logs table.
+function superadminListAuditTrail(PDO $db, int $page, int $perPage, string $search, string $module, string $role, string $status, string $dateFrom, string $dateTo): array
+{
+    [$whereSql, $params] = superadminAuditTrailWhere($search, $module, $role, $status, $dateFrom, $dateTo);
+    $select = "SELECT al.id, al.action, al.module, al.record_id, al.status, al.details, al.ip_address, al.user_agent, al.created_at,
+                      u.full_name AS actor_name, u.role AS actor_role
                FROM activity_logs al LEFT JOIN users u ON u.id = al.user_id
                WHERE $whereSql ORDER BY al.created_at DESC, al.id DESC";
-    $count = "SELECT COUNT(*) FROM activity_logs al WHERE $whereSql";
-    return paginate($db, $select, $count, $params, $page, $perPage);
+    $count = "SELECT COUNT(*) FROM activity_logs al LEFT JOIN users u ON u.id = al.user_id WHERE $whereSql";
+    $result = paginate($db, $select, $count, $params, $page, $perPage);
+    $result['data'] = array_map('superadminAuditTrailMapRow', $result['data']);
+    return $result;
+}
+
+// No pagination — CSV export needs every matching row, not one page.
+// Capped at 10k as a sanity bound, not a real-world limit for this app.
+function superadminExportAuditTrail(PDO $db, string $search, string $module, string $role, string $status, string $dateFrom, string $dateTo): array
+{
+    [$whereSql, $params] = superadminAuditTrailWhere($search, $module, $role, $status, $dateFrom, $dateTo);
+    $stmt = $db->prepare("
+        SELECT al.id, al.action, al.module, al.record_id, al.status, al.details, al.ip_address, al.user_agent, al.created_at,
+               u.full_name AS actor_name, u.role AS actor_role
+        FROM activity_logs al LEFT JOIN users u ON u.id = al.user_id
+        WHERE $whereSql ORDER BY al.created_at DESC, al.id DESC LIMIT 10000
+    ");
+    $stmt->execute($params);
+    return array_map('superadminAuditTrailMapRow', $stmt->fetchAll());
+}
+
+/** Distinct modules actually present in activity_logs — populates the Audit Trail page's module filter. */
+function superadminListAuditTrailModules(PDO $db): array
+{
+    return $db->query("
+        SELECT DISTINCT module FROM activity_logs WHERE module IS NOT NULL AND module <> '' ORDER BY module ASC
+    ")->fetchAll(PDO::FETCH_COLUMN);
 }
 
 function superadminListLogins(PDO $db, int $page, int $perPage, string $search, string $result): array
@@ -283,12 +380,30 @@ if ($method === 'GET') {
         respond(superadminListPendingCitizens($db, $page, $perPage));
     }
 
-    if ($action === 'list_audit') {
-        respond(superadminListAudit($db, $page, $perPage, $search));
+    if ($action === 'list_audit_trail') {
+        respond(superadminListAuditTrail(
+            $db, $page, $perPage, $search,
+            trim((string) ($_GET['module'] ?? '')),
+            trim((string) ($_GET['role'] ?? '')),
+            trim((string) ($_GET['status'] ?? '')),
+            trim((string) ($_GET['date_from'] ?? '')),
+            trim((string) ($_GET['date_to'] ?? ''))
+        ));
     }
 
-    if ($action === 'list_activity') {
-        respond(superadminListActivity($db, $page, $perPage, $search));
+    if ($action === 'list_audit_trail_modules') {
+        respond(['data' => superadminListAuditTrailModules($db)]);
+    }
+
+    if ($action === 'export_audit_trail') {
+        respond(['data' => superadminExportAuditTrail(
+            $db, $search,
+            trim((string) ($_GET['module'] ?? '')),
+            trim((string) ($_GET['role'] ?? '')),
+            trim((string) ($_GET['status'] ?? '')),
+            trim((string) ($_GET['date_from'] ?? '')),
+            trim((string) ($_GET['date_to'] ?? ''))
+        )]);
     }
 
     if ($action === 'list_logins') {
@@ -346,7 +461,6 @@ if ($action === 'update_status') {
 
     $details = $target['full_name'] . ' account set to ' . $status . '.';
     auditLog($db, $actorId, 'user_status_updated', 'users', $targetId, $details);
-    logActivity($actorId, 'user_status_updated', $details);
 
     respond(['success' => true]);
 }
@@ -381,7 +495,6 @@ if ($action === 'update_role') {
 
     $details = $target['full_name'] . ' role changed from ' . $target['role'] . ' to ' . $role . '.';
     auditLog($db, $actorId, 'user_role_updated', 'users', $targetId, $details);
-    logActivity($actorId, 'user_role_updated', $details);
 
     respond(['success' => true]);
 }
@@ -408,7 +521,6 @@ if ($action === 'reset_user_password') {
 
     $details = $target['full_name'] . '\'s password was reset by an administrator.';
     auditLog($db, $actorId, 'user_password_reset', 'users', $targetId, $details);
-    logActivity($actorId, 'user_password_reset', $details);
 
     respond(['success' => true, 'temp_password' => $tempPassword]);
 }
@@ -439,7 +551,6 @@ if ($action === 'verify_citizen') {
 
     $details = trim($citizen['first_name'] . ' ' . $citizen['last_name']) . ' ID verification ' . $decision . '.';
     auditLog($db, $actorId, 'citizen_verification_updated', 'citizens', $citizenId, $details);
-    logActivity($actorId, 'citizen_verification_updated', $details);
 
     respond(['success' => true]);
 }
@@ -482,7 +593,6 @@ if ($action === 'update_settings') {
 
     $details = $changed !== [] ? 'Updated: ' . implode(', ', $changed) . '.' : 'No changes.';
     auditLog($db, $actorId, 'settings_updated', 'system_settings', null, $details);
-    logActivity($actorId, 'settings_updated', $details);
 
     respond(['success' => true, 'settings' => Settings::all()]);
 }
@@ -512,7 +622,6 @@ if ($action === 'unlock_login') {
     $label = trim($identifier . ($ipAddress !== '' ? ' (' . $ipAddress . ')' : ''));
     $details = ($label !== '' ? $label : 'Unknown') . ' unlocked, ' . $cleared . ' failed attempt(s) cleared.';
     auditLog($db, $actorId, 'login_unlocked', 'login_attempts', null, $details);
-    logActivity($actorId, 'login_unlocked', $details);
 
     respond(['success' => true, 'cleared' => $cleared]);
 }

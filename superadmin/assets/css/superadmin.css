@@ -146,6 +146,102 @@
   gap: 10px;
 }
 
+/* ── Staff Account Request cards — same data/actions as any other .sa-row
+   list, just a richer visual treatment for what's usually a very short,
+   high-attention queue (new hires waiting on a decision). ── */
+.sa-staff-request-card {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 14px 16px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--card-bg);
+  transition: transform .18s ease, box-shadow .18s ease, border-color .18s ease;
+}
+.sa-staff-request-card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 10px 24px rgba(15,23,42,.08);
+  border-color: #c7d7ea;
+}
+.sa-src-avatar {
+  width: 46px;
+  height: 46px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.1rem;
+  font-weight: 800;
+  color: #fff;
+}
+.sa-src-avatar.role-engineer { background: linear-gradient(135deg, #0ea5e9, #0284c7); }
+.sa-src-avatar.role-bac      { background: linear-gradient(135deg, #a855f7, #7e22ce); }
+.sa-src-avatar.role-default  { background: linear-gradient(135deg, #64748b, #475569); }
+
+.sa-src-body {
+  flex: 1;
+  min-width: 0;
+}
+.sa-src-name-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.sa-src-name {
+  font-weight: 700;
+  font-size: .92rem;
+  color: var(--text-primary);
+}
+.sa-src-role-pill {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 9px;
+  border-radius: 999px;
+  font-size: .64rem;
+  font-weight: 800;
+  letter-spacing: .03em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+.sa-src-role-pill.role-engineer { background: rgba(14,165,233,.14); color: #0369a1; }
+.sa-src-role-pill.role-bac      { background: rgba(168,85,247,.14); color: #7e22ce; }
+.sa-src-role-pill.role-default  { background: rgba(100,116,139,.14); color: #475569; }
+
+.sa-src-meta {
+  margin-top: 4px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 14px;
+  font-size: .76rem;
+  color: var(--text-muted);
+}
+.sa-src-meta span {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+.sa-src-meta svg {
+  width: 13px;
+  height: 13px;
+  flex-shrink: 0;
+  opacity: .7;
+}
+.sa-src-footer {
+  margin-top: 6px;
+  font-size: .72rem;
+  color: var(--text-muted);
+}
+.sa-src-actions {
+  flex-shrink: 0;
+}
+@media (max-width: 640px) {
+  .sa-staff-request-card { flex-wrap: wrap; }
+  .sa-src-actions { margin-left: 60px; }
+}
+
 .sa-row {
   display: flex;
   align-items: center;

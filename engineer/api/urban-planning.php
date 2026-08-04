@@ -272,6 +272,9 @@ if ($action === 'submit_inspection') {
         respond(['error' => $e->getMessage() !== '' ? $e->getMessage() : 'Unable to submit inspection.'], 422);
     }
 
+    $inspectionDetails = 'Road inspection submitted for ' . ($existing['road_name'] ?? 'road #' . $id) . ' — ' . $validated['overall_condition'] . ' condition, ' . $validated['severity'] . ' severity.';
+    logActivity($engineerId, 'urban_planning_inspection_submitted', $inspectionDetails, 'Inspections', $id);
+
     respond(['success' => true, 'id' => $id]);
 }
 

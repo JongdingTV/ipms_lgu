@@ -161,6 +161,10 @@ if ($action === 'payment_review') {
         respond(['error' => 'Unable to save payment review.'], 500);
     }
 
+    $paymentReviewDetails = $payment['project_name'] . ' — payment request #' . $paymentId . ' ' . $newStatus . '.';
+    projectWorkflowLog($db, 'Payment review: ' . $newStatus, (int) $payment['project_id'], $paymentReviewDetails, $userId);
+    logActivity($userId, 'payment_review_' . $newStatus, $paymentReviewDetails, 'Payments', $paymentId);
+
     $cu = $db->prepare("SELECT user_id FROM contractors WHERE id = ?");
     $cu->execute([$payment['contractor_id']]);
     notifyUser(
@@ -203,7 +207,7 @@ if ($action === 'mark_paid') {
 
     $details = 'Payment request #' . $paymentId . ' for ' . $payment['project_name'] . ' marked as paid.';
     projectWorkflowLog($db, 'Payment marked as paid', (int) $payment['project_id'], $details, $userId);
-    logActivity($userId, 'payment_marked_paid', $details);
+    logActivity($userId, 'payment_marked_paid', $details, 'Payments', $paymentId);
 
     $cu = $db->prepare("SELECT user_id FROM contractors WHERE id = ?");
     $cu->execute([$payment['contractor_id']]);

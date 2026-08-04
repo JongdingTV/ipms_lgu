@@ -16,7 +16,7 @@ let bacListState = {
   announcements: { page: 1, perPage: 10, search: '' },
   bids: { page: 1, perPage: 10, search: '' },
   recommendations: { page: 1, perPage: 10, search: '' },
-  logs: { page: 1, perPage: 10, search: '' },
+  logs: { page: 1, perPage: 10, search: '', projectId: '', actorId: '', eventType: '', dateFrom: '', dateTo: '' },
   documents: { page: 1, perPage: 10, ownerType: '', status: '' },
   contractorApplications: { page: 1, perPage: 10 },
 };
@@ -724,6 +724,11 @@ async function bacRenderLogs() {
         <h2 class="page-title">Procurement Logs</h2>
         <p class="bac-scope-note">Chronological audit trail for BAC procurement activities and committee actions.</p>
       </div>
+      <select id="bacLogProjectFilter"><option value="">All projects</option></select>
+      <select id="bacLogActorFilter"><option value="">All users</option></select>
+      <select id="bacLogEventFilter"><option value="">All event types</option></select>
+      <input type="date" id="bacLogDateFrom" title="From date">
+      <input type="date" id="bacLogDateTo" title="To date">
       <input type="text" id="bacLogSearch" placeholder="Search action or detail...">
     </div>
     <div class="bac-timeline" id="bacLogsTimeline"><p class="empty-state">Loading...</p></div>
@@ -736,6 +741,72 @@ async function bacRenderLogs() {
     bacLoadLogsTimeline();
   }, 350));
 
+  document.getElementById('bacLogProjectFilter').addEventListener('change', event => {
+    bacListState.logs.projectId = event.target.value;
+    bacListState.logs.page = 1;
+    bacLoadLogsTimeline();
+  });
+
+  document.getElementById('bacLogActorFilter').addEventListener('change', event => {
+    bacListState.logs.actorId = event.target.value;
+    bacListState.logs.page = 1;
+    bacLoadLogsTimeline();
+  });
+
+  document.getElementById('bacLogEventFilter').addEventListener('change', event => {
+    bacListState.logs.eventType = event.target.value;
+    bacListState.logs.page = 1;
+    bacLoadLogsTimeline();
+  });
+
+  document.getElementById('bacLogDateFrom').addEventListener('change', event => {
+    bacListState.logs.dateFrom = event.target.value;
+    bacListState.logs.page = 1;
+    bacLoadLogsTimeline();
+  });
+
+  document.getElementById('bacLogDateTo').addEventListener('change', event => {
+    bacListState.logs.dateTo = event.target.value;
+    bacListState.logs.page = 1;
+    bacLoadLogsTimeline();
+  });
+
+  bacGet('list_log_projects').then(result => {
+    const select = document.getElementById('bacLogProjectFilter');
+    if (!select) return;
+    (result.data || []).forEach(project => {
+      const option = document.createElement('option');
+      option.value = project.id;
+      option.textContent = `${project.project_code} — ${project.name}`;
+      select.appendChild(option);
+    });
+  }).catch(() => {});
+
+  bacGet('list_log_actors').then(result => {
+    const select = document.getElementById('bacLogActorFilter');
+    if (!select) return;
+    (result.data || []).forEach(actor => {
+      const option = document.createElement('option');
+      option.value = actor.id;
+      option.textContent = actor.full_name;
+      select.appendChild(option);
+    });
+  }).catch(() => {});
+
+  bacGet('list_log_actions').then(result => {
+    const select = document.getElementById('bacLogEventFilter');
+    if (!select) return;
+    (result.data || []).forEach(action => {
+      const option = document.createElement('option');
+      option.value = action;
+      // Same friendly titles the shared timeline widget uses, so the same
+      // action reads the same way whether it's a per-project timeline card
+      // (project-timeline.js) or a row in this cross-project log.
+      option.textContent = window.ptResolveEvent ? window.ptResolveEvent(action, '').title : action;
+      select.appendChild(option);
+    });
+  }).catch(() => {});
+
   await bacLoadLogsTimeline();
 }
 
@@ -745,18 +816,30 @@ async function bacLoadLogsTimeline() {
   const state = bacListState.logs;
 
   try {
-    const result = await bacGet('list_logs', { page: state.page, per_page: state.perPage, search: state.search });
+    const result = await bacGet('list_logs', {
+      page: state.page, per_page: state.perPage, search: state.search, project_id: state.projectId,
+      actor_id: state.actorId, event_type: state.eventType, date_from: state.dateFrom, date_to: state.dateTo,
+    });
 
-    container.innerHTML = result.data.length ? result.data.map(item => `
+    container.innerHTML = result.data.length ? result.data.map(item => {
+      const resolved = window.ptResolveEvent ? window.ptResolveEvent(item.action, item.detail) : { title: item.title, tone: 'gray' };
+      const tone = (window.PT_TONES && window.PT_TONES[resolved.tone]) || { bg: '#f1f5f9', fg: '#475569' };
+      const icon = (window.PT_ICONS && window.PT_ICONS[resolved.tone]) || '•';
+      const roleLabel = item.actor_role ? ((window.PT_ROLE_LABELS && window.PT_ROLE_LABELS[item.actor_role]) || item.actor_role) : '';
+      return `
       <article class="bac-log-item">
-        <span class="bac-log-date">${bacDate(item.date)}</span>
+        <span class="bac-log-dot" style="background:${tone.bg};color:${tone.fg}">${icon}</span>
         <div>
-          <strong>${bacEscape(item.title)}</strong>
+          <div class="bac-log-item-head">
+            <strong style="color:${tone.fg}">${bacEscape(resolved.title)}</strong>
+            <span class="bac-log-date">${bacDate(item.date)}</span>
+          </div>
           <p>${bacEscape(item.detail || item.project || 'Procurement activity')}</p>
-          <div style="margin-top:8px;">${bacBadge(item.status)}</div>
+          <div class="bac-log-meta">${bacEscape(item.actor || 'System')}${roleLabel ? ' · ' + bacEscape(roleLabel) : ''}${item.project ? ' · ' + bacEscape(item.project) : ''}</div>
         </div>
       </article>
-    `).join('') : '<p class="empty-state">No procurement logs yet.</p>';
+    `;
+    }).join('') : '<p class="empty-state">No procurement logs match these filters.</p>';
 
     renderPagination(pager, {
       page: result.page, lastPage: result.last_page, total: result.total, perPage: result.per_page,

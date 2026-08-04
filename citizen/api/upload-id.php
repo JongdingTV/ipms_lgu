@@ -100,7 +100,7 @@ try {
         }
     }
 
-    logActivity((int) $user['user_id'], 'id_photo_uploaded', 'Citizen submitted an ID photo for verification');
+    logActivity((int) $user['user_id'], 'id_photo_uploaded', 'Citizen submitted an ID photo for verification', 'Documents', (int) $user['user_id']);
 
     echo json_encode([
         'success' => true,

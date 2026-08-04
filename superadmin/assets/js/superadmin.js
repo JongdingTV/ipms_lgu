@@ -8,6 +8,7 @@ const SA_ROLE_LABELS = {
   admin: 'LGU Admin / Engineering Head',
   bac: 'BAC (Bids & Awards Committee)',
   engineer: 'Engineer',
+  hope: 'HOPE',
   contractor: 'Contractor',
   citizen: 'Citizen',
 };
@@ -25,8 +26,7 @@ let saListState = {
   pendingCitizens: { page: 1, perPage: 10 },
   documents: { page: 1, perPage: 10 },
   staffRequests: { page: 1, perPage: 10 },
-  audit: { page: 1, perPage: 10, search: '' },
-  activity: { page: 1, perPage: 10, search: '' },
+  auditTrail: { page: 1, perPage: 10, search: '', module: '', role: '', status: '', dateFrom: '', dateTo: '' },
   logins: { page: 1, perPage: 10, search: '', result: '' },
   loginRisk: { page: 1, perPage: 10 },
   loginLockouts: { page: 1, perPage: 10 },
@@ -39,6 +39,7 @@ let saPendingCitizensCache = [];
 let saDocumentsCache = [];
 let saStaffRequestsCache = [];
 let saLoginLockoutsCache = [];
+let saAuditTrailCache = [];
 let saDashboardData = { stats: {}, activity: [], health: {} };
 
 function saEscape(value) {
@@ -584,18 +585,31 @@ async function saLoadPendingStaffRequests() {
     saStaffRequestsCache = result.data;
 
     container.innerHTML = result.data.length
-      ? result.data.map((req, idx) => `
-        <div class="sa-row">
-          <div class="sa-row-main">
-            <strong>${saEscape(req.full_name)}</strong>
-            <span>${saEscape(SA_ROLE_LABELS[req.requested_role] || req.requested_role)} - ${saEscape(req.username)} - ${saEscape(req.email)} - requested by ${saEscape(req.requested_by_name || 'Unknown')} - ${saDateTime(req.created_at)}</span>
+      ? result.data.map((req, idx) => {
+        const roleClass = ['engineer', 'bac'].includes(req.requested_role) ? `role-${req.requested_role}` : 'role-default';
+        const roleLabel = SA_ROLE_LABELS[req.requested_role] || req.requested_role;
+        const initial = saEscape(req.full_name || '?').trim().charAt(0).toUpperCase() || '?';
+        return `
+        <div class="sa-staff-request-card">
+          <div class="sa-src-avatar ${roleClass}">${initial}</div>
+          <div class="sa-src-body">
+            <div class="sa-src-name-row">
+              <span class="sa-src-name">${saEscape(req.full_name)}</span>
+              <span class="sa-src-role-pill ${roleClass}">${saEscape(roleLabel)}</span>
+            </div>
+            <div class="sa-src-meta">
+              <span><svg viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M10 9a3 3 0 100-6 3 3 0 000 6zm-7 9a7 7 0 1114 0H3z" clip-rule="evenodd"/></svg>${saEscape(req.username)}</span>
+              <span><svg viewBox="0 0 20 20" fill="currentColor"><path d="M2.94 6.94A2 2 0 014.7 6h10.6a2 2 0 011.76.94L10 11.5 2.94 6.94zM2 8.16V14a2 2 0 002 2h12a2 2 0 002-2V8.16l-7.4 4.77a1 1 0 01-1.2 0L2 8.16z"/></svg>${saEscape(req.email)}</span>
+            </div>
+            <div class="sa-src-footer">Requested by ${saEscape(req.requested_by_name || 'Unknown')} &middot; ${saDateTime(req.created_at)}</div>
           </div>
-          <div>
+          <div class="sa-src-actions">
             <button class="btn-primary btn-compact" type="button" onclick="saOpenStaffRequestReview(${idx})">Review</button>
           </div>
         </div>
-      `).join('')
-      : '<p class="empty-state">No staff account requests awaiting review.</p>';
+      `;
+      }).join('')
+      : '<p class="empty-state">No staff account requests awaiting review. New hires you request will show up here for approval.</p>';
 
     renderPagination(pager, {
       page: result.page, lastPage: result.last_page, total: result.total, perPage: result.per_page,
@@ -947,57 +961,130 @@ function saOpenAddEngineerForm() {
   });
 }
 
-/* ---- Audit Trail ---------------------------------------------------------- */
+/* ---- Audit Trail ------------------------------------------------------
+   Single unified view over activity_logs (module/record_id/status added
+   for this feature — see auth/session.php's activityLogEnsureSchema()).
+   Every governance action (auditLog() call sites) lands here too, since
+   auditLog() now writes to activity_logs internally — there's no second
+   table to reconcile with. ------------------------------------------- */
 
 async function saRenderAuditTrail() {
-  await Promise.all([saLoadAuditList(), saLoadActivityList()]);
+  await Promise.all([saLoadAuditTrailModules(), saLoadAuditTrailTable()]);
 }
 
-async function saLoadAuditList() {
-  const container = document.getElementById('saAuditList');
-  const pager = document.getElementById('saAuditPager');
-  const state = saListState.audit;
-
+async function saLoadAuditTrailModules() {
+  const select = document.getElementById('saAuditModuleFilter');
+  if (!select) return;
   try {
-    const result = await saGet('list_audit', { page: state.page, per_page: state.perPage, search: state.search });
-    container.innerHTML = result.data.length
-      ? result.data.map(item => saRow(
-        saLabel(item.action),
-        item.details || '',
-        `<span class="sa-log-date">${saDateTime(item.created_at)}</span><br><small>${saEscape(item.actor_name || 'System')}</small>`
-      )).join('')
-      : '<p class="empty-state">No governance actions recorded yet. Actions taken in User & Role Governance will appear here.</p>';
-
-    renderPagination(pager, {
-      page: result.page, lastPage: result.last_page, total: result.total, perPage: result.per_page,
-      onPageChange: nextPage => { saListState.audit.page = nextPage; saLoadAuditList(); },
-    });
+    const result = await saGet('list_audit_trail_modules');
+    // Rebuild every time except the currently-selected value, so repeat
+    // visits to this page don't keep appending duplicate <option>s.
+    const current = select.value;
+    select.innerHTML = '<option value="">All modules</option>' +
+      (result.data || []).map(m => `<option value="${saEscape(m)}">${saEscape(m)}</option>`).join('');
+    select.value = current;
   } catch (error) {
-    container.innerHTML = '<p class="empty-state">Unable to load the audit trail.</p>';
+    // Non-fatal — the filter just stays empty; the table itself still loads.
   }
 }
 
-async function saLoadActivityList() {
-  const container = document.getElementById('saActivityList');
-  const pager = document.getElementById('saActivityPager');
-  const state = saListState.activity;
+async function saLoadAuditTrailTable() {
+  const table = document.getElementById('saAuditTrailTable');
+  const pager = document.getElementById('saAuditTrailPager');
+  const state = saListState.auditTrail;
 
   try {
-    const result = await saGet('list_activity', { page: state.page, per_page: state.perPage, search: state.search });
-    container.innerHTML = result.data.length
-      ? result.data.map(item => saRow(
-        saLabel(item.action),
-        item.details || '',
-        `<span class="sa-log-date">${saDateTime(item.created_at)}</span><br><small>${saEscape(item.actor_name || 'System')}</small>`
-      )).join('')
-      : '<p class="empty-state">No system activity recorded yet.</p>';
+    const result = await saGet('list_audit_trail', {
+      page: state.page, per_page: state.perPage, search: state.search,
+      module: state.module, role: state.role, status: state.status,
+      date_from: state.dateFrom, date_to: state.dateTo,
+    });
+    saAuditTrailCache = result.data;
+
+    table.innerHTML = result.data.length ? `
+      <table class="data-table">
+        <thead>
+          <tr>
+            <th>User</th><th>Role</th><th>Action</th><th>Module</th><th>Record</th>
+            <th>Date &amp; Time</th><th>IP Address</th><th>Browser</th><th>Device</th><th>Result</th><th></th>
+          </tr>
+        </thead>
+        <tbody>
+          ${result.data.map((item, idx) => `
+            <tr>
+              <td>${saEscape(item.actor_name)}</td>
+              <td>${saEscape(saRoleLabel(item.actor_role))}</td>
+              <td>${saEscape(saLabel(item.action))}</td>
+              <td>${saEscape(item.module)}</td>
+              <td>${item.record_id ? '#' + saEscape(item.record_id) : '—'}</td>
+              <td class="sa-log-date">${saDateTime(item.created_at)}</td>
+              <td>${saEscape(item.ip_address)}</td>
+              <td>${saEscape(item.browser)}</td>
+              <td>${saEscape(item.device)}</td>
+              <td>${saBadge(item.status)}</td>
+              <td><button class="btn-secondary btn-compact" type="button" onclick="saViewAuditTrailDetail(${idx})">View</button></td>
+            </tr>
+          `).join('')}
+        </tbody>
+      </table>
+    ` : '<p class="empty-state">No activity matches these filters.</p>';
 
     renderPagination(pager, {
       page: result.page, lastPage: result.last_page, total: result.total, perPage: result.per_page,
-      onPageChange: nextPage => { saListState.activity.page = nextPage; saLoadActivityList(); },
+      onPageChange: nextPage => { saListState.auditTrail.page = nextPage; saLoadAuditTrailTable(); },
     });
   } catch (error) {
-    container.innerHTML = '<p class="empty-state">Unable to load system activity.</p>';
+    table.innerHTML = '<p class="empty-state">Unable to load the audit trail.</p>';
+  }
+}
+
+function saViewAuditTrailDetail(idx) {
+  const item = saAuditTrailCache[idx];
+  if (!item) return;
+
+  saOpenModal('Audit Trail Entry', `
+    <p><strong>${saEscape(saLabel(item.action))}</strong> ${saBadge(item.status)}</p>
+    <p><small>${saEscape(item.actor_name)} &middot; ${saEscape(saRoleLabel(item.actor_role))} &middot; ${saDateTime(item.created_at)}</small></p>
+    <p><small>Module: ${saEscape(item.module)}${item.record_id ? ' &middot; Record #' + saEscape(item.record_id) : ''}</small></p>
+    <p><small>IP: ${saEscape(item.ip_address)} &middot; ${saEscape(item.browser)} &middot; ${saEscape(item.device)}</small></p>
+    ${item.details ? `<p style="margin-top:12px;">${saEscape(item.details)}</p>` : ''}
+    <div class="form-actions">
+      <button class="btn-secondary" type="button" onclick="saCloseModal()">Close</button>
+    </div>
+  `);
+}
+
+async function saExportAuditTrail() {
+  const state = saListState.auditTrail;
+  const btn = document.getElementById('saAuditExportBtn');
+  if (btn) { btn.disabled = true; btn.textContent = 'Exporting...'; }
+
+  try {
+    const result = await saGet('export_audit_trail', {
+      search: state.search, module: state.module, role: state.role, status: state.status,
+      date_from: state.dateFrom, date_to: state.dateTo,
+    });
+
+    const header = ['User', 'Role', 'Action', 'Module', 'Affected Record', 'Date & Time', 'IP Address', 'Browser', 'Device', 'Result', 'Details'];
+    const rows = (result.data || []).map(item => [
+      item.actor_name, saRoleLabel(item.actor_role), saLabel(item.action), item.module,
+      item.record_id ? '#' + item.record_id : '', item.created_at, item.ip_address,
+      item.browser, item.device, item.status, item.details || '',
+    ]);
+    const csv = [header, ...rows]
+      .map(row => row.map(v => `"${String(v ?? '').replace(/"/g, '""')}"`).join(','))
+      .join('\n');
+    const blob = new Blob([csv], { type: 'text/csv' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `ipms-audit-trail-${new Date().toISOString().slice(0, 10)}.csv`;
+    link.click();
+    URL.revokeObjectURL(url);
+  } catch (error) {
+    saToast(error.message || 'Unable to export the audit trail.', 'error');
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = 'Export CSV'; }
   }
 }
 
@@ -1301,8 +1388,7 @@ function saWireShell() {
 
   // Topbar search now proxies into whichever single page-specific (server-backed)
   // search box is visible, since list search moved server-side with pagination.
-  // No-ops when the current page has none or more than one search box (ambiguous,
-  // e.g. Audit Trail has two independent search fields).
+  // No-ops when the current page has none or more than one search box (ambiguous).
   document.getElementById('searchInput')?.addEventListener('input', event => {
     const pageEl = document.getElementById(`page-${saCurrentPage}`);
     const candidates = pageEl ? pageEl.querySelectorAll('input[type="text"][id$="Search"]') : [];
@@ -1327,17 +1413,37 @@ function saWireShell() {
     saLoadUsersTable();
   });
 
-  const debouncedAudit = debounce(() => { saListState.audit.page = 1; saLoadAuditList(); }, 350);
+  const debouncedAuditTrail = debounce(() => { saListState.auditTrail.page = 1; saLoadAuditTrailTable(); }, 350);
   document.getElementById('saAuditSearch')?.addEventListener('input', event => {
-    saListState.audit.search = event.target.value.trim();
-    debouncedAudit();
+    saListState.auditTrail.search = event.target.value.trim();
+    debouncedAuditTrail();
   });
-
-  const debouncedActivity = debounce(() => { saListState.activity.page = 1; saLoadActivityList(); }, 350);
-  document.getElementById('saActivitySearch')?.addEventListener('input', event => {
-    saListState.activity.search = event.target.value.trim();
-    debouncedActivity();
+  document.getElementById('saAuditModuleFilter')?.addEventListener('change', event => {
+    saListState.auditTrail.module = event.target.value;
+    saListState.auditTrail.page = 1;
+    saLoadAuditTrailTable();
   });
+  document.getElementById('saAuditRoleFilter')?.addEventListener('change', event => {
+    saListState.auditTrail.role = event.target.value;
+    saListState.auditTrail.page = 1;
+    saLoadAuditTrailTable();
+  });
+  document.getElementById('saAuditResultFilter')?.addEventListener('change', event => {
+    saListState.auditTrail.status = event.target.value;
+    saListState.auditTrail.page = 1;
+    saLoadAuditTrailTable();
+  });
+  document.getElementById('saAuditDateFrom')?.addEventListener('change', event => {
+    saListState.auditTrail.dateFrom = event.target.value;
+    saListState.auditTrail.page = 1;
+    saLoadAuditTrailTable();
+  });
+  document.getElementById('saAuditDateTo')?.addEventListener('change', event => {
+    saListState.auditTrail.dateTo = event.target.value;
+    saListState.auditTrail.page = 1;
+    saLoadAuditTrailTable();
+  });
+  document.getElementById('saAuditExportBtn')?.addEventListener('click', saExportAuditTrail);
 
   const debouncedLogins = debounce(() => { saListState.logins.page = 1; saLoadLoginAttempts(); }, 350);
   document.getElementById('saLoginSearch')?.addEventListener('input', event => {

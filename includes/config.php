@@ -60,6 +60,18 @@ date_default_timezone_set('Asia/Manila');
 define('APP_ENV', envValue('APP_ENV', 'local'));
 define('APP_NAME', envValue('APP_NAME', 'Infrastructure Project Management System'));
 define('APP_BASE_PATH', normalizeBasePath(envValue('APP_BASE_PATH', '/ipms.lgu')));
+
+// The scheme+host citizens should actually reach — this matters for anything
+// generated once and used later outside the current request, like a QR
+// code's encoded URL: it must always resolve to the real public site, not
+// whatever hostname happened to be in the admin's browser address bar when
+// it was generated (localhost during local dev, a LAN IP, etc.). Defaults to
+// the real production host regardless of environment — deliberately not
+// gated on APP_ENV, since a misconfigured APP_ENV on the live server would
+// otherwise silently break every QR code. A developer who wants QR codes to
+// resolve to their own machine while testing can override this in their own
+// local .env with APP_PUBLIC_URL=http://localhost (or their LAN IP).
+define('APP_PUBLIC_URL', rtrim((string) envValue('APP_PUBLIC_URL', 'https://ipms.infragovservices.com'), '/'));
 define('APP_LOGIN_PATH', APP_BASE_PATH . '/auth/login.php');
 define('SESSION_TIMEOUT_SECONDS', 1800);
 define('LOGIN_MAX_ATTEMPTS', 5);
@@ -157,6 +169,12 @@ function appUrl(string $path = ''): string
 {
     $normalizedPath = '/' . ltrim($path, '/');
     return APP_BASE_PATH . ($path === '' ? '' : $normalizedPath);
+}
+
+/** Same as appUrl(), but fully-qualified (scheme+host+path) — see APP_PUBLIC_URL above. */
+function publicUrl(string $path = ''): string
+{
+    return APP_PUBLIC_URL . appUrl($path);
 }
 
 /**

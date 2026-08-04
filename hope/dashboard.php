@@ -2,7 +2,7 @@
 require_once __DIR__ . '/../auth/session.php';
 
 $user = requireLogin(['hope']);
-$extraStylesheets = ['assets/css/pagination.css', 'hope/assets/css/hope.css'];
+$extraStylesheets = ['assets/css/pagination.css', 'assets/css/project-timeline.css', 'hope/assets/css/hope.css'];
 
 require_once __DIR__ . '/../includes/header.php';
 require_once __DIR__ . '/sidebar.php';
@@ -200,6 +200,7 @@ require_once __DIR__ . '/sidebar.php';
 <script src="<?= htmlspecialchars(assetUrl('/assets/js/sidebar-badges.js')) ?>"></script>
 <script src="<?= htmlspecialchars(assetUrl('/assets/js/pagination.js')) ?>"></script>
 <script src="<?= htmlspecialchars(assetUrl('/assets/js/sidebar-toggle.js')) ?>"></script>
+<script src="<?= htmlspecialchars(assetUrl('/assets/js/project-timeline.js')) ?>"></script>
 <script src="<?= htmlspecialchars(assetUrl('/hope/assets/js/hope.js')) ?>"></script>
 </body>
 </html>

@@ -196,7 +196,7 @@
 
 .bac-log-item {
   display: grid;
-  grid-template-columns: 120px minmax(0, 1fr);
+  grid-template-columns: 32px minmax(0, 1fr);
   gap: 14px;
   padding: 14px;
   border: 1px solid var(--border);
@@ -205,11 +205,41 @@
   box-shadow: var(--card-shadow);
 }
 
-.bac-log-date {
-  color: var(--accent);
-  font-family: var(--mono);
-  font-size: .76rem;
+/* Event-type color/icon dot, same tone system project-timeline.js resolves
+   an action to (assets/js/project-timeline.js's PT_TONES/PT_ICONS) so a
+   given event reads the same whether it's here or on a per-project
+   timeline card elsewhere in the app. */
+.bac-log-dot {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: .82rem;
   font-weight: 800;
+}
+
+.bac-log-item-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.bac-log-date {
+  color: var(--text-muted);
+  font-family: var(--mono);
+  font-size: .74rem;
+  white-space: nowrap;
+}
+
+.bac-log-meta {
+  margin-top: 8px;
+  font-size: .74rem;
+  font-weight: 600;
+  color: var(--text-primary);
 }
 
 .bac-log-item strong {
@@ -306,7 +336,8 @@
 .bac-filters select,
 .bac-panel-head input,
 .bac-panel-head select,
-.bac-content .page-header > input[type="text"] {
+.bac-content .page-header > input[type="text"],
+.bac-content .page-header > select {
   border: 1px solid var(--border);
   border-radius: 999px;
   padding: 9px 16px;
@@ -321,7 +352,8 @@
 .bac-filters select:focus,
 .bac-panel-head input:focus,
 .bac-panel-head select:focus,
-.bac-content .page-header > input[type="text"]:focus {
+.bac-content .page-header > input[type="text"]:focus,
+.bac-content .page-header > select:focus {
   border-color: var(--primary);
   box-shadow: 0 0 0 3px rgba(37,99,235,.12);
 }

@@ -9,6 +9,7 @@ require_once __DIR__ . '/../engineer/includes/scope.php';
 require_once __DIR__ . '/../includes/workflow.php';
 require_once __DIR__ . '/../includes/Notifications.php';
 require_once __DIR__ . '/../includes/Validator.php';
+require_once __DIR__ . '/../includes/ProjectHealth.php';
 apiHeaders();
 
 $method = $_SERVER['REQUEST_METHOD'];
@@ -390,6 +391,11 @@ if ($method === 'GET') {
             $project['road_geometry'] = $geometry ?: null;
         }
 
+        $health = projectHealthScoreForOne($db, $id);
+        $project['health_score'] = $health['score'];
+        $project['health_status'] = $health['status'];
+        $project['health_breakdown'] = $health['breakdown'];
+
         respond($project);
     }
 
@@ -481,9 +487,18 @@ if ($method === 'GET') {
         LIMIT $limit OFFSET $offset
     ");
     $stmt->execute($params);
+    $rows = $stmt->fetchAll();
+
+    $healthScores = projectHealthScoresForIds($db, array_column($rows, 'id'));
+    foreach ($rows as &$row) {
+        $health = $healthScores[(int) $row['id']] ?? ['score' => 0, 'status' => 'critical'];
+        $row['health_score'] = $health['score'];
+        $row['health_status'] = $health['status'];
+    }
+    unset($row);
 
     respond([
-        'data'       => $stmt->fetchAll(),
+        'data'       => $rows,
         'total'      => $totalRows,
         'page'       => $page,
         'last_page'  => (int) ceil($totalRows / $limit),
@@ -529,7 +544,7 @@ if ($method === 'POST' && $action === 'decide') {
 
     $details = $project['name'] . ' was ' . $pastTense[$decision] . ($reason !== '' ? ' — ' . $reason : '') . '.';
     projectWorkflowLog($db, 'Project ' . $pastTense[$decision], $projectId, $details, (int) ($user['user_id'] ?? 0) ?: null);
-    logActivity((int) ($user['user_id'] ?? 0), 'project_status_' . $newStatus, $details);
+    logActivity((int) ($user['user_id'] ?? 0), 'project_status_' . $newStatus, $details, 'Approvals', $projectId);
 
     if (!empty($project['created_by'])) {
         notifyUser((int) $project['created_by'], 'info', 'Project ' . $pastTense[$decision], $details);
@@ -577,7 +592,7 @@ if ($method === 'POST' && $action === 'engineering_review') {
 
     $details = $project['name'] . ' was ' . $pastTense[$decision] . ' by Engineering Review' . ($reason !== '' ? ' — ' . $reason : '') . '.';
     projectWorkflowLog($db, 'Engineering review: ' . $pastTense[$decision], $projectId, $details, (int) ($user['user_id'] ?? 0) ?: null);
-    logActivity((int) ($user['user_id'] ?? 0), 'project_status_' . $newStatus, $details);
+    logActivity((int) ($user['user_id'] ?? 0), 'project_status_' . $newStatus, $details, 'Approvals', $projectId);
 
     if (!empty($project['created_by'])) {
         notifyUser((int) $project['created_by'], 'info', 'Engineering review: ' . $pastTense[$decision], $details);
@@ -615,7 +630,7 @@ if ($method === 'POST' && $action === 'issue_ntp') {
 
     $details = 'Notice to Proceed issued for ' . $project['name'] . ' — the contract implementation period begins today.';
     projectWorkflowLog($db, 'Notice to Proceed issued', $projectId, $details, (int) ($user['user_id'] ?? 0) ?: null);
-    logActivity((int) ($user['user_id'] ?? 0), 'project_status_active', $details);
+    logActivity((int) ($user['user_id'] ?? 0), 'project_status_active', $details, 'Projects', $projectId);
 
     if (!empty($project['created_by'])) {
         notifyUser((int) $project['created_by'], 'info', 'Notice to Proceed issued', $details);
@@ -655,7 +670,7 @@ if ($method === 'POST' && $action === 'request_completion_inspection') {
 
     $details = $project['name'] . ' was submitted for completion inspection.';
     projectWorkflowLog($db, 'Completion inspection requested', $projectId, $details, (int) ($user['user_id'] ?? 0) ?: null);
-    logActivity((int) ($user['user_id'] ?? 0), 'project_status_completion_inspection', $details);
+    logActivity((int) ($user['user_id'] ?? 0), 'project_status_completion_inspection', $details, 'Inspections', $projectId);
 
     if (!empty($project['created_by'])) {
         notifyUser((int) $project['created_by'], 'info', 'Completion inspection requested', $details);
@@ -710,7 +725,7 @@ if ($method === 'POST' && $action === 'completion_decide') {
     $verb = $decision === 'accept' ? 'accepted as complete' : 'returned with punch-list items';
     $details = $project['name'] . ' was ' . $verb . ($reason !== '' ? ' — ' . $reason : '') . '.';
     projectWorkflowLog($db, 'Completion inspection: ' . $verb, $projectId, $details, (int) ($user['user_id'] ?? 0) ?: null);
-    logActivity((int) ($user['user_id'] ?? 0), 'project_status_' . $newStatus, $details);
+    logActivity((int) ($user['user_id'] ?? 0), 'project_status_' . $newStatus, $details, 'Inspections', $projectId);
 
     if (!empty($project['created_by'])) {
         notifyUser((int) $project['created_by'], 'info', 'Completion inspection: ' . $verb, $details);
@@ -750,7 +765,7 @@ if ($method === 'POST' && $action === 'turnover') {
 
     $details = $project['name'] . ' was turned over to ' . $turnoverOffice . '.';
     projectWorkflowLog($db, 'Project turned over', $projectId, $details, (int) ($user['user_id'] ?? 0) ?: null);
-    logActivity((int) ($user['user_id'] ?? 0), 'project_status_turnover', $details);
+    logActivity((int) ($user['user_id'] ?? 0), 'project_status_turnover', $details, 'Projects', $projectId);
 
     respond(['success' => true, 'status' => 'turnover']);
 }
@@ -786,6 +801,8 @@ if ($method === 'POST' && $action === 'upload_document_version') {
     } catch (Throwable $e) {
         respond(['error' => 'Unable to upload new version.'], 422);
     }
+
+    logActivity((int) ($user['user_id'] ?? 0) ?: null, 'document_uploaded', 'New version uploaded for document #' . $documentId . '.', 'Documents', $newDocId);
 
     respond(['success' => true, 'id' => $newDocId], 201);
 }
@@ -931,6 +948,7 @@ if ($method === 'POST') {
 
     $details = $b['name'] . ' was registered with status ' . $status . ' and ' . count($documentRows) . ' supporting document(s).';
     projectWorkflowLog($db, 'Project registered', $newId, $details, (int) ($user['user_id'] ?? 0) ?: null);
+    logActivity((int) ($user['user_id'] ?? 0) ?: null, 'project_created', $details, 'Projects', $newId);
 
     respond(['id' => $newId, 'project_code' => $code], 201);
 }
@@ -948,6 +966,7 @@ if ($method === 'PUT') {
 
     $fields = [];
     $params = [];
+    $touchedFields = [];
     $allowed = ['name','description','location','contractor_id','budget',
                 'start_date','end_date','progress','status','latitude','longitude',
                 'category','funding_source','implementing_office','physical_target'];
@@ -967,6 +986,7 @@ if ($method === 'PUT') {
             }
 
             $fields[] = "$f = ?";
+            $touchedFields[] = $f;
             if ($f === 'contractor_id') {
                 $params[] = $b[$f] === '' || $b[$f] === null ? null : (int) $b[$f];
             } elseif ($f === 'progress') {
@@ -1057,8 +1077,25 @@ if ($method === 'PUT') {
         respond(['error' => 'Unable to update project'], 500);
     }
 
+    $plainFieldChanges = array_diff($touchedFields, ['status', 'contractor_id']);
+    if (!empty($plainFieldChanges)) {
+        $fieldLabels = [
+            'name' => 'Name', 'description' => 'Description', 'location' => 'Location',
+            'budget' => 'Budget', 'start_date' => 'Start Date', 'end_date' => 'End Date',
+            'progress' => 'Progress', 'latitude' => 'Latitude', 'longitude' => 'Longitude',
+            'category' => 'Category', 'funding_source' => 'Funding Source',
+            'implementing_office' => 'Implementing Office', 'physical_target' => 'Physical Target',
+        ];
+        $changedLabels = array_map(fn($f) => $fieldLabels[$f] ?? $f, $plainFieldChanges);
+        $updateDetails = $before['name'] . ' — updated: ' . implode(', ', $changedLabels) . '.';
+        projectWorkflowLog($db, 'Project updated', $id, $updateDetails, (int) ($user['user_id'] ?? 0) ?: null);
+        logActivity((int) ($user['user_id'] ?? 0) ?: null, 'project_updated', $updateDetails, 'Projects', $id);
+    }
+
     if (isset($b['status']) && $b['status'] !== $before['status']) {
-        projectWorkflowLog($db, 'Project status updated', $id, $before['name'] . ' changed from ' . $before['status'] . ' to ' . $b['status'] . '.', (int) ($user['user_id'] ?? 0) ?: null);
+        $statusDetails = $before['name'] . ' changed from ' . $before['status'] . ' to ' . $b['status'] . '.';
+        projectWorkflowLog($db, 'Project status updated', $id, $statusDetails, (int) ($user['user_id'] ?? 0) ?: null);
+        logActivity((int) ($user['user_id'] ?? 0) ?: null, 'project_status_updated', $statusDetails, 'Projects', $id);
 
         $statusRecipients = [];
         if (!empty($before['contractor_id'])) {
@@ -1075,7 +1112,9 @@ if ($method === 'PUT') {
         }
     }
     if (array_key_exists('contractor_id', $b) && (string) ($b['contractor_id'] ?? '') !== (string) ($before['contractor_id'] ?? '')) {
-        projectWorkflowLog($db, 'Contractor assignment updated', $id, $before['name'] . ' contractor assignment was updated.', (int) ($user['user_id'] ?? 0) ?: null);
+        $contractorAssignDetails = $before['name'] . ' contractor assignment was updated.';
+        projectWorkflowLog($db, 'Contractor assignment updated', $id, $contractorAssignDetails, (int) ($user['user_id'] ?? 0) ?: null);
+        logActivity((int) ($user['user_id'] ?? 0) ?: null, 'contractor_assignment_updated', $contractorAssignDetails, 'Contractors', $id);
 
         if (!empty($b['contractor_id'])) {
             $cu = $db->prepare("SELECT user_id FROM contractors WHERE id = ?");
@@ -1085,7 +1124,9 @@ if ($method === 'PUT') {
         }
     }
     if ($engineerId !== null) {
-        projectWorkflowLog($db, 'Engineer assignment updated', $id, $before['name'] . ' was assigned for field monitoring.', (int) ($user['user_id'] ?? 0) ?: null);
+        $engineerAssignDetails = $before['name'] . ' was assigned for field monitoring.';
+        projectWorkflowLog($db, 'Engineer assignment updated', $id, $engineerAssignDetails, (int) ($user['user_id'] ?? 0) ?: null);
+        logActivity((int) ($user['user_id'] ?? 0) ?: null, 'engineer_assignment_updated', $engineerAssignDetails, 'Projects', $id);
         notifyUser($engineerId, 'info', 'New project assignment', 'You have been assigned to ' . $before['name'] . ' for field monitoring.');
     }
 

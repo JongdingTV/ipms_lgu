@@ -578,6 +578,10 @@ if ($method === 'POST') {
         $update = $db->prepare("UPDATE projects SET progress = ?, status = ? WHERE id = ? AND contractor_id = ?");
         $update->execute([$newProgress, $newStatus, $projectId, $contractorId]);
 
+        $reportDetails = $project['name'] . ' — progress reported at ' . $progress . '%.';
+        projectWorkflowLog($db, 'Progress report submitted', $projectId, $reportDetails, $_SESSION['user_id'] ?? null);
+        logActivity($_SESSION['user_id'] ?? null, 'progress_report_submitted', $reportDetails, 'Projects', $projectId);
+
         respond(['success' => true, 'id' => $newReportId], 201);
     }
 
@@ -644,6 +648,8 @@ if ($method === 'POST') {
             respond(['error' => $e->getMessage() !== '' ? $e->getMessage() : 'Unable to upload documents.'], 422);
         }
 
+        logActivity($_SESSION['user_id'] ?? null, 'document_uploaded', count($insertedIds) . ' document(s) uploaded for ' . $project['name'] . '.', 'Documents', $projectId);
+
         respond(['success' => true, 'ids' => $insertedIds], 201);
     }
 
@@ -689,6 +695,8 @@ if ($method === 'POST') {
             projectWorkflowPaymentNo($projectId, $contractorId),
             $remarks !== '' ? $remarks : null,
         ]);
+
+        projectWorkflowLog($db, 'Payment requested', $projectId, $project['name'] . ' — payment requested for ₱' . number_format($amount, 2) . '.', $_SESSION['user_id'] ?? null);
 
         respond(['success' => true, 'id' => (int) $db->lastInsertId()], 201);
     }
@@ -846,6 +854,8 @@ if ($method === 'POST') {
             trim((string) ($validated['address'] ?? '')) ?: null,
             $contractorId,
         ]);
+
+        logActivity($_SESSION['user_id'] ?? null, 'profile_updated', 'Contractor company profile updated.', 'Profile', $contractorId);
 
         respond(['success' => true]);
     }

@@ -179,29 +179,39 @@ require_once __DIR__ . '/sidebar.php';
     <section id="page-audit-trail" class="page-section" style="display:none;">
       <div class="sa-section-head">
         <h1 class="page-title">Audit Trail</h1>
-        <p class="sa-scope-note">Governance actions taken in this portal, alongside authentication and access activity across the whole system.</p>
+        <p class="sa-scope-note">Every login, project action, approval, payment, document upload, and account/settings change across the whole system — read-only.</p>
       </div>
 
       <section class="sa-panel">
         <div class="sa-panel-head">
-          <h2>Governance Actions</h2>
-          <input type="text" id="saAuditSearch" placeholder="Filter by action or detail...">
+          <h2>All Activity</h2>
+          <button class="btn-secondary btn-compact" type="button" id="saAuditExportBtn">Export CSV</button>
         </div>
-        <div id="saAuditList" class="sa-list">
+        <div class="sa-filters">
+          <input type="text" id="saAuditSearch" placeholder="Search action, detail, or user...">
+          <select id="saAuditModuleFilter"><option value="">All modules</option></select>
+          <select id="saAuditRoleFilter">
+            <option value="">All roles</option>
+            <option value="super_admin">Super Admin</option>
+            <option value="admin">Admin</option>
+            <option value="bac">BAC</option>
+            <option value="engineer">Engineer</option>
+            <option value="hope">HOPE</option>
+            <option value="contractor">Contractor</option>
+            <option value="citizen">Citizen</option>
+          </select>
+          <select id="saAuditResultFilter">
+            <option value="">All results</option>
+            <option value="success">Success</option>
+            <option value="failed">Failed</option>
+          </select>
+          <input type="date" id="saAuditDateFrom" title="From date">
+          <input type="date" id="saAuditDateTo" title="To date">
+        </div>
+        <div id="saAuditTrailTable" class="sa-table-wrap">
           <p class="empty-state">Loading audit trail...</p>
         </div>
-        <div class="pagination-wrap" id="saAuditPager"></div>
-      </section>
-
-      <section class="sa-panel">
-        <div class="sa-panel-head">
-          <h2>System Activity</h2>
-          <input type="text" id="saActivitySearch" placeholder="Filter by action or detail...">
-        </div>
-        <div id="saActivityList" class="sa-list">
-          <p class="empty-state">Loading system activity...</p>
-        </div>
-        <div class="pagination-wrap" id="saActivityPager"></div>
+        <div class="pagination-wrap" id="saAuditTrailPager"></div>
       </section>
     </section>
 

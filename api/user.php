@@ -34,12 +34,15 @@ try {
                 $user = $stmt->fetch();
 
                 if (!$user || !password_verify($current, $user['password_hash'])) {
+                    logActivity($userId, 'password_change_failed', 'Current password did not match.', 'Profile', $userId, 'failed');
                     respond(['error' => 'Current password is incorrect'], 422);
                 }
 
                 $newHash = password_hash($new, PASSWORD_BCRYPT);
                 $db->prepare("UPDATE users SET password_hash = ? WHERE id = ?")
                    ->execute([$newHash, $userId]);
+
+                logActivity($userId, 'password_changed', 'User changed their own password.', 'Profile', $userId);
 
                 respond(['success' => true, 'message' => 'Password updated successfully']);
             }
@@ -58,6 +61,8 @@ try {
             $_SESSION['auth_user']['email'] = $data['email'] ?? '';
             $_SESSION['full_name'] = $data['full_name'] ?? '';
             $_SESSION['email'] = $data['email'] ?? '';
+
+            logActivity($userId, 'profile_updated', 'Updated name/email.', 'Profile', $userId);
 
             respond(['success' => true, 'message' => 'Profile updated successfully']);
 

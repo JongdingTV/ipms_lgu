@@ -504,7 +504,10 @@ async function engineerOpenProjectPreview(projectId) {
           </div>
         `).join('') : '<p class="empty-state">No documents attached.</p>'}
       </div>
+      <h4 style="margin: 16px 0 8px; color:#1e293b;">Activity Timeline</h4>
+      <div id="projectTimelineSection"></div>
     `);
+    renderProjectTimeline('projectTimelineSection', project.id);
   } catch (error) {
     engineerToast(error.message || 'Failed to load project details.', 'error');
   }
@@ -1883,7 +1886,6 @@ function engineerRenderRoadHistoryPage() {
         <h1 class="page-title">Road Inspection History</h1>
         <p class="engineer-scope-note">Read-only record of completed and returned Urban Planning inspections.</p>
       </div>
-      <button class="btn-secondary" type="button" id="engineerUpExportBtn">Export CSV</button>
     </div>
     <div class="filter-bar" style="flex-wrap:wrap;">
       <input class="filter-input" id="engineerUpSearch" placeholder="Search road, barangay, road ID...">
@@ -1903,6 +1905,7 @@ function engineerRenderRoadHistoryPage() {
       <input class="filter-input" id="engineerUpDateFrom" type="date" style="max-width:150px;">
       <input class="filter-input" id="engineerUpDateTo" type="date" style="max-width:150px;">
       <button class="btn-secondary btn-compact" id="engineerUpApplyFilters" type="button">Apply</button>
+      <button class="btn-secondary" style="margin-left:auto;" type="button" id="engineerUpExportBtn">Export CSV</button>
     </div>
     <article class="engineer-history-card">
       <div id="engineerUpHistoryList"><p class="empty-state">Loading...</p></div>

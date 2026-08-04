@@ -217,7 +217,6 @@ if ($action === 'upload') {
 
         $details = count($documentRows) . ' document(s) attached to ' . $owner['name'] . ' (' . $ownerType . ' #' . $ownerId . ').';
         auditLog($db, $actorId, 'procurement_document_uploaded', 'supporting_documents', $insertedIds[0] ?? null, $details);
-        logActivity($actorId, 'procurement_document_uploaded', $details);
 
         $db->commit();
     } catch (Throwable $e) {
@@ -255,7 +254,6 @@ if ($action === 'review') {
 
     $details = '"' . $document['title'] . '" (' . $document['owner_type'] . ' #' . $document['owner_id'] . ') ' . $decision . '.';
     auditLog($db, $actorId, 'procurement_document_reviewed', 'supporting_documents', $documentId, $details);
-    logActivity($actorId, 'procurement_document_reviewed', $details);
 
     if (!empty($document['uploaded_by']) && (int) $document['uploaded_by'] !== $actorId) {
         notifyUser(

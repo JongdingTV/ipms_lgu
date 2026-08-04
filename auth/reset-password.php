@@ -152,7 +152,7 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
 
                 $newHash = password_hash($newPassword, PASSWORD_BCRYPT);
                 getDB()->prepare('UPDATE users SET password_hash = ? WHERE id = ?')->execute([$newHash, $userId]);
-                logActivity($userId, 'password_reset_completed', 'Password reset via forgot-password flow');
+                logActivity($userId, 'password_reset_completed', 'Password reset via forgot-password flow', 'Profile', $userId);
                 clearResetSession();
 
                 $loginPath = $freshUser['role'] === 'citizen' ? '/citizen/login.php' : '/auth/login.php';

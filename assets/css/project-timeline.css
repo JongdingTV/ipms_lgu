@@ -1,0 +1,115 @@
+/* ============================================================
+   Project Activity Timeline — shared widget styles
+   Used by assets/js/project-timeline.js. Built entirely on the
+   existing --border/--card-bg/--card-shadow/--text-* custom
+   properties (assets/css/style.css) so it re-themes for dark mode
+   automatically instead of carrying its own palette.
+   ============================================================ */
+
+.pt-timeline {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.pt-filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.pt-filters .form-input {
+  width: auto;
+  flex: 1 1 160px;
+}
+
+.pt-list {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+}
+
+.pt-item {
+  position: relative;
+  display: grid;
+  grid-template-columns: 30px minmax(0, 1fr);
+  gap: 12px;
+  padding-bottom: 18px;
+}
+
+.pt-item:last-child {
+  padding-bottom: 0;
+}
+
+/* The connector: a vertical line running through the dot column,
+   stopping short of the last item so it doesn't trail past it. */
+.pt-item::before {
+  content: '';
+  position: absolute;
+  left: 14px;
+  top: 30px;
+  bottom: -2px;
+  width: 2px;
+  background: var(--border);
+}
+
+.pt-item:last-child::before {
+  display: none;
+}
+
+.pt-dot {
+  position: relative;
+  z-index: 1;
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: .8rem;
+  font-weight: 800;
+  box-shadow: 0 0 0 3px var(--card-bg);
+}
+
+.pt-card {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--card-bg);
+  box-shadow: var(--card-shadow);
+  padding: 12px 14px;
+  min-width: 0;
+}
+
+.pt-card-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.pt-card-head strong {
+  font-size: .88rem;
+}
+
+.pt-when {
+  font-family: var(--mono);
+  font-size: .72rem;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
+.pt-detail {
+  margin-top: 5px;
+  font-size: .8rem;
+  color: var(--text-muted);
+  line-height: 1.5;
+}
+
+.pt-meta {
+  margin-top: 8px;
+  font-size: .74rem;
+  font-weight: 600;
+  color: var(--text-primary);
+}

@@ -12,7 +12,7 @@ $search = $_GET['search'] ?? '';
 $status = $_GET['status'] ?? '';
 $all = $_GET['all'] ?? '';
 
-$query = "SELECT id, project_code, name, description, location, budget, start_date, end_date, progress, status, created_at FROM projects WHERE 1=1";
+$query = "SELECT id, project_code, name, description, location, budget, start_date, end_date, progress, status, latitude, longitude, created_at FROM projects WHERE 1=1";
 $params = [];
 
 if ($all !== '1') {

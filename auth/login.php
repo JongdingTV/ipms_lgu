@@ -454,6 +454,49 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
             background: var(--white);
         }
 
+        /* ── Password visibility toggle ── */
+        .password-field {
+            position: relative;
+        }
+        .password-field input[type="password"],
+        .password-field input[type="text"] {
+            padding-right: 2.6rem;
+        }
+        /* Edge/IE show their own built-in reveal-password icon in the same
+           corner, but only once the user starts typing — sitting right on
+           top of the custom button below and making it look like nothing
+           is there until you type. Turn it off so only the custom, always-
+           visible button ever appears. */
+        .password-field input[type="password"]::-ms-reveal,
+        .password-field input[type="password"]::-ms-clear {
+            display: none;
+        }
+        .password-toggle {
+            position: absolute;
+            top: 0;
+            right: 0;
+            height: 100%;
+            width: 2.6rem;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background: none;
+            border: none;
+            padding: 0;
+            color: var(--muted);
+            cursor: pointer;
+            font-size: 0.95rem;
+            transition: color 0.2s;
+        }
+        .password-toggle:hover {
+            color: var(--primary);
+        }
+        .password-toggle:focus-visible {
+            outline: 2px solid var(--primary);
+            outline-offset: 2px;
+            border-radius: 4px;
+        }
+
         /* ── Portal dropdown ── */
         .select-wrap {
             position: relative;
@@ -669,14 +712,19 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
 
                 <div class="field">
                     <label for="password">Password</label>
-                    <input
-                        type="password"
-                        id="password"
-                        name="password"
-                        placeholder="Enter password"
-                        required
-                        autocomplete="current-password"
-                    >
+                    <div class="password-field">
+                        <input
+                            type="password"
+                            id="password"
+                            name="password"
+                            placeholder="Enter password"
+                            required
+                            autocomplete="current-password"
+                        >
+                        <button type="button" class="password-toggle" id="passwordToggle" aria-label="Show password" aria-pressed="false" tabindex="-1">
+                            <i class="fa-solid fa-eye"></i>
+                        </button>
+                    </div>
                 </div>
 
                 <button type="submit">Login</button>
@@ -688,5 +736,19 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
             </div>
         </section>
     </main>
+    <script>
+        (function () {
+            var toggle = document.getElementById('passwordToggle');
+            var input = document.getElementById('password');
+            if (!toggle || !input) return;
+            toggle.addEventListener('click', function () {
+                var showing = input.type === 'text';
+                input.type = showing ? 'password' : 'text';
+                toggle.setAttribute('aria-pressed', String(!showing));
+                toggle.setAttribute('aria-label', showing ? 'Show password' : 'Hide password');
+                toggle.innerHTML = '<i class="fa-solid fa-eye' + (showing ? '' : '-slash') + '"></i>';
+            });
+        })();
+    </script>
 </body>
 </html>

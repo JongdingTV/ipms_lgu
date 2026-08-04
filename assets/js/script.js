@@ -181,8 +181,23 @@ function progressColor(value) {
   return value >= 70 ? '#22c55e' : value >= 40 ? '#f97316' : '#ef4444';
 }
 
+/* Project Health Score — same 0-100 score + healthy/warning/critical status
+   everywhere (includes/ProjectHealth.php is the single source of truth;
+   this just renders whatever score/status the API already computed). */
+const HEALTH_COLORS = { healthy: '#22c55e', warning: '#f97316', critical: '#ef4444' };
+const HEALTH_LABELS = { healthy: 'Healthy', warning: 'Warning', critical: 'Critical' };
+function healthBadge(score, status) {
+  const color = HEALTH_COLORS[status] || HEALTH_COLORS.critical;
+  const label = HEALTH_LABELS[status] || formatStatus(status);
+  return `<span class="badge" style="background:${color}22;color:${color};">${Number(score)}% · ${label}</span>`;
+}
+
 function formatDate(value) {
   return value ? String(value).slice(0, 10) : '-';
+}
+
+function formatDateTime(value) {
+  return value ? String(value).slice(0, 16).replace('T', ' ') : '-';
 }
 
 /* ── Animated counter ── */
@@ -278,8 +293,15 @@ async function loadDashboard() {
 
     // KPI counters
     const kpiMap = {
-      'kpi-active':  { target: d.active_projects,  budget: false },
-      'kpi-delayed': { target: d.delayed_projects, budget: false },
+      'kpi-total':               { target: d.total_projects,       budget: false },
+      'kpi-active':              { target: d.active_projects,      budget: false },
+      'kpi-delayed':             { target: d.delayed_projects,     budget: false },
+      'kpi-completed':           { target: d.completed_projects,   budget: false },
+      'kpi-pending-approvals':   { target: d.pending_approvals,    budget: false },
+      'kpi-budget-risk':         { target: d.budget_risk_projects, budget: false },
+      'kpi-active-engineers':    { target: d.active_engineers,     budget: false },
+      'kpi-active-contractors':  { target: d.active_contractors,   budget: false },
+      'kpi-citizen-complaints':  { target: d.citizen_complaints,   budget: false },
       'kpi-budget':  { target: d.total_spent / 1_000_000, budget: true },
       'kpi-alerts':  { target: d.high_risk_alerts, budget: false },
     };
@@ -314,6 +336,14 @@ async function loadDashboard() {
     renderAIInsights(d.ai_insights);
 
     renderWorkflowConnections(d.workflow_connections, d.recent_workflow);
+
+    // Command Center widgets
+    renderRecentActivities(d.recent_activities);
+    renderLatestNotifications(d.latest_notifications);
+    renderUpcomingDeadlines(d.upcoming_deadlines);
+    renderTodaysInspections(d.todays_inspections);
+    renderAIRecommendations(d.ai_recommendations);
+    renderDashboardGisMap(d.gis_projects);
 
   } catch (e) {
     toast('Failed to load dashboard data', 'error');
@@ -457,7 +487,7 @@ function renderTopDelayed(projects) {
 }
 
 function renderAnomalies(anomalies) {
-  const list = document.querySelector('.anomaly-list');
+  const list = document.getElementById('budgetAnomaliesList');
   if (!list) return;
   list.innerHTML = anomalies.length ? anomalies.map(a => {
     const pct = a.budget > 0 ? Math.round(((a.total_spent - a.budget) / a.budget) * 100) : 0;
@@ -472,7 +502,7 @@ function renderAnomalies(anomalies) {
 }
 
 function renderFeedbackWidget(items) {
-  const list = document.querySelector('.feedback-list');
+  const list = document.getElementById('recentFeedbackList');
   if (!list) return;
   const priorityClass = { urgent:'badge-urgent', high:'badge-highprio', medium:'badge-resolved', low:'badge-resolved' };
   const priorityLabel = { urgent:'Urgent', high:'High Priority', medium:'Medium', low:'Low' };
@@ -522,6 +552,137 @@ function renderWorkflowConnections(connections, recent) {
       </div>
     `).join('') : '<p class="empty-state">No connected workflow records yet.</p>';
   }
+}
+
+/* ============================================================
+   COMMAND CENTER — Recent Activities / Notifications / Deadlines /
+   Today's Inspections / AI Recommendations / health-colored GIS map.
+   ============================================================ */
+function renderRecentActivities(items) {
+  const list = document.getElementById('recentActivitiesList');
+  if (!list) return;
+  list.innerHTML = (items || []).length ? items.map(a => `
+    <div class="feedback-item">
+      <div class="feedback-icon ${a.status === 'failed' ? 'feedback-red' : 'feedback-green'}"><span aria-hidden="true">${a.status === 'failed' ? '!' : '✓'}</span></div>
+      <span class="feedback-text"><strong>${escapeHtml(a.actor_name)}</strong> — ${escapeHtml(formatStatus(a.action))}${a.module ? ' · ' + escapeHtml(a.module) : ''}</span>
+      <span class="badge badge-resolved">${formatDateTime(a.created_at)}</span>
+    </div>
+  `).join('') : '<p class="empty-state">No activity recorded yet.</p>';
+}
+
+function renderLatestNotifications(items) {
+  const list = document.getElementById('latestNotificationsList');
+  if (!list) return;
+  list.innerHTML = (items || []).length ? items.map(n => `
+    <div class="feedback-item">
+      <div class="feedback-icon ${Number(n.is_read) ? 'feedback-blue' : 'feedback-red'}"><span aria-hidden="true">${Number(n.is_read) ? 'i' : '!'}</span></div>
+      <span class="feedback-text"><strong>${escapeHtml(n.title)}</strong> — ${escapeHtml(n.message)}</span>
+      <span class="badge badge-resolved">${formatDateTime(n.created_at)}</span>
+    </div>
+  `).join('') : '<p class="empty-state">No notifications yet.</p>';
+}
+
+function renderUpcomingDeadlines(items) {
+  const list = document.getElementById('upcomingDeadlinesList');
+  if (!list) return;
+  list.innerHTML = (items || []).length ? items.map(m => `
+    <div class="anomaly-item">
+      <span class="anomaly-name">${escapeHtml(m.project_code)} — ${escapeHtml(m.title)}</span>
+      <span class="badge badge-highprio">Due ${formatDate(m.due_date)}</span>
+    </div>
+  `).join('') : '<p class="empty-state">No milestones due in the next 14 days.</p>';
+}
+
+function renderTodaysInspections(items) {
+  const list = document.getElementById('todaysInspectionsList');
+  if (!list) return;
+  list.innerHTML = (items || []).length ? items.map(i => `
+    <div class="anomaly-item">
+      <span class="anomaly-name">${escapeHtml(i.project_code)} — ${escapeHtml(i.engineer_name)}</span>
+      <span class="badge badge-resolved">${escapeHtml(formatStatus(i.recommendation))}</span>
+    </div>
+  `).join('') : '<p class="empty-state">No inspections recorded for today.</p>';
+}
+
+function renderAIRecommendations(items) {
+  const list = document.getElementById('aiRecommendationsList');
+  if (!list) return;
+  list.innerHTML = (items || []).length ? items.map(text => `
+    <div class="feedback-item">
+      <div class="feedback-icon feedback-orange"><span aria-hidden="true">AI</span></div>
+      <span class="feedback-text">${escapeHtml(text)}</span>
+    </div>
+  `).join('') : '<p class="empty-state">No recommendations right now.</p>';
+}
+
+/* Health-colored project map — separate Leaflet instance from the
+   standalone GIS Map page's (status-colored) gisMapInstance/renderGisMap()
+   in this same file; this one reads api/dashboard.php's gis_projects
+   (health: healthy/warning/critical, the same rule-based formula
+   hope/api/portal.php's hopeProjectRiskSummary() uses per-project). */
+const DASHBOARD_HEALTH_COLORS = { healthy: '#22c55e', warning: '#f97316', critical: '#ef4444' };
+let dashboardGisMapInstance = null;
+let dashboardGisMarkers = [];
+
+async function renderDashboardGisMap(projects) {
+  const container = document.getElementById('dashboardGisMap');
+  const empty = document.getElementById('dashboardGisEmpty');
+  if (!container) return;
+
+  const withCoords = (projects || []).filter(p =>
+    p.latitude !== null && p.longitude !== null && isWithinQc(Number(p.latitude), Number(p.longitude)));
+
+  if (empty) empty.style.display = withCoords.length ? 'none' : 'block';
+  if (!withCoords.length && !dashboardGisMapInstance) return;
+
+  if (!dashboardGisMapInstance) {
+    dashboardGisMapInstance = L.map('dashboardGisMap', {
+      maxBounds: QC_BOUNDS,
+      maxBoundsViscosity: 1.0,
+      minZoom: 11,
+    }).setView([14.6760, 121.0437], 12);
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      attribution: '&copy; OpenStreetMap contributors',
+      maxZoom: 19,
+    }).addTo(dashboardGisMapInstance);
+
+    try {
+      const geojson = await loadQcBoundaryGeoJson();
+      L.geoJSON(geojson, {
+        style: { color: '#2563eb', weight: 1.5, fill: false },
+        interactive: false,
+      }).addTo(dashboardGisMapInstance);
+    } catch { /* decorative outline only */ }
+  }
+
+  dashboardGisMarkers.forEach(m => dashboardGisMapInstance.removeLayer(m));
+  dashboardGisMarkers = [];
+
+  withCoords.forEach(p => {
+    const color = DASHBOARD_HEALTH_COLORS[p.health] || DASHBOARD_HEALTH_COLORS.healthy;
+    const marker = L.circleMarker([Number(p.latitude), Number(p.longitude)], {
+      radius: 9,
+      color: '#fff',
+      weight: 2,
+      fillColor: color,
+      fillOpacity: 0.9,
+    }).addTo(dashboardGisMapInstance);
+
+    marker.bindPopup(`
+      <strong>${escapeHtml(p.name)}</strong><br>
+      <small>${escapeHtml(p.project_code)} · ${escapeHtml(formatStatus(p.status))} · ${p.progress}%</small><br>
+      <small>${healthBadge(p.health_score, p.health)}${p.contractor_name ? ' · ' + escapeHtml(p.contractor_name) : ''}</small><br>
+      <button style="margin-top:6px;padding:4px 10px;border:none;border-radius:6px;background:#2563eb;color:#fff;cursor:pointer;" onclick="openProjectModal(${p.id})">View Details</button>
+    `);
+    dashboardGisMarkers.push(marker);
+  });
+
+  if (dashboardGisMarkers.length) {
+    const group = L.featureGroup(dashboardGisMarkers);
+    dashboardGisMapInstance.fitBounds(group.getBounds().pad(0.2));
+  }
+
+  setTimeout(() => dashboardGisMapInstance.invalidateSize(), 100);
 }
 
 async function workflowGet(action = 'summary') {
@@ -729,6 +890,19 @@ async function openProjectModal(id) {
           <div><p class="modal-label">END DATE</p><p class="modal-val">${p.end_date}</p></div>
         </div>
         <div>
+          <p class="modal-label">HEALTH SCORE <small style="font-weight:400;color:#94a3b8;">— advisory only</small></p>
+          <p class="modal-val" style="margin-top:4px;">${healthBadge(p.health_score, p.health_status)}</p>
+          ${p.health_breakdown ? `
+          <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px;margin-top:8px;font-size:.72rem;color:#64748b;">
+            <span>Timeline: ${p.health_breakdown.timeline_progress}/25</span>
+            <span>Budget: ${p.health_breakdown.budget_consumption}/20</span>
+            <span>Delay: ${p.health_breakdown.delay_status}/20</span>
+            <span>Inspection: ${p.health_breakdown.inspection_results}/15</span>
+            <span>Complaints: ${p.health_breakdown.citizen_complaints}/10</span>
+            <span>AI Risk: ${p.health_breakdown.ai_risk_analysis}/10</span>
+          </div>` : ''}
+        </div>
+        <div>
           <p class="modal-label">PROGRESS</p>
           <div style="background:#f1f5f9;border-radius:20px;height:10px;overflow:hidden;margin-top:6px;">
             <div style="width:${p.progress}%;background:${color};height:100%;border-radius:20px;transition:width 0.8s;"></div>
@@ -762,8 +936,24 @@ async function openProjectModal(id) {
             `).join('') : '<p class="empty-state">No documents attached.</p>'}
           </div>
         </div>
+        <div>
+          <p class="modal-label">QR CODE <small style="font-weight:400;color:#94a3b8;">— public transparency page, no login required</small></p>
+          <div style="display:flex;align-items:center;gap:14px;margin-top:6px;">
+            <div id="projectQRTarget" style="padding:8px;background:#fff;border-radius:8px;border:1px solid #e2e8f0;"></div>
+            <div style="font-size:.78rem;color:#64748b;">
+              <p style="margin:0 0 6px;">Citizens can scan this to view the project's name, description, budget, contractor, engineer, progress, timeline, latest photos, and GIS location — no account needed.</p>
+              <button class="btn-secondary btn-compact" type="button" onclick="openProjectQRModal('${escapeHtml(p.project_code)}', '${escapeHtml(p.name)}')">Enlarge / Copy Link</button>
+            </div>
+          </div>
+        </div>
+        <div>
+          <p class="modal-label">ACTIVITY TIMELINE</p>
+          <div id="projectTimelineSection" style="margin-top:6px;"></div>
+        </div>
       </div>
     `);
+    renderProjectTimeline('projectTimelineSection', p.id);
+    renderProjectQR('projectQRTarget', p.project_code, 96);
   } catch (e) {
     toast('Failed to load project details', 'error');
   }
@@ -885,7 +1075,6 @@ async function loadProjectsPage(containerId = 'page-project-registration', title
   container.innerHTML = `
     <div class="page-header">
       <h2 class="page-title">${title}</h2>
-      <button class="btn-primary" onclick="showProjectForm()">+ New Project</button>
     </div>
     <div class="filter-bar">
       <input class="filter-input" id="projSearch" placeholder="Search projects…" oninput="projectsState.search=this.value;projectsState.page=1;fetchProjects()" />
@@ -893,6 +1082,7 @@ async function loadProjectsPage(containerId = 'page-project-registration', title
         <option value="">All Statuses</option>
         ${PROJECT_STATUSES.map(status => `<option value="${status}">${PROJECT_STATUS_LABELS[status]}</option>`).join('')}
       </select>
+      <button class="btn-primary" style="margin-left:auto;" onclick="showProjectForm()">+ New Project</button>
     </div>
     <div id="projectsTable" class="table-card"></div>
     <div id="projectsPager" class="pager"></div>
@@ -928,7 +1118,7 @@ function renderProjectsTable(rows) {
       <thead>
         <tr>
           <th>Code</th><th>Name</th><th>Location</th><th>Contractor</th>
-          <th>Budget</th><th>Spent</th><th>Progress</th><th>Status</th><th>Actions</th>
+          <th>Budget</th><th>Spent</th><th>Progress</th><th>Status</th><th>Health</th><th>Actions</th>
         </tr>
       </thead>
       <tbody>
@@ -952,6 +1142,7 @@ function renderProjectsTable(rows) {
               </div>
             </td>
             <td>${statusBadge(p.status)}</td>
+            <td>${healthBadge(p.health_score, p.health_status)}</td>
             <td>
               <div class="action-btns">
                 <button class="btn-icon" title="View" onclick="openProjectModal(${p.id})"><svg viewBox="0 0 20 20" fill="currentColor" width="14" height="14"><path d="M10 12.5a2.5 2.5 0 100-5 2.5 2.5 0 000 5z"/><path fill-rule="evenodd" d="M.664 10.59a1.651 1.651 0 010-1.186A10.004 10.004 0 0110 3c4.257 0 7.893 2.66 9.336 6.41.147.381.146.804 0 1.186A10.004 10.004 0 0110 17c-4.257 0-7.893-2.66-9.336-6.41zM14 10a4 4 0 11-8 0 4 4 0 018 0z" clip-rule="evenodd"/></svg></button>
@@ -1923,7 +2114,7 @@ function renderApprovalTable(rows) {
                 ${p.status === 'endorsed' ? '<small>Awaiting HOPE review</small>' : ''}
                 ${p.status === 'assigned' ? '<small>Awaiting Notice to Proceed</small>' : ''}
                 ${p.status === 'completion_inspection' ? '<small>Awaiting completion inspection</small>' : ''}
-                ${p.status === 'completed' ? `<button class="btn-primary btn-compact" onclick="openTurnoverModal(${p.id}, '${escapeHtml(p.name)}')">Record Turnover</button>` : ''}
+                ${p.status === 'completed' ? `<button class="btn-primary btn-compact" onclick="openTurnoverModal(${p.id}, '${escapeHtml(p.name)}', '${escapeHtml(p.project_code)}')">Record Turnover</button>` : ''}
                 <button class="btn-secondary btn-compact" onclick="openProjectModal(${p.id})">View</button>
               </div>
             </td>
@@ -1934,9 +2125,9 @@ function renderApprovalTable(rows) {
   `;
 }
 
-function openTurnoverModal(id, projectName) {
+function openTurnoverModal(id, projectName, projectCode) {
   openModal('Record Turnover', `
-    <form id="turnoverForm" onsubmit="submitTurnover(event, ${id})">
+    <form id="turnoverForm" onsubmit="submitTurnover(event, ${id}, '${escapeHtml(projectName)}', '${escapeHtml(projectCode)}')">
       <p style="font-size:.85rem; color:#64748b; margin-bottom:12px;">Turning over <strong>${projectName}</strong> to the receiving office closes out the project record.</p>
       <div class="form-group">
         <label>Receiving Office / Barangay *</label>
@@ -1954,22 +2145,49 @@ function openTurnoverModal(id, projectName) {
   `);
 }
 
-async function submitTurnover(e, id) {
+async function submitTurnover(e, id, projectName, projectCode) {
   e.preventDefault();
   const form = new FormData(e.target);
+  const turnoverOffice = form.get('turnover_office');
+  const notes = form.get('notes');
   try {
     const res = await postAction(API.projects, 'turnover', {
       project_id: id,
-      turnover_office: form.get('turnover_office'),
-      notes: form.get('notes'),
+      turnover_office: turnoverOffice,
+      notes,
     });
     if (res.error) { toast(res.error, 'error'); return; }
     toast('Turnover recorded.');
-    closeModal();
     fetchApprovalProjects();
+    openCompletionRecordModal(projectName, projectCode, turnoverOffice, notes);
   } catch {
     toast('Failed to record turnover', 'error');
   }
+}
+
+/* Completion Document — a printable record of the turnover just recorded,
+   stamped with the project's QR code so a citizen holding the printout (or
+   viewing it later) can scan straight through to the live transparency page. */
+function openCompletionRecordModal(projectName, projectCode, turnoverOffice, notes) {
+  openModal('Completion Record', `
+    <div id="completionRecordPrint">
+      <p style="font-size:.75rem;color:#94a3b8;text-transform:uppercase;letter-spacing:.04em;margin:0 0 4px;">Project Completion &amp; Turnover Record</p>
+      <h3 style="margin:0 0 10px;">${escapeHtml(projectName)}</h3>
+      <p style="font-size:.85rem;"><strong>Project Code:</strong> ${escapeHtml(projectCode)}</p>
+      <p style="font-size:.85rem;"><strong>Turned Over To:</strong> ${escapeHtml(turnoverOffice)}</p>
+      <p style="font-size:.85rem;"><strong>Date:</strong> ${formatDate(new Date().toISOString())}</p>
+      ${notes ? `<p style="font-size:.85rem;"><strong>Notes:</strong> ${escapeHtml(notes)}</p>` : ''}
+      <div style="text-align:center;margin-top:16px;">
+        <div id="completionQRTarget" style="display:inline-block;padding:10px;background:#fff;border:1px solid #e2e8f0;border-radius:8px;"></div>
+        <p style="font-size:.72rem;color:#94a3b8;margin-top:6px;">Scan for the live public transparency page</p>
+      </div>
+    </div>
+    <div class="form-actions">
+      <button type="button" class="btn-secondary" onclick="closeModal()">Close</button>
+      <button type="button" class="btn-primary" onclick="window.print()">Print</button>
+    </div>
+  `);
+  setTimeout(() => renderProjectQR('completionQRTarget', projectCode, 140), 0);
 }
 
 /* ============================================================
@@ -2848,6 +3066,7 @@ function renderReports(dashboard, contractors, openFeedback, expenseSummary) {
   const highestSpend = expenseSummary.slice(0, 5);
   const fundingSources = dashboard.funding_source_breakdown || [];
   const recentActivity = (dashboard.recent_workflow || []).slice(0, 5);
+  const healthSummary = dashboard.project_health_summary || [];
 
   wrap.innerHTML = `
     <section class="admin-summary-grid">
@@ -2885,6 +3104,21 @@ function renderReports(dashboard, contractors, openFeedback, expenseSummary) {
             <strong>${formatStatus(r.status)}</strong>
           </div>
         `).join('') : '<p class="empty-state">No recent activity.</p>'}
+      </article>
+    </section>
+
+    <section class="report-columns-2">
+      <article class="report-panel" style="grid-column: span 2;">
+        <h3>Project Health Overview <small style="font-weight:400;color:var(--text-muted);">— worst first, advisory only</small></h3>
+        ${healthSummary.length ? healthSummary.map(h => `
+          <div class="report-row">
+            <span>${escapeHtml(h.project_code)} — ${escapeHtml(h.name)}</span>
+            <span style="display:flex;align-items:center;gap:8px;">
+              ${healthBadge(h.health_score, h.health_status)}
+              <button class="btn-secondary btn-compact" type="button" onclick="openProjectQRModal('${escapeHtml(h.project_code)}', '${escapeHtml(h.name)}')" title="View QR code">QR</button>
+            </span>
+          </div>
+        `).join('') : '<p class="empty-state">No project health data yet.</p>'}
       </article>
     </section>
   `;
@@ -3036,6 +3270,9 @@ function exportReportsCsv() {
   addSection('Highest Budget Usage', ['Project', 'Budget', 'Spent'],
     expenseSummary.slice(0, 10).map(r => [r.project_name, r.budget, r.total_spent]));
 
+  addSection('Project Health Overview', ['Project', 'Health Score', 'Health Status'],
+    (dashboard.project_health_summary || []).map(h => [`${h.project_code} — ${h.name}`, h.health_score, HEALTH_LABELS[h.health_status] || h.health_status]));
+
   const csv = lines.map(row => row.map(v => `"${String(v ?? '').replace(/"/g, '""')}"`).join(',')).join('\n');
   const blob = new Blob([csv], { type: 'text/csv' });
   const url = URL.createObjectURL(blob);
@@ -3135,7 +3372,6 @@ async function loadBudgetPage(containerId = 'page-budget-monitoring', title = 'B
   container.innerHTML = `
     <div class="page-header">
       <h2 class="page-title">${title}</h2>
-      <button class="btn-primary" onclick="showExpenseForm()">+ Log Expense</button>
     </div>
     <div id="budgetSummary" class="budget-summary-grid"></div>
     <div class="filter-bar">
@@ -3144,6 +3380,7 @@ async function loadBudgetPage(containerId = 'page-budget-monitoring', title = 'B
         <input type="checkbox" onchange="budgetState.flagged=this.checked;budgetState.page=1;fetchExpenses()" />
         Anomalies only
       </label>
+      <button class="btn-primary" style="margin-left:auto;" onclick="showExpenseForm()">+ Log Expense</button>
     </div>
     <div id="expensesTable" class="table-card"></div>
     <div id="expensesPager" class="pager"></div>
@@ -3319,31 +3556,44 @@ async function loadStaffRequestsPage() {
         </p>
       </div>
     </div>
-    <div class="table-card" style="padding:20px;max-width:520px;">
-      <form id="staffRequestForm">
-        <div class="form-group">
-          <label>Role *</label>
-          <select name="requested_role" class="form-input" required>
-            <option value="engineer">Engineer</option>
-            <option value="bac">BAC</option>
-          </select>
+    <div class="staff-request-layout">
+      <div class="staff-request-info">
+        <div class="staff-request-info-icon">
+          <svg viewBox="0 0 20 20" fill="currentColor"><path d="M10 9a3 3 0 100-6 3 3 0 000 6zm-7 9a7 7 0 1114 0H3z"/></svg>
         </div>
-        <div class="form-group">
-          <label>Full Name *</label>
-          <input name="full_name" class="form-input" required />
-        </div>
-        <div class="form-group">
-          <label>Username *</label>
-          <input name="username" class="form-input" required />
-        </div>
-        <div class="form-group">
-          <label>Email *</label>
-          <input name="email" type="email" class="form-input" required />
-        </div>
-        <div class="form-actions">
-          <button type="submit" class="btn-primary">Submit Request</button>
-        </div>
-      </form>
+        <h3>How it works</h3>
+        <ol class="staff-request-steps">
+          <li><span class="step-num">1</span><span>Fill in the new hire's role and details</span></li>
+          <li><span class="step-num">2</span><span>A Super Admin reviews the request</span></li>
+          <li><span class="step-num">3</span><span>Once approved, their login is created and emailed to them</span></li>
+        </ol>
+      </div>
+      <div class="table-card staff-request-form-card">
+        <form id="staffRequestForm">
+          <div class="form-group">
+            <label>Role *</label>
+            <select name="requested_role" class="form-input" required>
+              <option value="engineer">Engineer</option>
+              <option value="bac">BAC</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label>Full Name *</label>
+            <input name="full_name" class="form-input" required />
+          </div>
+          <div class="form-group">
+            <label>Username *</label>
+            <input name="username" class="form-input" required />
+          </div>
+          <div class="form-group">
+            <label>Email *</label>
+            <input name="email" type="email" class="form-input" required />
+          </div>
+          <div class="form-actions">
+            <button type="submit" class="btn-primary">Submit Request</button>
+          </div>
+        </form>
+      </div>
     </div>
   `;
 
@@ -3371,7 +3621,6 @@ async function loadFeedbackPage(containerId = 'page-citizen-feedback', title = '
   container.innerHTML = `
     <div class="page-header">
       <h2 class="page-title">${title}</h2>
-      ${allowNewEntry ? '<button class="btn-primary" onclick="showFeedbackForm()">+ New Entry</button>' : ''}
     </div>
     <div class="filter-bar">
       <input class="filter-input" placeholder="Search feedback…"
@@ -3390,6 +3639,7 @@ async function loadFeedbackPage(containerId = 'page-citizen-feedback', title = '
         <option value="resolved">Resolved</option>
         <option value="closed">Closed</option>
       </select>
+      ${allowNewEntry ? '<button class="btn-primary" style="margin-left:auto;" onclick="showFeedbackForm()">+ New Entry</button>' : ''}
     </div>
     <div id="feedbackTable" class="table-card"></div>
     <div id="feedbackPager" class="pager"></div>

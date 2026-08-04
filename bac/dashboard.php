@@ -2,7 +2,7 @@
 require_once __DIR__ . '/../auth/session.php';
 
 $user = requireLogin(['bac']);
-$extraStylesheets = ['assets/css/pagination.css', 'bac/assets/css/bac.css'];
+$extraStylesheets = ['assets/css/pagination.css', 'assets/css/project-timeline.css', 'bac/assets/css/bac.css'];
 
 require_once __DIR__ . '/../includes/header.php';
 require_once __DIR__ . '/sidebar.php';
@@ -167,6 +167,7 @@ require_once __DIR__ . '/sidebar.php';
 <script src="<?= htmlspecialchars(assetUrl('/assets/js/sidebar-badges.js')) ?>"></script>
 <script src="<?= htmlspecialchars(assetUrl('/assets/js/pagination.js')) ?>"></script>
 <script src="<?= htmlspecialchars(assetUrl('/assets/js/sidebar-toggle.js')) ?>"></script>
+<script src="<?= htmlspecialchars(assetUrl('/assets/js/project-timeline.js')) ?>"></script>
 <script src="<?= htmlspecialchars(assetUrl('/bac/assets/js/bac.js')) ?>"></script>
 </body>
 </html>

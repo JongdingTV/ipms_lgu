@@ -53,6 +53,7 @@ $extraStylesheets = $extraStylesheets ?? [];
   <script src="<?= htmlspecialchars(assetUrl('/assets/js/theme-toggle.js')) ?>"></script>
   <script>
     window.BASE_PATH = '<?= $BASE_PATH ?>';
+    window.APP_PUBLIC_URL = '<?= addslashes(APP_PUBLIC_URL) ?>';
     window.CSRF_TOKEN = '<?= htmlspecialchars(getCsrfToken(), ENT_QUOTES, 'UTF-8') ?>';
     window.CURRENT_USER_ROLE = '<?= htmlspecialchars((string) (currentUser()['role'] ?? ''), ENT_QUOTES, 'UTF-8') ?>';
   </script>

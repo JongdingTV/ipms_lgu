@@ -1,6 +1,7 @@
 <?php
 require_once '../auth/session.php';
 $user = requireLogin(['admin']);
+$extraStylesheets = ['assets/css/project-timeline.css'];
 require_once '../includes/header.php';
 require_once '../includes/sidebar.php';
 // Pure geography data (district/barangay names), no citizen-session
@@ -16,6 +17,18 @@ require_once '../citizen/includes/qc-locations.php';
 
   <main class="content">
     <section class="kpi-grid">
+      <article class="kpi-card">
+        <div class="kpi-icon kpi-blue">
+          <svg viewBox="0 0 20 20" fill="currentColor">
+            <path d="M2 6a2 2 0 012-2h5l2 2h5a2 2 0 012 2v6a2 2 0 01-2 2H4a2 2 0 01-2-2V6z"/>
+          </svg>
+        </div>
+        <div class="kpi-info">
+          <span class="kpi-label">Total Projects</span>
+          <strong class="kpi-value" id="kpi-total">0</strong>
+        </div>
+      </article>
+
       <article class="kpi-card">
         <div class="kpi-icon kpi-blue">
           <svg viewBox="0 0 20 20" fill="currentColor">
@@ -43,6 +56,78 @@ require_once '../citizen/includes/qc-locations.php';
       <article class="kpi-card">
         <div class="kpi-icon kpi-green">
           <svg viewBox="0 0 20 20" fill="currentColor">
+            <path fill-rule="evenodd" d="M16.704 4.153a.75.75 0 01.143 1.052l-8 10.5a.75.75 0 01-1.127.075l-4.5-4.5a.75.75 0 011.06-1.06l3.894 3.893 7.48-9.817a.75.75 0 011.05-.143z" clip-rule="evenodd"/>
+          </svg>
+        </div>
+        <div class="kpi-info">
+          <span class="kpi-label">Completed Projects</span>
+          <strong class="kpi-value" id="kpi-completed">0</strong>
+        </div>
+      </article>
+
+      <article class="kpi-card">
+        <div class="kpi-icon kpi-purple">
+          <svg viewBox="0 0 20 20" fill="currentColor">
+            <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm1-12a1 1 0 10-2 0v4a1 1 0 00.293.707l2.828 2.829a1 1 0 101.415-1.415L11 9.586V6z" clip-rule="evenodd"/>
+          </svg>
+        </div>
+        <div class="kpi-info">
+          <span class="kpi-label">Pending Approvals</span>
+          <strong class="kpi-value" id="kpi-pending-approvals">0</strong>
+        </div>
+      </article>
+
+      <article class="kpi-card">
+        <div class="kpi-icon kpi-red">
+          <svg viewBox="0 0 20 20" fill="currentColor">
+            <path fill-rule="evenodd" d="M18 10c0 3.866-3.582 7-8 7a8.841 8.841 0 01-4.083-.98L2 17l1.338-3.123C2.493 12.767 2 11.434 2 10c0-3.866 3.582-7 8-7s8 3.134 8 7z" clip-rule="evenodd"/>
+          </svg>
+        </div>
+        <div class="kpi-info">
+          <span class="kpi-label">Budget Risk Projects</span>
+          <strong class="kpi-value" id="kpi-budget-risk">0</strong>
+        </div>
+      </article>
+
+      <article class="kpi-card">
+        <div class="kpi-icon kpi-teal">
+          <svg viewBox="0 0 20 20" fill="currentColor">
+            <path d="M10 9a3 3 0 100-6 3 3 0 000 6zm-7 9a7 7 0 1114 0H3z"/>
+          </svg>
+        </div>
+        <div class="kpi-info">
+          <span class="kpi-label">Active Engineers</span>
+          <strong class="kpi-value" id="kpi-active-engineers">0</strong>
+        </div>
+      </article>
+
+      <article class="kpi-card">
+        <div class="kpi-icon kpi-teal">
+          <svg viewBox="0 0 20 20" fill="currentColor">
+            <path d="M10 9a3 3 0 100-6 3 3 0 000 6zm-7 9a7 7 0 1114 0H3z"/>
+          </svg>
+        </div>
+        <div class="kpi-info">
+          <span class="kpi-label">Active Contractors</span>
+          <strong class="kpi-value" id="kpi-active-contractors">0</strong>
+        </div>
+      </article>
+
+      <article class="kpi-card">
+        <div class="kpi-icon kpi-cyan">
+          <svg viewBox="0 0 20 20" fill="currentColor">
+            <path fill-rule="evenodd" d="M18 10c0 3.866-3.582 7-8 7a8.841 8.841 0 01-4.083-.98L2 17l1.338-3.123C2.493 12.767 2 11.434 2 10c0-3.866 3.582-7 8-7s8 3.134 8 7z" clip-rule="evenodd"/>
+          </svg>
+        </div>
+        <div class="kpi-info">
+          <span class="kpi-label">Citizen Complaints</span>
+          <strong class="kpi-value" id="kpi-citizen-complaints">0</strong>
+        </div>
+      </article>
+
+      <article class="kpi-card">
+        <div class="kpi-icon kpi-green">
+          <svg viewBox="0 0 20 20" fill="currentColor">
             <path d="M4 4a2 2 0 00-2 2v1h16V6a2 2 0 00-2-2H4z"/>
             <path fill-rule="evenodd" d="M18 9H2v5a2 2 0 002 2h12a2 2 0 002-2V9zM4 13a1 1 0 011-1h1a1 1 0 110 2H5a1 1 0 01-1-1zm5-1a1 1 0 100 2h1a1 1 0 100-2H9z" clip-rule="evenodd"/>
           </svg>
@@ -59,7 +144,7 @@ require_once '../citizen/includes/qc-locations.php';
       <article class="kpi-card">
         <div class="kpi-icon kpi-red">
           <svg viewBox="0 0 20 20" fill="currentColor">
-            <path fill-rule="evenodd" d="M18 10c0 3.866-3.582 7-8 7a8.841 8.841 0 01-4.083-.98L2 17l1.338-3.123C2.493 12.767 2 11.434 2 10c0-3.866 3.582-7 8-7s8 3.134 8 7z" clip-rule="evenodd"/>
+            <path fill-rule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l6.518 11.596c.75 1.334-.213 2.995-1.742 2.995H3.48c-1.53 0-2.492-1.66-1.742-2.995L8.257 3.1zM11 13a1 1 0 10-2 0 1 1 0 002 0zm-1-6a1 1 0 00-1 1v3a1 1 0 102 0V8a1 1 0 00-1-1z" clip-rule="evenodd"/>
           </svg>
         </div>
         <div class="kpi-info">
@@ -68,6 +153,19 @@ require_once '../citizen/includes/qc-locations.php';
         </div>
       </article>
     </section>
+
+    <article class="chart-card chart-main reveal">
+      <div class="chart-header">
+        <h2 class="chart-title">Live Project Map</h2>
+        <div class="chart-legend">
+          <span><span class="legend-dot" style="background:#22c55e;"></span>Healthy</span>
+          <span><span class="legend-dot" style="background:#f97316;"></span>Warning</span>
+          <span><span class="legend-dot" style="background:#ef4444;"></span>Critical</span>
+        </div>
+      </div>
+      <div id="dashboardGisMap" style="height:420px;border-radius:var(--radius);overflow:hidden;"></div>
+      <p id="dashboardGisEmpty" class="empty-state" style="display:none;">No active projects have map coordinates yet.</p>
+    </article>
 
     <section class="charts-row">
       <article class="chart-card chart-main">
@@ -123,6 +221,45 @@ require_once '../citizen/includes/qc-locations.php';
 
     <section class="lower-row reveal">
       <article class="info-card">
+        <h2 class="info-card-title">Recent Activities</h2>
+        <div id="recentActivitiesList" class="feedback-list">
+          <div class="skeleton-group"><div class="skeleton-row"></div><div class="skeleton-row"></div><div class="skeleton-row"></div></div>
+        </div>
+      </article>
+
+      <article class="info-card">
+        <h2 class="info-card-title">Latest Notifications</h2>
+        <div id="latestNotificationsList" class="feedback-list">
+          <div class="skeleton-group"><div class="skeleton-row"></div><div class="skeleton-row"></div></div>
+        </div>
+      </article>
+
+      <article class="info-card">
+        <h2 class="info-card-title">Upcoming Deadlines</h2>
+        <div id="upcomingDeadlinesList" class="anomaly-list">
+          <div class="skeleton-group"><div class="skeleton-row"></div><div class="skeleton-row"></div></div>
+        </div>
+      </article>
+    </section>
+
+    <section class="lower-row reveal" style="transition-delay:.06s;">
+      <article class="info-card">
+        <h2 class="info-card-title">Today's Inspections</h2>
+        <div id="todaysInspectionsList" class="anomaly-list">
+          <div class="skeleton-group"><div class="skeleton-row"></div><div class="skeleton-row"></div></div>
+        </div>
+      </article>
+
+      <article class="info-card" style="grid-column: span 2;">
+        <h2 class="info-card-title">AI Recommendations <small style="font-weight:400;color:var(--text-muted);">— advisory only</small></h2>
+        <div id="aiRecommendationsList" class="feedback-list">
+          <div class="skeleton-group"><div class="skeleton-row"></div><div class="skeleton-row"></div></div>
+        </div>
+      </article>
+    </section>
+
+    <section class="lower-row reveal">
+      <article class="info-card">
         <h2 class="info-card-title">Top Delayed Projects</h2>
         <div class="delayed-list">
           <div class="skeleton-group"><div class="skeleton-row"></div><div class="skeleton-row"></div><div class="skeleton-row"></div></div>
@@ -131,7 +268,7 @@ require_once '../citizen/includes/qc-locations.php';
 
       <article class="info-card">
         <h2 class="info-card-title">Budget Anomalies</h2>
-        <div class="anomaly-list">
+        <div id="budgetAnomaliesList" class="anomaly-list">
           <div class="skeleton-group"><div class="skeleton-row"></div><div class="skeleton-row"></div></div>
         </div>
         <div class="anomaly-footer">
@@ -141,7 +278,7 @@ require_once '../citizen/includes/qc-locations.php';
 
       <article class="info-card">
         <h2 class="info-card-title">Recent Citizen Feedback</h2>
-        <div class="feedback-list">
+        <div id="recentFeedbackList" class="feedback-list">
           <div class="skeleton-group"><div class="skeleton-row"></div><div class="skeleton-row"></div><div class="skeleton-row"></div></div>
         </div>
       </article>

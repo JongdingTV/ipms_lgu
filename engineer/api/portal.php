@@ -493,6 +493,8 @@ if ($method === 'POST') {
             respond(['error' => $e->getMessage() !== '' ? $e->getMessage() : 'Unable to upload photos.'], 422);
         }
 
+        logActivity($engineerId, 'document_uploaded', count($insertedIds) . ' progress photo(s) uploaded for project #' . $projectId . '.', 'Documents', $projectId);
+
         respond(['success' => true, 'ids' => $insertedIds], 201);
     }
 
@@ -669,6 +671,10 @@ if ($method === 'POST') {
             $db->rollBack();
             respond(['error' => 'Unable to save inspection.'], 500);
         }
+
+        $inspectionDetails = 'Site inspection recorded — ' . str_replace('_', ' ', $recommendation) . '.';
+        projectWorkflowLog($db, 'Inspection recorded', (int) $reportRow['project_id'], $inspectionDetails, $engineerId);
+        logActivity($engineerId, 'inspection_submitted', $inspectionDetails, 'Inspections', $newInspectionId);
 
         respond(['success' => true, 'id' => $newInspectionId], 201);
     }

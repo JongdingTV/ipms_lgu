@@ -285,6 +285,17 @@ const qcLayersByGeo = {};   // geojson name -> leaflet layer
 let qcBarangayByGeo = null; // geojson name -> {district, name, alt}
 let qcSelectedGeo = null;   // geojson name of the selected barangay
 let qcPinMarker = null;     // draggable marker for the exact spot
+let qcProjectMarkers = [];  // ongoing-project pins, separate layer from the barangay polygons
+
+// Same palette the staff GIS map uses (assets/js/script.js) so a status
+// colors the same way everywhere in the app.
+const QC_PROJECT_STATUS_COLORS = {
+    completed: '#22c55e',
+    delayed: '#ef4444',
+    cancelled: '#94a3b8',
+    turnover: '#16a34a',
+};
+const QC_PROJECT_DEFAULT_COLOR = '#3b82f6'; // active, assigned, bidding, etc. — still in progress
 
 // The geojson uses official PSA spellings; entry.geo carries that spelling
 // when it differs from the display name (see citizen/includes/qc-locations.php).
@@ -484,7 +495,7 @@ function initQcMap() {
 
                     layer.on('mouseover', () => {
                         if (qcSelectedGeo !== geoName) {
-                            layer.setStyle({ weight: 2.5, fillOpacity: 0.65 });
+                            layer.setStyle({ weight: 2, fillOpacity: 0.35 });
                         }
                     });
                     layer.on('mouseout', () => {
@@ -517,6 +528,7 @@ function initQcMap() {
         qcMap.setMaxBounds(bounds.pad(0.3));
 
         addQcLegend();
+        loadQcProjectPins();
 
         const loading = container.querySelector('.qc-map-loading');
         if (loading) loading.remove();
@@ -542,7 +554,8 @@ function initQcMap() {
 function qcFeatureStyle(feature) {
     const info = buildBarangayIndex()[feature.properties.adm4_en];
     const color = info ? QC_DISTRICT_COLORS[info.district] : '#94a3b8';
-    return { color: '#ffffff', weight: 1.2, fillColor: color, fillOpacity: 0.4 };
+    // Kept light so street/place names on the basemap underneath stay readable.
+    return { color: '#ffffff', weight: 1, fillColor: color, fillOpacity: 0.18 };
 }
 
 // Dim every district except the active one (called after style resets too).
@@ -554,7 +567,7 @@ function reapplyDistrictDim() {
         if (geoName === qcSelectedGeo) return;
         const info = qcBarangayByGeo[geoName];
         if (info && info.district !== active) {
-            qcLayersByGeo[geoName].setStyle({ fillOpacity: 0.08, weight: 0.7 });
+            qcLayersByGeo[geoName].setStyle({ fillOpacity: 0.05, weight: 0.6 });
         }
     });
 }
@@ -577,10 +590,10 @@ function focusDistrictOnMap(district, zoom = true) {
         const info = qcBarangayByGeo[geoName];
         if (!info) return;
         if (info.district === district) {
-            qcLayersByGeo[geoName].setStyle({ fillOpacity: 0.55, weight: 1.4 });
+            qcLayersByGeo[geoName].setStyle({ fillOpacity: 0.28, weight: 1.2 });
             districtLayers.push(qcLayersByGeo[geoName]);
         } else {
-            qcLayersByGeo[geoName].setStyle({ fillOpacity: 0.08, weight: 0.7 });
+            qcLayersByGeo[geoName].setStyle({ fillOpacity: 0.05, weight: 0.6 });
         }
     });
 
@@ -601,7 +614,7 @@ function focusBarangayOnMap(district, barangayName, zoom = true) {
     if (!layer) return;
 
     qcSelectedGeo = geoName;
-    layer.setStyle({ fillOpacity: 0.8, weight: 3, color: '#1e293b' });
+    layer.setStyle({ fillOpacity: 0.45, weight: 2.5, color: '#1e293b' });
     if (layer.bringToFront) layer.bringToFront();
     if (zoom) qcMap.fitBounds(layer.getBounds().pad(0.4), { maxZoom: 15 });
 }
@@ -616,6 +629,78 @@ function addQcLegend() {
         return div;
     };
     legend.addTo(qcMap);
+}
+
+// Ongoing-project pins — separate Leaflet layer from the barangay polygons,
+// so a citizen can see exactly where active infrastructure work is happening
+// while picking their own feedback location. Reuses the same coordinate
+// source and status-color scheme as the staff GIS map (assets/js/script.js
+// renderGisMap()); "View Details" reuses the existing citizen project-detail
+// modal (openProjectDetail) rather than duplicating it.
+// One glance should say "something is happening here" — a plain dot doesn't
+// invite a click. Varying the icon by status also means a citizen can tell
+// delayed/completed/active apart without opening anything.
+const QC_PROJECT_STATUS_ICONS = {
+    completed: '✅',
+    turnover: '✅',
+    delayed: '⚠️',
+    cancelled: '✖️',
+};
+const QC_PROJECT_DEFAULT_ICON = '🚧'; // active, assigned, bidding, on_hold, etc.
+
+function qcProjectPinIcon(color, icon) {
+    return L.divIcon({
+        className: 'qc-project-pin',
+        html:
+            '<span class="pin-pulse" style="background:' + color + '"></span>' +
+            '<span class="pin-body" style="background:' + color + '">' +
+                '<span class="pin-icon">' + icon + '</span>' +
+            '</span>',
+        iconSize: [34, 44],
+        iconAnchor: [17, 40],
+        popupAnchor: [0, -38],
+    });
+}
+
+function loadQcProjectPins() {
+    if (!qcMap) return;
+    fetch(citizenUrl('citizen/api/projects.php'))
+        .then(res => res.json())
+        .then(data => {
+            const projects = data.projects || [];
+            qcProjectMarkers.forEach(m => qcMap.removeLayer(m));
+            qcProjectMarkers = [];
+
+            projects.forEach(p => {
+                if (p.latitude === null || p.longitude === null || p.latitude === undefined || p.longitude === undefined) return;
+                const lat = Number(p.latitude);
+                const lng = Number(p.longitude);
+                if (!Number.isFinite(lat) || !Number.isFinite(lng)) return;
+                // Same QC bounding box the map itself is clamped to — skip stray
+                // out-of-city coordinates rather than plot a wrong pin.
+                if (lat < 14.55 || lat > 14.82 || lng < 120.96 || lng > 121.16) return;
+
+                const color = QC_PROJECT_STATUS_COLORS[p.status] || QC_PROJECT_DEFAULT_COLOR;
+                const icon = QC_PROJECT_STATUS_ICONS[p.status] || QC_PROJECT_DEFAULT_ICON;
+                const marker = L.marker([lat, lng], {
+                    icon: qcProjectPinIcon(color, icon),
+                }).addTo(qcMap);
+
+                const progress = Number(p.progress) || 0;
+                marker.bindPopup(
+                    '<div class="qc-project-popup">' +
+                        '<span class="qc-pp-status" style="background:' + color + '">' + escapeHtml(projectStatusLabel(p.status)) + '</span>' +
+                        '<strong class="qc-pp-name">' + escapeHtml(p.name) + '</strong>' +
+                        '<div class="qc-pp-meta">' + escapeHtml(p.project_code || '') + (p.location ? ' — ' + escapeHtml(p.location) : '') + '</div>' +
+                        '<div class="qc-pp-progress"><span style="width:' + Math.min(100, Math.max(0, progress)) + '%;background:' + color + '"></span></div>' +
+                        '<div class="qc-pp-meta">' + formatCurrency(p.budget) + ' · ' + progress + '% complete</div>' +
+                        '<button class="qc-pp-btn" onclick="openProjectDetail(' + Number(p.id) + ')">View Details</button>' +
+                    '</div>'
+                );
+                qcProjectMarkers.push(marker);
+            });
+        })
+        .catch(() => { /* Pins are a bonus on top of the barangay picker — a failed fetch shouldn't block feedback submission. */ });
 }
 
 // Topbar user menu (avatar button at the top right). The shared topbar markup
@@ -738,6 +823,16 @@ function openProjectDetail(projectId) {
         .then(data => {
             if (!data.success) throw new Error(data.message || 'Not found');
             body.innerHTML = renderProjectDetail(data);
+            // Role-only: this page never names individual staff (only the
+            // contractor's business name), so the timeline follows the same
+            // convention — see citizen/api/project-timeline.php.
+            renderProjectTimeline('projectTimelineSection', projectId, {
+                endpoint: 'citizen/api/project-timeline.php',
+                showActorName: false,
+            });
+            if (data.project && data.project.project_code && typeof renderProjectQR === 'function') {
+                renderProjectQR('citizenProjectQRTarget', data.project.project_code, 110);
+            }
         })
         .catch(() => {
             body.innerHTML = '<p class="empty-state">Could not load this project. Please try again.</p>';
@@ -770,6 +865,14 @@ function renderProjectDetail(data) {
         <div class="detail-progress">
             <div class="detail-progress-head"><span>Overall progress</span><strong>${progress}%</strong></div>
             <div class="progress-bar"><div class="progress-fill" style="width: ${progress}%"></div></div>
+        </div>
+
+        <div class="detail-section" style="display:flex;align-items:center;gap:14px;">
+            <div id="citizenProjectQRTarget" style="padding:8px;background:#fff;border-radius:8px;border:1px solid var(--border);flex-shrink:0;"></div>
+            <div>
+                <h5 style="margin-bottom:4px;">Scan to Share</h5>
+                <p class="empty-state-compact" style="margin:0;">This QR code opens this project's public transparency page — anyone can scan or open the link, no account needed.</p>
+            </div>
         </div>
 
         ${data.bid_notice ? `
@@ -824,6 +927,11 @@ function renderProjectDetail(data) {
                 `).join('')}
             </div>
         </div>` : ''}
+
+        <div class="detail-section">
+            <h5>Activity Timeline</h5>
+            <div id="projectTimelineSection"></div>
+        </div>
     `;
 }
 

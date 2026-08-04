@@ -108,8 +108,10 @@ function bacPortalMapLogRow(array $row): array
         'project' => $row['project_name'],
         'project_code' => $row['project_code'],
         'title' => $row['action'],
+        'action' => $row['action'],
         'detail' => $row['details'],
         'actor' => $row['actor_name'],
+        'actor_role' => $row['actor_role'] ?? '',
         'status' => 'complete',
     ];
 }
@@ -261,7 +263,7 @@ function bacListRecommendations(PDO $db, int $page, int $perPage, string $search
     return paginate($db, $select, $count, $params, $page, $perPage);
 }
 
-function bacListLogs(PDO $db, int $page, int $perPage, string $search): array
+function bacListLogs(PDO $db, int $page, int $perPage, string $search, int $projectId = 0, int $actorId = 0, string $eventType = '', string $dateFrom = '', string $dateTo = ''): array
 {
     $where = ['1=1'];
     $params = [];
@@ -270,14 +272,64 @@ function bacListLogs(PDO $db, int $page, int $perPage, string $search): array
         $like = '%' . $search . '%';
         array_push($params, $like, $like);
     }
+    if ($projectId > 0) {
+        $where[] = 'l.project_id = ?';
+        $params[] = $projectId;
+    }
+    if ($actorId > 0) {
+        $where[] = 'l.actor_id = ?';
+        $params[] = $actorId;
+    }
+    if ($eventType !== '') {
+        $where[] = 'l.action = ?';
+        $params[] = $eventType;
+    }
+    if ($dateFrom !== '') {
+        $where[] = 'l.created_at >= ?';
+        $params[] = $dateFrom . ' 00:00:00';
+    }
+    if ($dateTo !== '') {
+        $where[] = 'l.created_at <= ?';
+        $params[] = $dateTo . ' 23:59:59';
+    }
     $whereSql = implode(' AND ', $where);
-    $select = "SELECT l.*, p.project_code, p.name AS project_name, u.full_name AS actor_name
+    $select = "SELECT l.*, p.project_code, p.name AS project_name, u.full_name AS actor_name, u.role AS actor_role
                FROM bac_procurement_logs l
                LEFT JOIN projects p ON p.id = l.project_id
                LEFT JOIN users u ON u.id = l.actor_id
                WHERE $whereSql ORDER BY l.created_at DESC, l.id DESC";
     $count = "SELECT COUNT(*) FROM bac_procurement_logs l WHERE $whereSql";
     return paginate($db, $select, $count, $params, $page, $perPage);
+}
+
+/** Distinct projects referenced in the logs — populates the log page's project filter dropdown. */
+function bacListLogProjects(PDO $db): array
+{
+    return $db->query("
+        SELECT DISTINCT p.id, p.project_code, p.name
+        FROM bac_procurement_logs l
+        INNER JOIN projects p ON p.id = l.project_id
+        ORDER BY p.name ASC
+    ")->fetchAll();
+}
+
+/** Distinct actors referenced in the logs — populates the log page's user filter dropdown. */
+function bacListLogActors(PDO $db): array
+{
+    return $db->query("
+        SELECT DISTINCT u.id, u.full_name
+        FROM bac_procurement_logs l
+        INNER JOIN users u ON u.id = l.actor_id
+        ORDER BY u.full_name ASC
+    ")->fetchAll();
+}
+
+/** Distinct action strings actually present in the logs — populates the log page's event-type filter dropdown. */
+function bacListLogActions(PDO $db): array
+{
+    return $db->query("
+        SELECT DISTINCT action FROM bac_procurement_logs ORDER BY action ASC
+    ")->fetchAll(PDO::FETCH_COLUMN);
 }
 
 /** Picker lists (not paginated — naturally small working-sets, not historical logs). */
@@ -347,9 +399,26 @@ if ($method === 'GET') {
     }
 
     if ($action === 'list_logs') {
-        $result = bacListLogs($db, $page, $perPage, $search);
+        $logProjectId = (int) ($_GET['project_id'] ?? 0);
+        $logActorId = (int) ($_GET['actor_id'] ?? 0);
+        $logEventType = trim((string) ($_GET['event_type'] ?? ''));
+        $logDateFrom = trim((string) ($_GET['date_from'] ?? ''));
+        $logDateTo = trim((string) ($_GET['date_to'] ?? ''));
+        $result = bacListLogs($db, $page, $perPage, $search, $logProjectId, $logActorId, $logEventType, $logDateFrom, $logDateTo);
         $result['data'] = array_map('bacPortalMapLogRow', $result['data']);
         respond($result);
+    }
+
+    if ($action === 'list_log_projects') {
+        respond(['data' => bacListLogProjects($db)]);
+    }
+
+    if ($action === 'list_log_actors') {
+        respond(['data' => bacListLogActors($db)]);
+    }
+
+    if ($action === 'list_log_actions') {
+        respond(['data' => bacListLogActions($db)]);
     }
 
     if ($action === 'list_approved_projects') {
@@ -688,7 +757,6 @@ if ($action === 'review_contractor_application') {
 
         $details = $contractor['name'] . '\'s contractor application was rejected' . ($remarks !== '' ? ' — ' . $remarks : '') . '.';
         auditLog($db, $actorId, 'contractor_application_rejected', 'contractors', $contractorId, $details);
-        logActivity($actorId, 'contractor_application_rejected', $details);
 
         respond(['success' => true, 'status' => 'rejected']);
     }
@@ -727,7 +795,6 @@ if ($action === 'review_contractor_application') {
 
     $details = $contractor['name'] . '\'s contractor application was approved; portal account created.';
     auditLog($db, $actorId, 'contractor_application_approved', 'contractors', $contractorId, $details);
-    logActivity($actorId, 'contractor_application_approved', $details);
     notifyUser($newUserId, 'info', 'Application approved', 'Your contractor application has been approved. Check your email to set up portal access.');
 
     $otp = new OTPManager();

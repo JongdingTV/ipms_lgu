@@ -50,6 +50,7 @@ try {
     $row = $stmt->fetch();
 
     if (!$row || !password_verify($currentPassword, $row['password_hash'])) {
+        logActivity((int) $user['user_id'], 'password_change_failed', 'Current password did not match.', 'Profile', (int) $user['user_id'], 'failed');
         http_response_code(400);
         echo json_encode(['success' => false, 'message' => 'Your current password is incorrect']);
         exit;
@@ -58,7 +59,7 @@ try {
     $stmt = $pdo->prepare("UPDATE users SET password_hash = ? WHERE id = ?");
     $stmt->execute([password_hash($newPassword, PASSWORD_BCRYPT), (int) $user['user_id']]);
 
-    logActivity((int) $user['user_id'], 'password_changed', 'Citizen changed their password');
+    logActivity((int) $user['user_id'], 'password_changed', 'Citizen changed their password', 'Profile', (int) $user['user_id']);
 
     echo json_encode(['success' => true, 'message' => 'Password updated successfully.']);
 } catch (Throwable $e) {

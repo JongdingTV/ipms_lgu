@@ -1479,7 +1479,10 @@ async function contractorOpenProject(projectId) {
           </div>
         `).join('') : '<p class="empty-state">No reports submitted.</p>'}
       </div>
+      <h4 style="margin: 16px 0 8px; color:#1e293b;">Activity Timeline</h4>
+      <div id="projectTimelineSection"></div>
     `);
+    renderProjectTimeline('projectTimelineSection', project.id);
   } catch (error) {
     contractorToast(error.message, 'error');
   }

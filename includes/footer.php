@@ -17,11 +17,17 @@
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin="">
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
 
+  <!-- QR code generation (Project QR Transparency feature) — client-side
+       only, same CDN-vendoring pattern as Leaflet above. -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js" crossorigin="anonymous"></script>
+  <script src="<?= htmlspecialchars(assetUrl('/assets/js/qrcode-widget.js')) ?>"></script>
+
   <script src="<?= htmlspecialchars(assetUrl('/assets/js/pagination.js')) ?>"></script>
   <script src="<?= htmlspecialchars(assetUrl('/assets/js/notifications.js')) ?>"></script>
   <script>window.SIDEBAR_BADGES_PORTAL = 'admin';</script>
   <script src="<?= htmlspecialchars(assetUrl('/assets/js/sidebar-badges.js')) ?>"></script>
   <script src="<?= htmlspecialchars(assetUrl('/assets/js/sidebar-toggle.js')) ?>"></script>
+  <script src="<?= htmlspecialchars(assetUrl('/assets/js/project-timeline.js')) ?>"></script>
   <script src="<?= htmlspecialchars(assetUrl('/assets/js/script.js')) ?>"></script>
 </body>
 </html>

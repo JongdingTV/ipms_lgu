@@ -77,7 +77,7 @@ function isLoggedIn(): bool
 function logoutCurrentUser(bool $logActivity = true): void
 {
     if ($logActivity && !empty($_SESSION['auth_user']['user_id'])) {
-        logActivity((int) $_SESSION['auth_user']['user_id'], 'logout', 'User logged out');
+        logActivity((int) $_SESSION['auth_user']['user_id'], 'logout', 'User logged out', 'Authentication');
     }
 
     $_SESSION = [];
@@ -151,17 +151,42 @@ function requireCsrfProtection(): void
     }
 }
 
-function logActivity(?int $userId, string $action, string $details = ''): void
+// Self-healing columns for the Audit Trail feature (module/record_id mirror
+// what auditLog()'s audit_logs.table_name/record_id already tracked;
+// status is new — a Result column the app never captured before). Guarded
+// by a static flag so a single request that logs several activities only
+// ever runs this once, not once per logActivity() call.
+function activityLogEnsureSchema(PDO $pdo): void
+{
+    static $ensured = false;
+    if ($ensured) {
+        return;
+    }
+    $ensured = true;
+
+    try {
+        $pdo->exec("ALTER TABLE activity_logs ADD COLUMN IF NOT EXISTS module VARCHAR(60) NULL AFTER action");
+        $pdo->exec("ALTER TABLE activity_logs ADD COLUMN IF NOT EXISTS record_id INT NULL AFTER module");
+        $pdo->exec("ALTER TABLE activity_logs ADD COLUMN IF NOT EXISTS status ENUM('success','failed') NOT NULL DEFAULT 'success' AFTER record_id");
+    } catch (Throwable $e) {
+    }
+}
+
+function logActivity(?int $userId, string $action, string $details = '', string $module = '', ?int $recordId = null, string $status = 'success'): void
 {
     try {
         $pdo = getDB();
+        activityLogEnsureSchema($pdo);
         $stmt = $pdo->prepare("
-            INSERT INTO activity_logs (user_id, action, details, ip_address, user_agent, created_at)
-            VALUES (?, ?, ?, ?, ?, NOW())
+            INSERT INTO activity_logs (user_id, action, module, record_id, status, details, ip_address, user_agent, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, NOW())
         ");
         $stmt->execute([
             $userId,
             $action,
+            $module !== '' ? $module : null,
+            $recordId,
+            $status,
             $details,
             $_SERVER['REMOTE_ADDR'] ?? null,
             $_SERVER['HTTP_USER_AGENT'] ?? null,
@@ -305,19 +330,19 @@ function authenticateUser(string $identifier, string $password, ?string $selecte
 
     if ($user && !isValidRole((string) $user['role'])) {
         recordLoginAttempt($identifier, $ipAddress, false, (int) $user['id']);
-        logActivity((int) $user['id'], 'login_blocked', 'Invalid account role');
+        logActivity((int) $user['id'], 'login_blocked', 'Invalid account role', 'Authentication', null, 'failed');
         return ['success' => false, 'message' => 'Your account role is not allowed.'];
     }
 
     if (!$user || !password_verify($password, $user['password_hash'])) {
         recordLoginAttempt($identifier, $ipAddress, false, $user ? (int) $user['id'] : null);
-        logActivity($user ? (int) $user['id'] : null, 'login_failed', 'Invalid login attempt for ' . $identifier);
+        logActivity($user ? (int) $user['id'] : null, 'login_failed', 'Invalid login attempt for ' . $identifier, 'Authentication', null, 'failed');
         return ['success' => false, 'message' => 'Invalid username/email or password.'];
     }
 
     if (($user['status'] ?? 'inactive') !== 'active') {
         recordLoginAttempt($identifier, $ipAddress, false, (int) $user['id']);
-        logActivity((int) $user['id'], 'login_blocked', 'Inactive account login attempt');
+        logActivity((int) $user['id'], 'login_blocked', 'Inactive account login attempt', 'Authentication', null, 'failed');
         // Credentials were valid (password_verify already passed above), so it's
         // safe to hand back identity for the inactive case — citizen/login.php
         // uses this to offer a "resend verification email" step for citizens
@@ -335,14 +360,14 @@ function authenticateUser(string $identifier, string $password, ?string $selecte
     }
 
     if ($selectedRole !== null && $selectedRole !== '' && $user['role'] !== $selectedRole) {
-        logActivity((int) $user['id'], 'login_blocked', 'Portal role mismatch: selected ' . $selectedRole);
+        logActivity((int) $user['id'], 'login_blocked', 'Portal role mismatch: selected ' . $selectedRole, 'Authentication', null, 'failed');
         return ['success' => false, 'message' => 'The selected portal does not match this account. Please choose the role assigned to your account.'];
     }
 
     $authUser = establishUserSession($user);
 
     recordLoginAttempt($identifier, $ipAddress, true, (int) $user['id']);
-    logActivity((int) $user['id'], 'login_success', 'User logged in successfully');
+    logActivity((int) $user['id'], 'login_success', 'User logged in successfully', 'Authentication');
 
     return ['success' => true, 'user' => $authUser];
 }

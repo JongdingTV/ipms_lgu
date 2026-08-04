@@ -121,7 +121,10 @@ button { cursor: pointer; font-family: var(--font); }
   backdrop-filter: blur(14px) saturate(1.4);
   -webkit-backdrop-filter: blur(14px) saturate(1.4);
   display: flex; flex-direction: column;
-  z-index: 100; transition: transform 0.32s cubic-bezier(0.4, 0, 0.2, 1), background-color .25s ease; overflow-y: auto;
+  /* transform duration/easing matches .main-wrapper's margin-left transition
+     exactly (both .3s, default ease) — same pairing citizen.css uses, so the
+     sidebar and content move in the same lockstep motion. */
+  z-index: 100; transition: transform .3s, background-color .25s ease; overflow-y: auto;
 }
 
 /* ── Smooth theme-switch for the shared surface components ── */
@@ -214,6 +217,7 @@ button { cursor: pointer; font-family: var(--font); }
 :root[data-theme="dark"] .nav-badge-pill-urgent  { background: rgba(239,68,68,.18);  color: #f87171; }
 
 /* ── Main ── */
+/* Same margin-left + transition citizen.css's .main-wrapper uses. */
 .main-wrapper { margin-left: var(--sidebar-w); flex: 1; min-width: 0; display: flex; flex-direction: column; min-height: 100vh; transition: margin-left .3s; }
 
 /* Desktop burger: body.sidebar-collapsed slides the sidebar away and gives
@@ -342,6 +346,9 @@ button { cursor: pointer; font-family: var(--font); }
 .kpi-red    { background: #fee2e2; color: var(--red); }
 .kpi-green  { background: #dcfce7; color: var(--green); }
 .kpi-orange { background: #ffedd5; color: var(--orange); }
+.kpi-purple { background: #ede9fe; color: #7c3aed; }
+.kpi-teal   { background: #ccfbf1; color: #0d9488; }
+.kpi-cyan   { background: #cffafe; color: #0891b2; }
 .kpi-info { display: flex; flex-direction: column; gap: 4px; }
 .kpi-label { font-size: .75rem; color: var(--text-muted); font-weight: 500; }
 .kpi-value { font-size: 1.9rem; font-weight: 800; line-height: 1; font-family: var(--mono); }
@@ -413,6 +420,9 @@ button { cursor: pointer; font-family: var(--font); }
 .feedback-icon svg { width: 14px; height: 14px; }
 .feedback-icon span { font-size: .8rem; font-weight: 800; line-height: 1; }
 .feedback-red    { background: #fee2e2; color: var(--red); }
+.feedback-green  { background: #dcfce7; color: var(--green); }
+.feedback-blue   { background: #dbeafe; color: var(--blue); }
+.feedback-orange { background: #ffedd5; color: var(--orange); }
 .feedback-crimson{ background: #fce7f3; color: #db2777; }
 .feedback-gray   { background: #f1f5f9; color: var(--text-muted); }
 .feedback-text { font-size: .82rem; flex: 1; }
@@ -686,6 +696,73 @@ input.search-pill {
 .form-input { border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 8px 12px; font-size: .83rem; font-family: var(--font); outline: none; transition: border-color .2s; background: var(--input-bg); color: var(--text-primary); resize: vertical; width: 100%; }
 .form-input:focus { border-color: var(--accent); box-shadow: 0 0 0 3px rgba(59,130,246,.1); }
 .form-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 20px; padding-top: 16px; border-top: 1px solid var(--border); }
+
+/* ── Staff Requests page (Admin's request-a-new-account form) ── */
+.staff-request-layout {
+  display: grid;
+  grid-template-columns: minmax(220px, 300px) minmax(0, 520px);
+  gap: 20px;
+  align-items: start;
+}
+.staff-request-info {
+  background: linear-gradient(160deg, #2563eb, #1d4ed8);
+  color: #fff;
+  border-radius: var(--radius);
+  padding: 24px 22px;
+  box-shadow: var(--card-shadow);
+}
+.staff-request-info-icon {
+  width: 44px;
+  height: 44px;
+  border-radius: 12px;
+  background: rgba(255,255,255,.16);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-bottom: 14px;
+}
+.staff-request-info-icon svg { width: 22px; height: 22px; }
+.staff-request-info h3 {
+  font-size: 1rem;
+  margin: 0 0 14px;
+}
+.staff-request-steps {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+.staff-request-steps li {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  font-size: .82rem;
+  line-height: 1.4;
+  color: rgba(255,255,255,.92);
+}
+.step-num {
+  flex-shrink: 0;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: rgba(255,255,255,.22);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: .72rem;
+  font-weight: 800;
+}
+.staff-request-form-card {
+  padding: 22px;
+}
+.staff-request-form-card .form-group + .form-group {
+  margin-top: 14px;
+}
+@media (max-width: 760px) {
+  .staff-request-layout { grid-template-columns: 1fr; }
+}
 
 /* ── Budget Summary Cards ── */
 .budget-summary-grid { display: grid; grid-template-columns: repeat(4,1fr); gap: 14px; }
@@ -1111,6 +1188,13 @@ input.search-pill {
 .content {
   width: 100%;
   max-width: 1500px;
+  /* Same as citizen.css's .content — centers the column instead of
+     hugging the left edge. Without this, expanding/collapsing the
+     sidebar drags this whole box the full sidebar-width distance since
+     it has nowhere else to go; centered, it only recenters within
+     whatever extra space opens up, which is the gentle "stays in the
+     middle" motion citizen already has. */
+  margin: 0 auto;
   gap: 22px;
   padding: clamp(18px, 2.4vw, 30px);
   /* Flex items default to min-width:auto, which lets a wide child (an

@@ -470,8 +470,13 @@ async function hopeOpenProjectModal(id) {
           <p class="modal-label">RISK SUMMARY — AI SUMMARY, ADVISORY ONLY</p>
           <p class="modal-val" style="font-weight:400;">${hopeEscape(risk.summary)}</p>
         </div>
+        <div>
+          <p class="modal-label">ACTIVITY TIMELINE</p>
+          <div id="projectTimelineSection" style="margin-top:6px;"></div>
+        </div>
       </div>
     `);
+    renderProjectTimeline('projectTimelineSection', p.id);
   } catch (error) {
     hopeToast('Failed to load project details.', 'error');
   }
