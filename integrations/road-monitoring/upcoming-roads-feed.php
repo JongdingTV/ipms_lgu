@@ -2,17 +2,22 @@
 // ============================================================
 // integrations/road-monitoring/upcoming-roads-feed.php
 //
-// Outbound feed: the LG Road Monitoring System polls this to pull upcoming
-// and ongoing Roads and Bridges projects — the road alignment (geometry) IPMS
-// captured during Project Registration, plus the timeline and progress that
-// tells them a road is about to be (or currently being) worked on. Pull (GET)
-// model, same reason as every other outbound integration in this codebase:
-// their repo (https://github.com/conopioclarence96-commits/lg-road-monitoring,
-// as of writing) has no live receiver endpoint of its own yet.
+// Outbound feed: the LG Road Monitoring System polls this to pull the full
+// lifecycle of Roads and Bridges projects — the road alignment (geometry)
+// IPMS captured during Project Registration, plus the timeline, progress,
+// and current status bucket (new/ongoing/completed/cancelled) that tells
+// them what stage a road is at. Pull (GET) model, same reason as every
+// other outbound integration in this codebase: their repo
+// (https://github.com/conopioclarence96-commits/lg-road-monitoring, as of
+// writing) has no live receiver endpoint of its own yet.
 //
-// "Upcoming" here means: approved through active construction — i.e. HOPE
-// has approved the project and it isn't finished or cancelled yet. Still-
-// internal drafts/reviews and completed/cancelled projects are excluded.
+// Scope: everything from HOPE approval onward — i.e. still-internal
+// drafts/reviews (draft, endorsed, returned, planning) are excluded because
+// they haven't been approved yet and may still be rejected/reworked, but
+// approved projects are included all the way through completed/turnover and
+// cancelled, so the Road Monitoring System's dashboard reflects the whole
+// public lifecycle, not just the "under construction" window.
+//
 // Read-only from our side too: no endpoint here accepts edits. IPMS remains
 // the owner of the project and its geometry; the Road Monitoring System only
 // ever consumes this data.
@@ -44,14 +49,28 @@ $db = getDB();
 projectWorkflowEnsureProjectStatusSchema($db);
 projectRoadGeometryEnsureSchema($db);
 
-// "Upcoming" = approved through active construction; not yet started still
-// goes through internal review (excluded), and finished/cancelled projects
-// no longer need monitoring (excluded).
-const ROAD_MONITORING_UPCOMING_STATUSES = [
-    'approved', 'bidding', 'awarded', 'assigned', 'active', 'delayed', 'on_hold', 'completion_inspection',
+// Full public lifecycle = approved through completed/cancelled; still-
+// internal drafts/reviews (not yet HOPE-approved) are excluded because they
+// may still be rejected or reworked before anyone outside IPMS should see
+// them.
+const ROAD_MONITORING_FEED_STATUSES = [
+    'approved', 'bidding', 'awarded', 'assigned',
+    'active', 'delayed', 'on_hold', 'completion_inspection',
+    'completed', 'turnover',
+    'cancelled',
 ];
 
-$placeholders = implode(',', array_fill(0, count(ROAD_MONITORING_UPCOMING_STATUSES), '?'));
+// Maps IPMS's internal status ENUM to the 4 buckets the Road Monitoring
+// System actually cares about, so their side doesn't need to hardcode or
+// guess our internal workflow states.
+const ROAD_MONITORING_STATUS_BUCKETS = [
+    'approved' => 'new', 'bidding' => 'new', 'awarded' => 'new', 'assigned' => 'new',
+    'active' => 'ongoing', 'delayed' => 'ongoing', 'on_hold' => 'ongoing', 'completion_inspection' => 'ongoing',
+    'completed' => 'completed', 'turnover' => 'completed',
+    'cancelled' => 'cancelled',
+];
+
+$placeholders = implode(',', array_fill(0, count(ROAD_MONITORING_FEED_STATUSES), '?'));
 $stmt = $db->prepare("
     SELECT p.id AS project_id, p.name AS project_name, p.status AS project_status,
            p.progress, p.start_date, p.end_date,
@@ -64,7 +83,7 @@ $stmt = $db->prepare("
     WHERE p.category = 'Roads and Bridges' AND p.status IN ($placeholders)
     ORDER BY p.start_date ASC, g.updated_at DESC
 ");
-$stmt->execute(ROAD_MONITORING_UPCOMING_STATUSES);
+$stmt->execute(ROAD_MONITORING_FEED_STATUSES);
 $rows = $stmt->fetchAll();
 
 $results = array_map(function (array $row): array {
@@ -72,6 +91,7 @@ $results = array_map(function (array $row): array {
         'project_id' => (int) $row['project_id'],
         'project_name' => $row['project_name'],
         'project_status' => $row['project_status'],
+        'status_bucket' => ROAD_MONITORING_STATUS_BUCKETS[$row['project_status']] ?? 'new',
         'progress_percent' => (int) $row['progress'],
         'start_date' => $row['start_date'],
         'end_date' => $row['end_date'],
