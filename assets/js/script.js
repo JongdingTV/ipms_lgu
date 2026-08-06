@@ -25,6 +25,7 @@ const API = {
   workflow:    window.BASE_PATH + 'api/workflow.php',
   staffAccounts: window.BASE_PATH + 'superadmin/api/accounts.php',
   publicFacilities: window.BASE_PATH + 'api/public-facilities.php',
+  calendar:    window.BASE_PATH + 'api/calendar.php',
 };
 
 const CSRF_HEADERS = window.CSRF_TOKEN ? { 'X-CSRF-Token': window.CSRF_TOKEN } : {};
@@ -248,6 +249,7 @@ function navigate(page) {
     'workflow-management': loadWorkflowManagementPage,
     'budget-monitoring': () => loadBudgetPage('page-budget-monitoring', 'Budget Monitoring'),
     'milestone-overview': loadMilestoneOverviewPage,
+    'calendar-schedule': loadCalendarSchedulePage,
     'gis-map': loadGisMapPage,
     reports: loadReportsPage,
     'ai-risk-insights': loadAIRiskInsightsPage,
@@ -2839,6 +2841,510 @@ function renderMilestoneCards(projects) {
 }
 
 /* ============================================================
+   CALENDAR & SCHEDULE
+   Reads from api/calendar.php (frozen contract: action=events for the
+   list, action=event_detail for a single event's extra fields,
+   action=create_meeting / action=delete_meeting for the only two
+   writeable operations admins get here — everything else is read-only,
+   sourced from other modules' own tables).
+   ============================================================ */
+let calendarState = {
+  view: 'month',
+  currentDate: new Date(),
+  events: [],
+  visibleTypes: new Set(['milestone', 'inspection', 'payment', 'deadline', 'meeting', 'hope_review', 'bac_activity']),
+};
+
+// Legend order requested by the spec: Inspections, Milestones, Payment Due
+// Dates, Project Deadlines, Meetings, HOPE Reviews, BAC Activities.
+const CAL_TYPE_ORDER = ['inspection', 'milestone', 'payment', 'deadline', 'meeting', 'hope_review', 'bac_activity'];
+const CAL_TYPE_LABELS = {
+  inspection: 'Inspections',
+  milestone: 'Milestones',
+  payment: 'Payment Due Dates',
+  deadline: 'Project Deadlines',
+  meeting: 'Meetings',
+  hope_review: 'HOPE Reviews',
+  bac_activity: 'BAC Activities',
+};
+const CAL_MONTH_NAMES = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+const CAL_DAY_NAMES = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+
+function calPad2(n) { return String(n).padStart(2, '0'); }
+function calToISODate(d) { return `${d.getFullYear()}-${calPad2(d.getMonth() + 1)}-${calPad2(d.getDate())}`; }
+function calStartOfWeek(d) {
+  const r = new Date(d);
+  r.setHours(0, 0, 0, 0);
+  r.setDate(r.getDate() - r.getDay());
+  return r;
+}
+function calEndOfWeek(d) {
+  const r = calStartOfWeek(d);
+  r.setDate(r.getDate() + 6);
+  return r;
+}
+// Event ids from the API are always "{type}-{source_row_id}" — recover the
+// bare row id for the event_detail/delete_meeting calls, which take it alone.
+function calSourceId(ev) { return String(ev.id).slice(ev.type.length + 1); }
+
+function calendarRangeForView() {
+  const cur = calendarState.currentDate;
+  if (calendarState.view === 'day') {
+    return { start: calToISODate(cur), end: calToISODate(cur) };
+  }
+  if (calendarState.view === 'week') {
+    return { start: calToISODate(calStartOfWeek(cur)), end: calToISODate(calEndOfWeek(cur)) };
+  }
+  // Month view renders a full 7xN grid including leading/trailing days from
+  // neighboring months, so fetch that whole span rather than just the 1st-to-last.
+  const firstOfMonth = new Date(cur.getFullYear(), cur.getMonth(), 1);
+  const lastOfMonth = new Date(cur.getFullYear(), cur.getMonth() + 1, 0);
+  return { start: calToISODate(calStartOfWeek(firstOfMonth)), end: calToISODate(calEndOfWeek(lastOfMonth)) };
+}
+
+function calendarStep(direction) {
+  const d = new Date(calendarState.currentDate);
+  if (calendarState.view === 'month') d.setMonth(d.getMonth() + direction);
+  else if (calendarState.view === 'week') d.setDate(d.getDate() + direction * 7);
+  else d.setDate(d.getDate() + direction);
+  calendarState.currentDate = d;
+  refreshCalendar();
+}
+
+function calendarEventsByDate() {
+  const map = {};
+  (calendarState.events || []).forEach(ev => { (map[ev.date] ||= []).push(ev); });
+  return map;
+}
+
+function calendarEventSort(a, b) {
+  if (a.time && b.time) return a.time.localeCompare(b.time);
+  if (a.time && !b.time) return -1;
+  if (!a.time && b.time) return 1;
+  return String(a.title || '').localeCompare(String(b.title || ''));
+}
+
+function calendarPillHtml(ev, block = false) {
+  const title = escapeHtml(ev.title);
+  const timePrefix = block && ev.time ? `${escapeHtml(ev.time)} &middot; ` : '';
+  return `
+    <button type="button" class="cal-pill ${block ? 'cal-pill-block' : ''} cal-badge-${ev.type} ${ev.is_flagged ? 'cal-flagged' : ''}"
+      data-type="${ev.type}" data-id="${calSourceId(ev)}" title="${title}">
+      ${ev.is_flagged ? '<span class="cal-flag-icon">&#9888;</span> ' : ''}${timePrefix}${title}
+    </button>
+  `;
+}
+
+async function loadCalendarSchedulePage() {
+  const container = document.getElementById('page-calendar-schedule');
+  if (!container) return;
+
+  container.innerHTML = `
+    <div class="page-header">
+      <h2 class="page-title">Calendar &amp; Schedule</h2>
+      <button class="btn-primary" onclick="openNewMeetingModal()">+ New Meeting</button>
+    </div>
+
+    <div class="cal-toolbar">
+      <div class="cal-view-switch" id="calViewSwitch">
+        ${['month', 'week', 'day'].map(v => `
+          <button type="button" class="cal-view-btn ${calendarState.view === v ? 'active' : ''}" data-view="${v}">${v.charAt(0).toUpperCase() + v.slice(1)}</button>
+        `).join('')}
+      </div>
+      <div class="cal-nav">
+        <button type="button" class="btn-secondary btn-compact" id="calPrevBtn">&laquo; Prev</button>
+        <button type="button" class="btn-secondary btn-compact" id="calTodayBtn">Today</button>
+        <button type="button" class="btn-secondary btn-compact" id="calNextBtn">Next &raquo;</button>
+        <span class="cal-range-label" id="calRangeLabel"></span>
+      </div>
+    </div>
+
+    <div class="cal-legend" id="calLegend">
+      ${CAL_TYPE_ORDER.map(type => `
+        <button type="button" class="cal-legend-chip ${calendarState.visibleTypes.has(type) ? '' : 'off'}" data-type="${type}">
+          <span class="cal-legend-dot cal-badge-${type}"></span>
+          <span>${CAL_TYPE_LABELS[type]}</span>
+        </button>
+      `).join('')}
+    </div>
+
+    <div class="table-card cal-grid-card">
+      <div id="calendarGrid" class="cal-grid-container"></div>
+    </div>
+  `;
+
+  container.querySelectorAll('#calViewSwitch .cal-view-btn').forEach(btn => {
+    btn.addEventListener('click', () => { calendarState.view = btn.dataset.view; refreshCalendar(); });
+  });
+  document.getElementById('calPrevBtn').addEventListener('click', () => calendarStep(-1));
+  document.getElementById('calNextBtn').addEventListener('click', () => calendarStep(1));
+  document.getElementById('calTodayBtn').addEventListener('click', () => { calendarState.currentDate = new Date(); refreshCalendar(); });
+  container.querySelectorAll('#calLegend .cal-legend-chip').forEach(chip => {
+    chip.addEventListener('click', () => {
+      const type = chip.dataset.type;
+      if (calendarState.visibleTypes.has(type)) calendarState.visibleTypes.delete(type);
+      else calendarState.visibleTypes.add(type);
+      chip.classList.toggle('off');
+      renderCalendarCurrentView();
+    });
+  });
+
+  refreshCalendar();
+}
+
+function updateCalRangeLabel() {
+  const el = document.getElementById('calRangeLabel');
+  if (!el) return;
+  const cur = calendarState.currentDate;
+  if (calendarState.view === 'month') {
+    el.textContent = `${CAL_MONTH_NAMES[cur.getMonth()]} ${cur.getFullYear()}`;
+  } else if (calendarState.view === 'week') {
+    const s = calStartOfWeek(cur), e = calEndOfWeek(cur);
+    el.textContent = `${CAL_MONTH_NAMES[s.getMonth()]} ${s.getDate()} – ${CAL_MONTH_NAMES[e.getMonth()]} ${e.getDate()}, ${e.getFullYear()}`;
+  } else {
+    el.textContent = `${CAL_MONTH_NAMES[cur.getMonth()]} ${cur.getDate()}, ${cur.getFullYear()}`;
+  }
+}
+
+function renderCalendarCurrentView() {
+  if (calendarState.view === 'week') renderWeekView();
+  else if (calendarState.view === 'day') renderDayView();
+  else renderMonthView();
+}
+
+async function refreshCalendar() {
+  const grid = document.getElementById('calendarGrid');
+  if (!grid) return;
+
+  updateCalRangeLabel();
+  document.querySelectorAll('#calViewSwitch .cal-view-btn').forEach(btn => {
+    btn.classList.toggle('active', btn.dataset.view === calendarState.view);
+  });
+
+  const { start, end } = calendarRangeForView();
+  setLoading(grid, true);
+  try {
+    const res = await get(API.calendar, { action: 'events', start, end });
+    calendarState.events = (res && res.events) || [];
+    renderCalendarCurrentView();
+  } catch (e) {
+    grid.innerHTML = '<p class="empty-state">Failed to load calendar events.</p>';
+    toast('Failed to load calendar events', 'error');
+    console.error(e);
+  } finally {
+    setLoading(grid, false);
+  }
+}
+
+function renderMonthView() {
+  const grid = document.getElementById('calendarGrid');
+  if (!grid) return;
+
+  const cur = calendarState.currentDate;
+  const firstOfMonth = new Date(cur.getFullYear(), cur.getMonth(), 1);
+  const lastOfMonth = new Date(cur.getFullYear(), cur.getMonth() + 1, 0);
+  const gridStart = calStartOfWeek(firstOfMonth);
+  const gridEnd = calEndOfWeek(lastOfMonth);
+  const eventsByDate = calendarEventsByDate();
+  const todayIso = calToISODate(new Date());
+
+  let html = '<div class="cal-month-grid">';
+  CAL_DAY_NAMES.forEach(n => { html += `<div class="cal-month-headcell">${n}</div>`; });
+
+  const d = new Date(gridStart);
+  while (d <= gridEnd) {
+    const iso = calToISODate(d);
+    const inMonth = d.getMonth() === cur.getMonth();
+    const dayEvents = (eventsByDate[iso] || []).filter(ev => calendarState.visibleTypes.has(ev.type));
+    const visible = dayEvents.slice(0, 3);
+    const extra = dayEvents.length - visible.length;
+
+    html += `
+      <div class="cal-month-cell ${inMonth ? '' : 'cal-dim'} ${iso === todayIso ? 'cal-today' : ''}">
+        <div class="cal-month-daynum">${d.getDate()}</div>
+        <div class="cal-month-pills">
+          ${visible.map(ev => calendarPillHtml(ev)).join('')}
+          ${extra > 0 ? `<button type="button" class="cal-more-link" data-date="${iso}">+${extra} more</button>` : ''}
+        </div>
+      </div>
+    `;
+    d.setDate(d.getDate() + 1);
+  }
+  html += '</div>';
+  grid.innerHTML = html;
+
+  grid.querySelectorAll('.cal-pill').forEach(pill => {
+    pill.addEventListener('click', () => openCalendarEventModal(pill.dataset.type, pill.dataset.id));
+  });
+  grid.querySelectorAll('.cal-more-link').forEach(link => {
+    link.addEventListener('click', () => openCalendarDayPopover(link.dataset.date));
+  });
+}
+
+// "+N more" opens a simple day-list popover — reuses the existing modal
+// engine rather than a bespoke floating panel, so positioning/scroll/escape
+// handling all come for free and stay consistent with the rest of the app.
+function openCalendarDayPopover(dateIso) {
+  const dayEvents = (calendarEventsByDate()[dateIso] || [])
+    .filter(ev => calendarState.visibleTypes.has(ev.type))
+    .sort(calendarEventSort);
+
+  openModal(`Events on ${formatDate(dateIso)}`, `
+    <div class="cal-day-popover-list">
+      ${dayEvents.length ? dayEvents.map(ev => `
+        <button type="button" class="cal-day-popover-row" onclick="closeModal();openCalendarEventModal('${ev.type}','${calSourceId(ev)}')">
+          <span class="cal-legend-dot cal-badge-${ev.type}"></span>
+          <span class="cal-day-popover-title">${escapeHtml(ev.title)}</span>
+          ${ev.time ? `<span class="cal-day-popover-time">${escapeHtml(ev.time)}</span>` : ''}
+          ${ev.is_flagged ? '<span class="cal-flag-icon">&#9888;</span>' : ''}
+        </button>
+      `).join('') : '<p class="empty-state">No events.</p>'}
+    </div>
+  `);
+}
+
+function renderWeekView() {
+  const grid = document.getElementById('calendarGrid');
+  if (!grid) return;
+
+  const start = calStartOfWeek(calendarState.currentDate);
+  const eventsByDate = calendarEventsByDate();
+  const todayIso = calToISODate(new Date());
+
+  let html = '<div class="cal-week-grid">';
+  for (let i = 0; i < 7; i++) {
+    const d = new Date(start);
+    d.setDate(d.getDate() + i);
+    const iso = calToISODate(d);
+    const dayEvents = (eventsByDate[iso] || []).filter(ev => calendarState.visibleTypes.has(ev.type)).sort(calendarEventSort);
+
+    html += `
+      <div class="cal-week-col ${iso === todayIso ? 'cal-today' : ''}">
+        <div class="cal-week-colhead">
+          <span>${CAL_DAY_NAMES[i]}</span>
+          <strong>${d.getDate()}</strong>
+        </div>
+        <div class="cal-week-pills">
+          ${dayEvents.length ? dayEvents.map(ev => calendarPillHtml(ev, true)).join('') : '<p class="cal-week-empty">No events</p>'}
+        </div>
+      </div>
+    `;
+  }
+  html += '</div>';
+  grid.innerHTML = html;
+
+  grid.querySelectorAll('.cal-pill').forEach(pill => {
+    pill.addEventListener('click', () => openCalendarEventModal(pill.dataset.type, pill.dataset.id));
+  });
+}
+
+function renderDayView() {
+  const grid = document.getElementById('calendarGrid');
+  if (!grid) return;
+
+  const iso = calToISODate(calendarState.currentDate);
+  const dayEvents = (calendarEventsByDate()[iso] || [])
+    .filter(ev => calendarState.visibleTypes.has(ev.type))
+    .sort(calendarEventSort);
+
+  grid.innerHTML = `
+    <div class="cal-day-list">
+      ${dayEvents.length ? dayEvents.map(ev => `
+        <div class="cal-day-row ${ev.is_flagged ? 'cal-flagged' : ''}" data-type="${ev.type}" data-id="${calSourceId(ev)}">
+          <span class="cal-day-row-swatch cal-badge-${ev.type}"></span>
+          <span class="cal-day-row-time">${ev.time ? escapeHtml(ev.time) : 'All day'}</span>
+          <span class="cal-day-row-title">${escapeHtml(ev.title)}</span>
+          <span class="cal-day-row-project">${ev.project_name ? escapeHtml(ev.project_name) : '—'}</span>
+          <span class="cal-day-row-status">${escapeHtml(ev.status_label || '')}</span>
+          <span class="cal-day-row-flag">${ev.is_flagged ? '<span class="cal-flag-icon">&#9888; Flagged</span>' : ''}</span>
+        </div>
+      `).join('') : '<p class="empty-state">No events scheduled for this day.</p>'}
+    </div>
+  `;
+
+  grid.querySelectorAll('.cal-day-row').forEach(row => {
+    row.addEventListener('click', () => openCalendarEventModal(row.dataset.type, row.dataset.id));
+  });
+}
+
+function calendarEventDetailHtml(ev) {
+  const common = `
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">
+      <div><p class="modal-label">TYPE</p><p class="modal-val">${escapeHtml(CAL_TYPE_LABELS[ev.type] || formatStatus(ev.type))}</p></div>
+      <div><p class="modal-label">STATUS</p><p class="modal-val">${ev.is_flagged ? '<span class="cal-flag-badge">&#9888; ' + escapeHtml(ev.status_label || '') + '</span>' : escapeHtml(ev.status_label || '-')}</p></div>
+      <div><p class="modal-label">DATE</p><p class="modal-val">${formatDate(ev.date)}</p></div>
+      <div><p class="modal-label">TIME</p><p class="modal-val">${ev.time ? escapeHtml(ev.time) : 'All day'}</p></div>
+      <div><p class="modal-label">PROJECT</p><p class="modal-val">${ev.project_name ? escapeHtml(ev.project_name) : '—'}</p></div>
+    </div>
+  `;
+
+  let extra = '';
+  if (ev.type === 'milestone') {
+    extra = `
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">
+        <div><p class="modal-label">COMPLETED</p><p class="modal-val">${ev.completed ? 'Yes' : 'No'}</p></div>
+        <div><p class="modal-label">DUE DATE</p><p class="modal-val">${formatDate(ev.due_date)}</p></div>
+      </div>
+    `;
+  } else if (ev.type === 'inspection') {
+    extra = `
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">
+        <div><p class="modal-label">ENGINEER</p><p class="modal-val">${escapeHtml(ev.engineer_name || '-')}</p></div>
+        <div><p class="modal-label">RECOMMENDATION</p><p class="modal-val">${escapeHtml(formatStatus(ev.recommendation || '-'))}</p></div>
+        <div><p class="modal-label">ACTUAL PROGRESS</p><p class="modal-val">${Number(ev.actual_progress_percent || 0)}%</p></div>
+      </div>
+      <div><p class="modal-label">FINDINGS</p><p class="modal-val" style="font-weight:400;">${escapeHtml(ev.findings || 'No findings recorded.')}</p></div>
+    `;
+  } else if (ev.type === 'payment') {
+    extra = `
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">
+        <div><p class="modal-label">BILLING NO.</p><p class="modal-val">${escapeHtml(ev.billing_no || '-')}</p></div>
+        <div><p class="modal-label">AMOUNT REQUESTED</p><p class="modal-val">${formatMoney(ev.requested_amount)}</p></div>
+        <div><p class="modal-label">STATUS</p><p class="modal-val">${escapeHtml(formatStatus(ev.status || '-'))}</p></div>
+        <div><p class="modal-label">SUBMITTED</p><p class="modal-val">${formatDateTime(ev.submitted_at)}</p></div>
+        <div><p class="modal-label">DAYS PENDING</p><p class="modal-val">${Number(ev.days_pending || 0)}</p></div>
+      </div>
+    `;
+  } else if (ev.type === 'deadline') {
+    extra = `
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">
+        <div><p class="modal-label">START DATE</p><p class="modal-val">${formatDate(ev.start_date)}</p></div>
+        <div><p class="modal-label">END DATE</p><p class="modal-val">${formatDate(ev.end_date)}</p></div>
+        <div><p class="modal-label">PROGRESS</p><p class="modal-val">${Number(ev.progress || 0)}%</p></div>
+        <div><p class="modal-label">STATUS</p><p class="modal-val">${escapeHtml(formatStatus(ev.status || '-'))}</p></div>
+      </div>
+    `;
+  } else if (ev.type === 'meeting') {
+    extra = `
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">
+        <div><p class="modal-label">MEETING DATE</p><p class="modal-val">${formatDate(ev.meeting_date)}</p></div>
+        <div><p class="modal-label">MEETING TIME</p><p class="modal-val">${ev.meeting_time ? escapeHtml(ev.meeting_time) : 'Not set'}</p></div>
+        <div><p class="modal-label">LOCATION</p><p class="modal-val">${escapeHtml(ev.location || '-')}</p></div>
+        <div><p class="modal-label">CREATED BY</p><p class="modal-val">${escapeHtml(ev.created_by_name || '-')}</p></div>
+      </div>
+      <div><p class="modal-label">DESCRIPTION</p><p class="modal-val" style="font-weight:400;">${escapeHtml(ev.description || 'No description.')}</p></div>
+      <div class="form-actions" style="border-top:none;padding-top:0;justify-content:flex-start;">
+        <button type="button" class="btn-secondary" onclick="deleteCalendarMeeting('${calSourceId(ev)}')">Delete Meeting</button>
+      </div>
+    `;
+  } else if (ev.type === 'hope_review') {
+    extra = `
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">
+        <div><p class="modal-label">SUBTYPE</p><p class="modal-val">${escapeHtml(formatStatus(ev.subtype || '-'))}</p></div>
+        <div><p class="modal-label">DECISION STATUS</p><p class="modal-val">${escapeHtml(formatStatus(ev.decision_status || '-'))}</p></div>
+        <div><p class="modal-label">DECIDED BY</p><p class="modal-val">${escapeHtml(ev.decided_by_name || '-')}</p></div>
+      </div>
+      <div><p class="modal-label">REMARKS</p><p class="modal-val" style="font-weight:400;">${escapeHtml(ev.remarks || 'No remarks.')}</p></div>
+    `;
+  } else if (ev.type === 'bac_activity') {
+    extra = `
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">
+        <div><p class="modal-label">SUBTYPE</p><p class="modal-val">${escapeHtml(formatStatus(ev.subtype || '-'))}</p></div>
+        <div><p class="modal-label">REFERENCE NO.</p><p class="modal-val">${escapeHtml(ev.reference_no || '-')}</p></div>
+      </div>
+      <div><p class="modal-label">NOTES</p><p class="modal-val" style="font-weight:400;">${escapeHtml(ev.extra_notes || 'No additional notes.')}</p></div>
+    `;
+  }
+
+  return `<div style="display:flex;flex-direction:column;gap:14px;">${common}${extra}</div>`;
+}
+
+async function openCalendarEventModal(type, id) {
+  try {
+    const res = await get(API.calendar, { action: 'event_detail', type, id });
+    const ev = res && res.event;
+    if (!ev) { toast('Event not found', 'error'); return; }
+    openModal(ev.title, calendarEventDetailHtml(ev));
+  } catch (e) {
+    toast('Failed to load event details', 'error');
+    console.error(e);
+  }
+}
+
+async function openNewMeetingModal() {
+  let projects = [];
+  try {
+    const d = await get(API.projects, {});
+    projects = d.data || [];
+  } catch { /* project dropdown just stays empty */ }
+
+  openModal('New Meeting', `
+    <form id="newMeetingForm" onsubmit="submitNewMeetingForm(event)">
+      <div class="form-grid">
+        <div class="form-group">
+          <label>Title *</label>
+          <input name="title" class="form-input" required />
+        </div>
+        <div class="form-group">
+          <label>Project</label>
+          <select name="project_id" class="form-input">
+            <option value="">— None —</option>
+            ${projects.map(p => `<option value="${p.id}">${escapeHtml(p.project_code)} — ${escapeHtml(p.name)}</option>`).join('')}
+          </select>
+        </div>
+        <div class="form-group">
+          <label>Meeting Date *</label>
+          <input name="meeting_date" type="date" class="form-input" required value="${calToISODate(new Date())}" />
+        </div>
+        <div class="form-group">
+          <label>Meeting Time</label>
+          <input name="meeting_time" type="time" class="form-input" />
+        </div>
+        <div class="form-group" style="grid-column:1/-1;">
+          <label>Location</label>
+          <input name="location" class="form-input" placeholder="e.g. City Engineering Office, 3F Conference Room" />
+        </div>
+      </div>
+      <div class="form-group">
+        <label>Description</label>
+        <textarea name="description" class="form-input" rows="3"></textarea>
+      </div>
+      <div class="form-actions">
+        <button type="button" class="btn-secondary" onclick="closeModal()">Cancel</button>
+        <button type="submit" class="btn-primary">Create Meeting</button>
+      </div>
+    </form>
+  `);
+}
+
+async function submitNewMeetingForm(e) {
+  e.preventDefault();
+  const fd = new FormData(e.target);
+  const body = {
+    title: fd.get('title') || '',
+    description: fd.get('description') || '',
+    meeting_date: fd.get('meeting_date') || '',
+    meeting_time: fd.get('meeting_time') || '',
+    location: fd.get('location') || '',
+    project_id: fd.get('project_id') ? Number(fd.get('project_id')) : null,
+  };
+  try {
+    const res = await postAction(API.calendar, 'create_meeting', body);
+    if (!res || !res.success) { toast((res && res.message) || 'Failed to create meeting', 'error'); return; }
+    toast('Meeting created!');
+    closeModal();
+    refreshCalendar();
+  } catch (err) {
+    toast('Failed to create meeting', 'error');
+    console.error(err);
+  }
+}
+
+async function deleteCalendarMeeting(id) {
+  if (!confirm('Delete this meeting?')) return;
+  try {
+    const res = await postAction(API.calendar, 'delete_meeting', { id: Number(id) });
+    if (!res || !res.success) { toast((res && res.message) || 'Failed to delete meeting', 'error'); return; }
+    toast('Meeting deleted');
+    closeModal();
+    refreshCalendar();
+  } catch (err) {
+    toast('Failed to delete meeting', 'error');
+    console.error(err);
+  }
+}
+
+/* ============================================================
    GIS MAP
    ============================================================ */
 const GIS_STATUS_COLORS = {
@@ -3882,6 +4388,7 @@ document.addEventListener('DOMContentLoaded', () => {
     <div id="page-workflow-management" class="page-section" style="display:none;"></div>
     <div id="page-budget-monitoring" class="page-section" style="display:none;"></div>
     <div id="page-milestone-overview" class="page-section" style="display:none;"></div>
+    <div id="page-calendar-schedule" class="page-section" style="display:none;"></div>
     <div id="page-gis-map" class="page-section" style="display:none;"></div>
     <div id="page-reports" class="page-section" style="display:none;"></div>
     <div id="page-ai-risk-insights" class="page-section" style="display:none;"></div>

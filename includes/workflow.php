@@ -621,6 +621,37 @@ function projectDeletionEnsureSchema(PDO $db): void
     }
 }
 
+// Calendar & Schedule — Admin-created meetings shown alongside the
+// auto-derived calendar events (milestones/inspections/payments/deadlines/
+// HOPE decisions/BAC activity) that api/calendar.php assembles from existing
+// tables. This is the one event type with no existing source table of its
+// own, so it gets a dedicated one, self-healed the same way every other
+// table in this file is (see projectDeletionEnsureSchema() just above for
+// the identical pattern).
+function calendarMeetingEnsureSchema(PDO $db): void
+{
+    try {
+        $db->exec("
+            CREATE TABLE IF NOT EXISTS calendar_meetings (
+                id INT AUTO_INCREMENT PRIMARY KEY,
+                title VARCHAR(200) NOT NULL,
+                description TEXT NULL,
+                meeting_date DATE NOT NULL,
+                meeting_time TIME NULL,
+                location VARCHAR(255) NULL,
+                project_id INT NULL,
+                created_by INT NULL,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+                INDEX idx_calendar_meeting_date (meeting_date),
+                CONSTRAINT fk_calendar_meeting_project FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE SET NULL,
+                CONSTRAINT fk_calendar_meeting_creator FOREIGN KEY (created_by) REFERENCES users(id) ON DELETE SET NULL
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+        ");
+    } catch (Throwable $e) {
+    }
+}
+
 // Road Geometry — conditional module on Project Registration, visible only
 // when category = 'Roads and Bridges'. One row per project (UNIQUE on
 // project_id, upserted). This is the data IPMS shares with the separate
