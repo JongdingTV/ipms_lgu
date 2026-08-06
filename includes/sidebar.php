@@ -59,9 +59,13 @@
         <span class="nav-label">Reports</span>
       </a>
       <a href="#" class="nav-item" data-page="ai-risk-insights">
-        <span class="nav-icon"><svg viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l6.518 11.596c.75 1.334-.213 2.995-1.742 2.995H3.48c-1.53 0-2.492-1.66-1.742-2.995L8.257 3.1zM11 13a1 1 0 10-2 0 1 1 0 002 0zm-1-6a1 1 0 00-1 1v3a1 1 0 102 0V8a1 1 0 00-1-1z" clip-rule="evenodd"/></svg></span>
-        <span class="nav-label">AI Risk Insights</span>
+        <span class="nav-icon"><svg viewBox="0 0 20 20" fill="currentColor"><path d="M10 2a1 1 0 01.967.744L11.98 6.9a3 3 0 002.12 2.12l4.156 1.013a1 1 0 010 1.934l-4.156 1.013a3 3 0 00-2.12 2.12l-1.013 4.156a1 1 0 01-1.934 0l-1.013-4.156a3 3 0 00-2.12-2.12L1.744 11.9a1 1 0 010-1.934L5.9 8.953a3 3 0 002.12-2.12L9.033 2.744A1 1 0 0110 2z"/></svg></span>
+        <span class="nav-label">AI Project Assistant</span>
         <span class="nav-badge" data-badge="ai-risk-insights"></span>
+      </a>
+      <a href="#" class="nav-item" data-page="announcements">
+        <span class="nav-icon"><svg viewBox="0 0 20 20" fill="currentColor"><path d="M9.383 3.076A1 1 0 0110 4v12a1 1 0 01-1.617.816L4.766 14H3a1 1 0 01-1-1V7a1 1 0 011-1h1.766l3.617-2.816a1 1 0 011-.108zM14.657 2.929a1 1 0 011.414 0A9.972 9.972 0 0119 10a9.972 9.972 0 01-2.929 7.071 1 1 0 11-1.414-1.414A7.971 7.971 0 0017 10c0-2.21-.894-4.208-2.343-5.657a1 1 0 010-1.414zm-2.829 2.828a1 1 0 011.415 0A5.983 5.983 0 0115 10a5.983 5.983 0 01-1.757 4.243 1 1 0 01-1.415-1.415A3.984 3.984 0 0013 10a3.984 3.984 0 00-1.172-2.828 1 1 0 010-1.415z"/></svg></span>
+        <span class="nav-label">Announcements</span>
       </a>
       <a href="#" class="nav-item" data-page="citizen-feedback">
         <span class="nav-icon"><svg viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M18 10c0 3.866-3.582 7-8 7a8.841 8.841 0 01-4.083-.98L2 17l1.338-3.123C2.493 12.767 2 11.434 2 10c0-3.866 3.582-7 8-7s8 3.134 8 7zM7 9H5v2h2V9zm8 0h-2v2h2V9zM9 9h2v2H9V9z" clip-rule="evenodd"/></svg></span>
@@ -73,6 +77,18 @@
         <span class="nav-label">Staff Requests</span>
         <span class="nav-badge" data-badge="staff-requests"></span>
       </a>
+
+      <div class="nav-group">
+        <p class="nav-group-label">Performance</p>
+        <a href="#" class="nav-item" data-page="contractor-performance">
+          <span class="nav-icon"><svg viewBox="0 0 20 20" fill="currentColor"><path d="M3 3a1 1 0 00-1 1v12a1 1 0 001 1h14a1 1 0 100-2H4V4a1 1 0 00-1-1z"/><path d="M15.707 6.293a1 1 0 010 1.414l-4 4a1 1 0 01-1.414 0L8 9.414l-2.293 2.293a1 1 0 01-1.414-1.414l3-3a1 1 0 011.414 0L10 9.586l3.293-3.293a1 1 0 011.414 0z"/></svg></span>
+          <span class="nav-label">Contractor Performance</span>
+        </a>
+        <a href="#" class="nav-item" data-page="engineer-performance">
+          <span class="nav-icon"><svg viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M10 2a5 5 0 00-5 5v1.083A3.001 3.001 0 003 11v3a1 1 0 001 1h.083A5.002 5.002 0 009 18.917V19a1 1 0 102 0v-.083A5.002 5.002 0 0015.917 15H16a1 1 0 001-1v-3a3.001 3.001 0 00-2-2.917V7a5 5 0 00-5-5zm3 6.083V7a3 3 0 10-6 0v1.083A5.007 5.007 0 018.083 9h3.834A5.007 5.007 0 0113 8.083z" clip-rule="evenodd"/></svg></span>
+          <span class="nav-label">Engineer Performance</span>
+        </a>
+      </div>
 
       <div class="nav-group">
         <p class="nav-group-label">Archive</p>

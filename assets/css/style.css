@@ -476,6 +476,37 @@ button { cursor: pointer; font-family: var(--font); }
 .modal-label { font-size: .72rem; color: #94a3b8; margin-bottom: 2px; font-weight: 600; letter-spacing: .04em; }
 .modal-val { color: #1e293b; font-weight: 600; }
 
+/* ── Confirmation dialog — stacks above .modal-overlay (2100) so it can gate
+   an action button that lives inside an already-open detail modal (e.g.
+   Citizen Feedback's status-change actions). Promise-based, see
+   assets/js/script.js's showConfirm(). Deliberately prefixed "confirmdlg-",
+   NOT "confirm-" — includes/topbar.php's logout/idle-timeout modals already
+   own the .confirm-overlay/.confirm-card/.confirm-actions classes (see the
+   "Confirm dialogs" block further down this file), with a display:none/flex
+   toggle instead of this component's opacity/.open toggle. Reusing those
+   names here previously leaked opacity:0;pointer-events:none onto the
+   logout modal, since it never gains an .open class — that's what made the
+   Logout button unclickable. Keep these two prefixes separate. ── */
+.confirmdlg-overlay { position: fixed; inset: 0; background: rgba(0,0,0,.5); z-index: 2150; display: flex; align-items: center; justify-content: center; opacity: 0; pointer-events: none; transition: opacity .2s; backdrop-filter: blur(3px); }
+.confirmdlg-overlay.open { opacity: 1; pointer-events: all; }
+.confirmdlg-card { background: var(--card-bg); color: var(--text-primary); border-radius: var(--radius); width: 380px; max-width: 90vw; padding: 26px 24px 22px; box-shadow: 0 24px 64px rgba(0,0,0,.28); text-align: center; transform: scale(.92) translateY(6px); transition: transform .2s, background-color .25s ease, color .25s ease; }
+.confirmdlg-overlay.open .confirmdlg-card { transform: scale(1) translateY(0); }
+.confirmdlg-icon { width: 52px; height: 52px; border-radius: 50%; display: flex; align-items: center; justify-content: center; margin: 0 auto 14px; }
+.confirmdlg-icon svg { width: 26px; height: 26px; }
+.confirmdlg-card[data-tone="info"] .confirmdlg-icon    { background: var(--accent-light); color: var(--accent); }
+.confirmdlg-card[data-tone="success"] .confirmdlg-icon { background: rgba(34,197,94,.15); color: var(--green); }
+.confirmdlg-card[data-tone="warning"] .confirmdlg-icon { background: rgba(245,158,11,.15); color: var(--amber); }
+.confirmdlg-card[data-tone="danger"] .confirmdlg-icon  { background: rgba(239,68,68,.15); color: var(--red); }
+.confirmdlg-title { font-size: 1.02rem; font-weight: 700; margin-bottom: 8px; }
+.confirmdlg-message { font-size: .83rem; color: var(--text-muted); line-height: 1.55; margin-bottom: 22px; }
+.confirmdlg-actions { display: flex; gap: 10px; justify-content: center; }
+.confirmdlg-actions .btn-primary,
+.confirmdlg-actions .btn-secondary,
+.confirmdlg-actions .btn-danger { flex: 1; }
+.confirmdlg-card[data-tone="warning"] .confirmdlg-actions .btn-primary { background: linear-gradient(135deg, var(--amber), #d97706); }
+.btn-danger { background: linear-gradient(135deg, var(--red), #b91c1c); color: #fff; border: none; border-radius: var(--radius-sm); padding: 9px 18px; font-size: .83rem; font-weight: 600; transition: box-shadow .15s, transform .1s; }
+.btn-danger:hover { box-shadow: 0 10px 22px rgba(239,68,68,.32); transform: translateY(-1px); }
+
 /* ── Notification Panel ── */
 .notif-panel { position: fixed; top: var(--topbar-h); right: 16px; width: 300px; max-height: calc(100vh - var(--topbar-h) - 24px); background: var(--card-bg); border: 1px solid var(--border); border-radius: var(--radius); box-shadow: 0 8px 32px rgba(0,0,0,.12); z-index: 150; opacity: 0; pointer-events: none; transform: translateY(-8px); transition: opacity .2s, transform .2s; overflow: hidden; display: flex; flex-direction: column; }
 .notif-panel.open { opacity: 1; pointer-events: all; transform: translateY(0); }
@@ -1515,3 +1546,191 @@ input.search-pill {
   .cal-day-row { grid-template-columns: 14px 60px 1fr; row-gap: 4px; }
   .cal-day-row-project, .cal-day-row-status, .cal-day-row-flag { grid-column: 2 / -1; }
 }
+
+/* Contractor Performance / Engineer Performance dashboards */
+.clickable-row { cursor: pointer; }
+
+/* AI Project Assistant — full-page chat interface. Uses the same theme
+   tokens as the rest of the admin shell (unlike assets/css/chatbot-widget.css,
+   which is self-contained/hardcoded for the public landing + citizen pages),
+   so it re-themes automatically with the light/dark toggle. */
+.ai-asst-shell {
+  display: flex;
+  flex-direction: column;
+  background: var(--card-bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--card-shadow);
+  overflow: hidden;
+  height: calc(100vh - 220px);
+  min-height: 480px;
+}
+
+.ai-asst-disclaimer {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 16px;
+  background: rgba(245,158,11,.12);
+  color: var(--amber);
+  font-size: .78rem;
+  font-weight: 600;
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+.ai-asst-disclaimer svg { flex-shrink: 0; }
+
+.ai-asst-messages {
+  flex: 1;
+  overflow-y: auto;
+  padding: 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.ai-asst-suggestions-bar { flex-shrink: 0; display: flex; flex-direction: column; }
+
+/* Small pill toggle so suggested questions stay reachable for the whole
+   conversation instead of vanishing forever after the first message —
+   the user can collapse/reopen the chip row at will. */
+.ai-asst-suggestions-toggle {
+  align-self: flex-start;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 10px 18px 0;
+  padding: 5px 12px;
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--text-muted);
+  font-family: inherit;
+  font-size: .74rem;
+  font-weight: 600;
+  border-radius: 999px;
+  cursor: pointer;
+  transition: background .15s ease, color .15s ease;
+}
+.ai-asst-suggestions-toggle:hover { background: var(--bg-body); color: var(--text-primary); }
+.ai-asst-suggestions-toggle svg { width: 13px; height: 13px; flex-shrink: 0; }
+.ai-asst-suggestions-toggle .ai-asst-chevron { transition: transform .2s ease; }
+.ai-asst-suggestions-toggle.open .ai-asst-chevron { transform: rotate(180deg); }
+
+.ai-asst-suggestions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 0 18px;
+  max-height: 0;
+  opacity: 0;
+  overflow: hidden;
+  flex-shrink: 0;
+  transition: max-height .25s ease, opacity .2s ease, padding .25s ease;
+}
+.ai-asst-suggestions.open {
+  max-height: 200px;
+  opacity: 1;
+  padding: 10px 18px 14px;
+}
+.ai-asst-chip {
+  border: 1px solid var(--border);
+  background: var(--accent-light);
+  color: var(--accent);
+  font-family: inherit;
+  font-size: .78rem;
+  font-weight: 600;
+  padding: 7px 14px;
+  border-radius: 999px;
+  cursor: pointer;
+  transition: background .15s ease, transform .15s ease;
+}
+.ai-asst-chip:hover { transform: translateY(-1px); }
+
+.ai-asst-msg { display: flex; }
+.ai-asst-msg.user { justify-content: flex-end; }
+.ai-asst-bubble {
+  max-width: 78%;
+  padding: 11px 15px;
+  border-radius: 14px;
+  font-size: .87rem;
+  line-height: 1.55;
+  word-wrap: break-word;
+  white-space: pre-wrap;
+}
+.ai-asst-msg.assistant .ai-asst-bubble {
+  background: var(--bg-body);
+  color: var(--text-primary);
+  border: 1px solid var(--border);
+  border-bottom-left-radius: 4px;
+}
+.ai-asst-msg.user .ai-asst-bubble {
+  background: var(--bg-active);
+  color: #fff;
+  border-bottom-right-radius: 4px;
+}
+.ai-asst-msg.error .ai-asst-bubble {
+  background: rgba(239,68,68,.1);
+  color: var(--red);
+  border: 1px solid rgba(239,68,68,.3);
+}
+
+.ai-asst-typing { display: flex; gap: 4px; padding: 4px 2px; }
+.ai-asst-typing span {
+  width: 6px; height: 6px; border-radius: 50%; background: var(--text-muted);
+  animation: aiAsstBounce 1.2s infinite ease-in-out;
+}
+.ai-asst-typing span:nth-child(2) { animation-delay: .15s; }
+.ai-asst-typing span:nth-child(3) { animation-delay: .3s; }
+@keyframes aiAsstBounce {
+  0%, 60%, 100% { transform: translateY(0); opacity: .5; }
+  30% { transform: translateY(-4px); opacity: 1; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .ai-asst-typing span { animation: none; }
+}
+
+.ai-asst-composer {
+  flex-shrink: 0;
+  display: flex;
+  gap: 10px;
+  padding: 14px 16px;
+  border-top: 1px solid var(--border);
+  background: var(--card-bg);
+}
+.ai-asst-input {
+  flex: 1;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 10px 14px;
+  font-size: .87rem;
+  font-family: inherit;
+  background: var(--input-bg);
+  color: var(--text-primary);
+  resize: none;
+  max-height: 120px;
+  outline: none;
+}
+.ai-asst-input:focus { border-color: var(--accent); }
+.ai-asst-send {
+  border: none;
+  border-radius: var(--radius-sm);
+  width: 44px;
+  flex-shrink: 0;
+  background: var(--bg-active);
+  color: #fff;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.ai-asst-send:disabled { opacity: .55; cursor: not-allowed; }
+.ai-asst-send svg { width: 18px; height: 18px; }
+
+@media (max-width: 720px) {
+  .ai-asst-shell { height: calc(100vh - 260px); }
+  .ai-asst-bubble { max-width: 90%; }
+}
+
+/* Announcements — table row poster thumbnail */
+.announcement-thumb { width: 44px; height: 44px; border-radius: 8px; object-fit: cover; border: 1px solid var(--border); display: block; }
+.announcement-thumb-empty { display: flex; align-items: center; justify-content: center; color: var(--text-muted); background: var(--bg-body); }

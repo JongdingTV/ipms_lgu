@@ -8,6 +8,7 @@ $user = requireLogin(['citizen']);
 $pdo = getDB();
 projectWorkflowEnsureProjectStatusSchema($pdo);
 feedbackEnsureSchema($pdo);
+announcementsEnsureSchema($pdo);
 
 // Get citizen data. A missing citizens row (e.g. the seeded demo account)
 // only means "no personal submissions" — public project data still loads.
@@ -80,6 +81,20 @@ $stmt = $pdo->prepare("
 ");
 $stmt->execute();
 $recentUpdates = $stmt->fetchAll();
+
+// Latest published announcements (pinned first) for the home tab's preview widget.
+$stmt = $pdo->prepare("
+    SELECT a.id, a.title, a.body, a.category, a.project_id, a.event_date, a.event_time, a.event_location,
+           a.poster_path, a.is_pinned, a.published_at, a.created_at,
+           p.name AS project_name
+    FROM announcements a
+    LEFT JOIN projects p ON p.id = a.project_id
+    WHERE a.status = 'published'
+    ORDER BY a.is_pinned DESC, COALESCE(a.published_at, a.created_at) DESC
+    LIMIT 3
+");
+$stmt->execute();
+$recentAnnouncements = $stmt->fetchAll();
 
 // Attach proof photos in one query, grouped by feedback id
 if ($recentFeedback) {
@@ -201,5 +216,6 @@ echo json_encode([
     ],
     'recent_projects' => $recentProjects,
     'recent_feedback' => $recentFeedback,
-    'recent_updates' => $recentUpdates
+    'recent_updates' => $recentUpdates,
+    'recent_announcements' => $recentAnnouncements
 ]);

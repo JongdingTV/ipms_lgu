@@ -10,6 +10,24 @@
     </div>
   </div>
 
+  <!-- CONFIRMATION DIALOG — on-brand, Promise-based replacement for the
+       native confirm() popup. See assets/js/script.js's showConfirm().
+       Classes are prefixed "confirmdlg-", not "confirm-" — the latter
+       already belongs to includes/topbar.php's logout/idle-timeout modals,
+       which use a different display:none/flex toggle (assets/js/session-guard.js).
+       Do not rename these back to "confirm-*". -->
+  <div class="confirmdlg-overlay" id="confirmOverlay">
+    <div class="confirmdlg-card" role="alertdialog" aria-modal="true" aria-labelledby="confirmTitle" aria-describedby="confirmMessage">
+      <div class="confirmdlg-icon" id="confirmIcon"></div>
+      <h3 class="confirmdlg-title" id="confirmTitle"></h3>
+      <p class="confirmdlg-message" id="confirmMessage"></p>
+      <div class="confirmdlg-actions">
+        <button type="button" class="btn-secondary" id="confirmCancelBtn">Cancel</button>
+        <button type="button" class="btn-primary" id="confirmOkBtn">Confirm</button>
+      </div>
+    </div>
+  </div>
+
   <?php include __DIR__ . '/notifications-panel.php'; ?>
 
   <!-- Leaflet: only the GIS Map page (admin-only) uses this; kept out of the

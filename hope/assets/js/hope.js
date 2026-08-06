@@ -139,6 +139,7 @@ async function hopeRenderDashboard() {
   document.getElementById('hopePendingCount').textContent = stats.pending_project_approvals || 0;
   document.getElementById('hopePendingAwardsCount').textContent = stats.pending_award_approvals || 0;
   document.getElementById('hopePendingDeletionsCount').textContent = stats.pending_deletion_requests || 0;
+  document.getElementById('hopePendingEditsCount').textContent = stats.pending_edit_requests || 0;
   document.getElementById('hopeApprovedCount').textContent = stats.approved_this_month || 0;
   document.getElementById('hopeReturnedCount').textContent = stats.returned || 0;
   document.getElementById('hopeRejectedCount').textContent = stats.rejected || 0;
@@ -760,6 +761,177 @@ function hopeOpenDeletionDecisionModal(requestId, decision) {
   });
 }
 
+/* ---- Edit Requests ---------------------------------------------------------
+   Project Registration's Edit button (assets/js/script.js) no longer applies
+   changes instantly — it submits a project_edit_requests row via
+   api/projects.php's request_edit action, and this queue is where HOPE
+   approves or rejects it. Mirrors the Deletion Requests module above, but
+   the review needs a before/after diff table rather than just a reason,
+   since an edit (unlike a deletion) carries actual proposed field values. */
+
+let hopeEditRequestsById = {};
+
+const HOPE_EDIT_FIELD_LABELS = {
+  name: 'Name', description: 'Description', location: 'Location',
+  budget: 'Budget', start_date: 'Start Date', end_date: 'End Date',
+  progress: 'Progress', latitude: 'Latitude', longitude: 'Longitude',
+  category: 'Category', funding_source: 'Funding Source',
+  implementing_office: 'Implementing Office', physical_target: 'Physical Target',
+};
+
+function hopeFormatFieldValue(field, value) {
+  if (value === null || value === undefined || value === '') return '—';
+  if (field === 'budget') return hopeMoney(value);
+  if (field === 'progress') return `${value}%`;
+  if (field === 'start_date' || field === 'end_date') return hopeDate(value);
+  return hopeEscape(String(value));
+}
+
+async function hopeRenderEditRequests() {
+  const container = document.getElementById('page-edit-requests');
+  if (!container) return;
+
+  container.innerHTML = `
+    <div class="page-header">
+      <div>
+        <h2 class="page-title">Edit Requests</h2>
+        <p class="hope-decision-note">Review Admin's proposed changes to an already-registered project, including the stated reason, then approve or reject them. A remark is required to reject.</p>
+      </div>
+    </div>
+    ${listToolbarHtml('hopeEditSearch', 'Search project...', 'hopeEditPager')}
+    <div class="table-card">
+      <table class="data-table">
+        <thead><tr><th>Project</th><th>Requested By</th><th>Reason</th><th>Requested</th><th>Actions</th></tr></thead>
+        <tbody id="hopeEditBody"><tr><td colspan="5" class="table-empty">Loading...</td></tr></tbody>
+      </table>
+    </div>
+  `;
+
+  initClientList('hopeEdits', {
+    bodyId: 'hopeEditBody', searchId: 'hopeEditSearch', pagerId: 'hopeEditPager',
+    columns: 5, emptyText: 'No project edit requests are awaiting your review.',
+    searchText: r => `${r.project_code} ${r.project_name} ${r.requested_by_name || ''}`,
+    rowHtml: r => `
+      <tr>
+        <td><span class="proj-id">${hopeEscape(r.project_code)}</span><br><strong>${hopeEscape(r.project_name)}</strong></td>
+        <td>${hopeEscape(r.requested_by_name || 'Unknown')}</td>
+        <td style="max-width:260px;">${hopeEscape(r.reason)}</td>
+        <td class="cell-nowrap">${hopeDate(r.created_at)}</td>
+        <td><button class="btn-primary btn-compact" onclick="hopeOpenEditDetailModal(${r.id})">Review</button></td>
+      </tr>`,
+  });
+
+  await hopeLoadEditRequests();
+}
+
+async function hopeLoadEditRequests() {
+  const body = document.getElementById('hopeEditBody');
+  if (!body) return;
+
+  try {
+    const result = await hopeGet('list_edit_requests');
+    result.data.forEach(r => { hopeEditRequestsById[r.id] = r; });
+    setClientListData('hopeEdits', result.data);
+  } catch (error) {
+    body.innerHTML = '<tr><td colspan="5" class="table-empty">Failed to load edit requests.</td></tr>';
+  }
+}
+
+async function hopeOpenEditDetailModal(requestId) {
+  let detail;
+  try {
+    detail = await hopeGet('edit_request_detail', { id: requestId });
+  } catch (error) {
+    hopeToast(error.message || 'Failed to load edit request.', 'error');
+    return;
+  }
+
+  const r = detail.request;
+  const current = detail.current_project;
+  const fields = detail.proposed_fields || {};
+  const roadGeometry = detail.proposed_road_geometry;
+  const fieldNames = Object.keys(fields);
+
+  hopeOpenModal(`Edit Request — ${hopeEscape(r.project_code)}`, `
+    <div style="display:flex;flex-direction:column;gap:14px;">
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">
+        <div><p class="modal-label">PROJECT</p><p class="modal-val">${hopeEscape(r.project_name)}</p></div>
+        <div><p class="modal-label">CURRENT STATUS</p><p class="modal-val">${current ? hopeBadge(current.status) : 'Project no longer exists'}</p></div>
+        <div><p class="modal-label">REQUESTED BY</p><p class="modal-val">${hopeEscape(r.requested_by_name || 'Unknown')}</p></div>
+        <div><p class="modal-label">REQUESTED</p><p class="modal-val">${hopeDate(r.created_at)}</p></div>
+      </div>
+      <div>
+        <p class="modal-label">REASON FOR EDIT</p>
+        <p class="modal-val" style="font-weight:400;">${hopeEscape(r.reason)}</p>
+      </div>
+      ${fieldNames.length ? `
+      <div>
+        <p class="modal-label">PROPOSED CHANGES</p>
+        <table class="data-table" style="margin-top:6px;">
+          <thead><tr><th>Field</th><th>Current</th><th>Proposed</th></tr></thead>
+          <tbody>
+            ${fieldNames.map(f => `
+              <tr>
+                <td>${HOPE_EDIT_FIELD_LABELS[f] || f}</td>
+                <td>${hopeFormatFieldValue(f, current ? current[f] : null)}</td>
+                <td><strong>${hopeFormatFieldValue(f, fields[f])}</strong></td>
+              </tr>
+            `).join('')}
+          </tbody>
+        </table>
+      </div>` : ''}
+      ${roadGeometry ? `
+      <div>
+        <p class="modal-label">ROAD GEOMETRY CHANGE</p>
+        <p class="modal-val" style="font-weight:400;">Road "${hopeEscape(roadGeometry.road_name)}" — ${(roadGeometry.estimated_length_meters / 1000).toFixed(2)} km, ${roadGeometry.num_segments} segment(s). The road drawing will be updated on approval.</p>
+      </div>` : ''}
+      <div class="form-actions">
+        <button class="btn-secondary" type="button" onclick="hopeOpenEditDecisionModal(${requestId}, 'reject')">Reject Request</button>
+        <button class="btn-primary" type="button" onclick="hopeOpenEditDecisionModal(${requestId}, 'approve')">Approve Changes</button>
+      </div>
+    </div>
+  `);
+}
+
+function hopeOpenEditDecisionModal(requestId, decision) {
+  const labels = { approve: 'Approve Edit', reject: 'Reject Request' };
+  const remarksRequired = decision !== 'approve';
+
+  hopeOpenModal(labels[decision], `
+    <form id="hopeEditDecisionForm">
+      ${decision === 'approve' ? '<p class="empty-state">This applies the proposed changes to the project immediately.</p>' : ''}
+      <div class="form-group">
+        <label>Remarks${remarksRequired ? ' *' : ' (optional)'}</label>
+        <textarea name="remarks" class="form-input" rows="4" placeholder="Explain the decision" ${remarksRequired ? 'required' : ''}></textarea>
+      </div>
+      <div class="form-actions">
+        <button type="button" class="btn-secondary" onclick="hopeCloseModal()">Cancel</button>
+        <button type="submit" class="btn-primary">Confirm ${labels[decision]}</button>
+      </div>
+    </form>
+  `);
+
+  document.getElementById('hopeEditDecisionForm').addEventListener('submit', async event => {
+    event.preventDefault();
+    const remarks = new FormData(event.target).get('remarks') || '';
+    try {
+      const response = await fetch(`${HOPE_API}?action=decide_edit`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...HOPE_CSRF_HEADERS },
+        body: JSON.stringify({ request_id: requestId, decision, remarks }),
+      });
+      const result = await response.json();
+      if (!response.ok || result.error) throw hopeErrorFrom(result, response);
+      hopeToast(`Edit request ${result.status}.`);
+      hopeCloseModal();
+      await hopeLoadEditRequests();
+      await hopeRenderDashboard();
+    } catch (error) {
+      hopeToast(error.message || 'Failed to record decision.', 'error');
+    }
+  });
+}
+
 /* ---- Returned Projects / Decision History ----------------------------------- */
 
 async function hopeRenderReturnedProjects() {
@@ -1092,6 +1264,7 @@ const hopeRenderers = {
   'award-approvals': hopeRenderAwardApprovals,
   'returned-projects': hopeRenderReturnedProjects,
   'deletion-requests': hopeRenderDeletionRequests,
+  'edit-requests': hopeRenderEditRequests,
   'decision-history': hopeRenderDecisionHistory,
   'approved-projects': hopeRenderApprovedProjects,
   'ongoing-projects': hopeRenderOngoingProjects,

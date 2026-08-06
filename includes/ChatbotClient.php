@@ -55,9 +55,13 @@ PROMPT;
 
     /**
      * @param list<array{role:string,content:string}> $history Prior turns, oldest first ('user'|'assistant').
+     * @param ?string $systemPrompt Overrides the citizen-widget persona above — used by the
+     *        Admin AI Project Assistant (api/ai-assistant.php) to swap in its own decision-support
+     *        persona plus a freshly-queried data snapshot, while still sharing this same HTTP/error
+     *        handling plumbing.
      * @return array{success:bool,reply:?string,message:string,http_status:int}
      */
-    public static function sendMessage(array $history, string $userMessage): array
+    public static function sendMessage(array $history, string $userMessage, ?string $systemPrompt = null): array
     {
         if (!self::isEnabled()) {
             return [
@@ -91,7 +95,7 @@ PROMPT;
         $url = self::API_BASE . rawurlencode($model) . ':generateContent?key=' . rawurlencode(GEMINI_API_KEY);
 
         $body = [
-            'system_instruction' => ['parts' => ['text' => self::SYSTEM_PROMPT]],
+            'system_instruction' => ['parts' => ['text' => $systemPrompt ?? self::SYSTEM_PROMPT]],
             'contents' => $contents,
             'generationConfig' => ['maxOutputTokens' => self::MAX_OUTPUT_TOKENS],
         ];

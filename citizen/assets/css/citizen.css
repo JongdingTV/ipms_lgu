@@ -1045,6 +1045,185 @@ body {
     margin-top: 4px;
 }
 
+/* ── View toggle — Cards/Table switch on Public Projects (assets/js/citizen.js
+   setListView()). Same pill surface as .list-search/.list-pager so the three
+   read as one family. ── */
+.view-toggle {
+    display: flex;
+    align-items: center;
+    gap: 2px;
+    background: var(--card-bg, #ffffff);
+    border: 1px solid var(--border, #dbe4ef);
+    border-radius: 999px;
+    padding: 4px;
+    flex-shrink: 0;
+}
+
+.view-toggle-btn {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 8px 16px;
+    border: none;
+    border-radius: 999px;
+    background: transparent;
+    color: var(--text-muted, #64748b);
+    font-size: .85rem;
+    font-weight: 600;
+    font-family: inherit;
+    cursor: pointer;
+    transition: background .15s, color .15s, box-shadow .15s;
+}
+
+.view-toggle-btn svg {
+    width: 16px;
+    height: 16px;
+    flex-shrink: 0;
+}
+
+.view-toggle-btn:hover:not(.active) {
+    background: rgba(148, 163, 184, .14);
+    color: var(--text-primary, #1e293b);
+}
+
+.view-toggle-btn.active {
+    background: linear-gradient(135deg, var(--primary, #2563eb), var(--primary-dark, #1e40af));
+    color: #fff;
+    box-shadow: 0 6px 16px rgba(37, 99, 235, .28);
+}
+
+@media (max-width: 560px) {
+    .view-toggle-btn { padding: 8px 12px; font-size: .8rem; }
+}
+
+/* ── Announcements — events, new-project spotlights, official notices/
+   posters. Same card-grid language as .projects-grid/.project-card, with
+   an optional poster image banner and a category-colored pill instead of
+   a status badge. Card renderer: citizen.js's createAnnouncementCard(). ── */
+.announcement-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+    gap: 1.5rem;
+}
+
+.announcement-grid-preview {
+    grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+}
+
+.announcement-card {
+    display: flex;
+    flex-direction: column;
+    background: var(--card-bg, #ffffff);
+    border: 1px solid var(--border, #dbe4ef);
+    border-radius: var(--radius, 12px);
+    overflow: hidden;
+    cursor: pointer;
+    transition: border-color .2s, box-shadow .2s, transform .2s;
+}
+
+.announcement-card:hover {
+    border-color: var(--primary, #2563eb);
+    box-shadow: 0 8px 24px rgba(37, 99, 235, .15);
+    transform: translateY(-4px);
+}
+
+.announcement-card-poster {
+    width: 100%;
+    height: 150px;
+    background: rgba(148, 163, 184, .16);
+    overflow: hidden;
+}
+
+.announcement-card-poster img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    display: block;
+}
+
+.announcement-card-body {
+    padding: 16px 18px 18px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    flex: 1;
+}
+
+.announcement-card-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+}
+
+.ann-badge {
+    display: inline-block;
+    padding: .35rem .75rem;
+    border-radius: 999px;
+    font-size: .72rem;
+    font-weight: 700;
+    letter-spacing: .02em;
+    text-transform: uppercase;
+}
+.ann-badge-event   { background: #ede9fe; color: #6d28d9; }
+.ann-badge-project { background: #dcfce7; color: #15803d; }
+.ann-badge-notice  { background: #fef3c7; color: #b45309; }
+.ann-badge-general { background: #e2e8f0; color: #475569; }
+
+.ann-pin { font-size: .95rem; line-height: 1; }
+
+.announcement-card-title {
+    font-size: 1.05rem;
+    font-weight: 700;
+    color: var(--text-primary, #1e293b);
+    line-height: 1.35;
+}
+
+.announcement-card-meta {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: .82rem;
+    color: var(--primary, #2563eb);
+    font-weight: 600;
+}
+.announcement-card-meta .meta-icon { flex-shrink: 0; }
+
+.announcement-card-excerpt {
+    font-size: .9rem;
+    color: var(--text-muted, #64748b);
+    line-height: 1.55;
+    flex: 1;
+}
+
+.announcement-card-foot {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    padding-top: 6px;
+    border-top: 1px solid var(--border, #eef2f7);
+    font-size: .78rem;
+}
+
+.announcement-card-project {
+    color: var(--primary, #2563eb);
+    font-weight: 600;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.announcement-card-date {
+    color: var(--text-muted, #94a3b8);
+    white-space: nowrap;
+    margin-left: auto;
+}
+
+:root[data-theme="dark"] .ann-badge-event   { background: rgba(109,40,217,.28); color: #c4b5fd; }
+:root[data-theme="dark"] .ann-badge-project { background: rgba(21,128,61,.28);  color: #86efac; }
+:root[data-theme="dark"] .ann-badge-notice  { background: rgba(180,83,9,.28);   color: #fcd34d; }
+:root[data-theme="dark"] .ann-badge-general { background: rgba(71,85,105,.4);   color: #cbd5e1; }
+
 .verification-status {
     border: 1px solid rgba(15,23,42,.08);
 }

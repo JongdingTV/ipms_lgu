@@ -5,13 +5,21 @@ function citizenUrl(path) {
     return CITIZEN_BASE_PATH + path.replace(/^\/+/, '');
 }
 
+// "Project Status" used to be its own page; it's now the Cards view of the
+// merged Public Projects page. Old bookmarks/links to #project-status still
+// land somewhere real instead of silently doing nothing.
+const PAGE_HASH_ALIASES = { 'project-status': 'projects' };
+function resolvePageHash(page) {
+    return PAGE_HASH_ALIASES[page] || page;
+}
+
 document.addEventListener('DOMContentLoaded', function() {
     // Initialize the page
     loadDashboardData();
     setupEventListeners();
 
     // Deep-linking: #projects, #profile, etc. restore the page on load…
-    const initialPage = (location.hash || '').replace(/^#/, '');
+    const initialPage = resolvePageHash((location.hash || '').replace(/^#/, ''));
     if (initialPage && document.getElementById('page-' + initialPage)) {
         changePage(initialPage);
     }
@@ -20,7 +28,7 @@ document.addEventListener('DOMContentLoaded', function() {
 // …and browser back/forward moves between pages.
 let currentPageName = 'dashboard';
 window.addEventListener('hashchange', function() {
-    const page = (location.hash || '').replace(/^#/, '') || 'dashboard';
+    const page = resolvePageHash((location.hash || '').replace(/^#/, '') || 'dashboard');
     if (page !== currentPageName && document.getElementById('page-' + page)) {
         changePage(page);
     }
@@ -38,6 +46,7 @@ function setupEventListeners() {
     });
 
     setupListControls();
+    setupViewToggles();
 
     // Forms
     const feedbackForm = document.getElementById('feedbackForm');
@@ -53,6 +62,7 @@ function setupEventListeners() {
     setupChangePassword();
     setupProjectDetailModal();
     setupFeedbackDetailModal();
+    setupAnnouncementDetailModal();
     setupSidebarToggle();
     setupLogoutConfirm();
     setupIdleLogout();
@@ -1130,10 +1140,10 @@ function changePage(pageName) {
     });
 
     // Load page-specific data
-    if (pageName === 'projects') {
+    if (pageName === 'announcements') {
+        loadAnnouncements();
+    } else if (pageName === 'projects') {
         loadProjects();
-    } else if (pageName === 'project-status') {
-        loadProjectStatus();
     } else if (pageName === 'track-feedback') {
         loadTrackedFeedback();
     } else if (pageName === 'transparency') {
@@ -1551,17 +1561,40 @@ function loadDashboardData() {
             displayRecentProjects(data.recent_projects || []);
             displayRecentFeedback(data.recent_feedback || []);
             displayLatestUpdates(data.recent_updates || []);
+            displayRecentAnnouncements(data.recent_announcements || []);
         })
         .catch(err => {
             console.error('Error loading dashboard:', err);
             // Swap the skeletons for a readable message instead of leaving
             // them shimmering forever.
             const failed = '<p class="empty-state">Could not load this section. Please refresh the page to try again.</p>';
-            ['recentProjectsContainer', 'recentFeedbackContainer', 'latestUpdatesContainer'].forEach(id => {
+            ['recentProjectsContainer', 'recentFeedbackContainer', 'latestUpdatesContainer', 'recentAnnouncementsContainer'].forEach(id => {
                 const el = document.getElementById(id);
                 if (el) el.innerHTML = failed;
             });
         });
+}
+
+// ===== Latest Announcements (home-tab preview widget) =====
+function displayRecentAnnouncements(announcements) {
+    const container = document.getElementById('recentAnnouncementsContainer');
+    if (!container) return;
+
+    if (!announcements.length) {
+        container.innerHTML = '<p class="empty-state">No announcements yet. Check back soon!</p>';
+        return;
+    }
+
+    // Seed listStates.announcements so clicking a card here — before the
+    // citizen has ever visited the full Announcements page — still resolves
+    // via openAnnouncementDetail's client-side lookup. Only seeds while that
+    // list is still empty, so it never clobbers the fuller dataset once the
+    // Announcements page itself has actually loaded.
+    if (listStates.announcements && listStates.announcements.data.length === 0) {
+        listStates.announcements.data = announcements;
+    }
+
+    container.innerHTML = announcements.map(createAnnouncementCard).join('');
 }
 
 // ===== Latest field updates (read-only feed of the engineers' status updates) =====
@@ -1599,7 +1632,16 @@ const LIST_PAGE_SIZE = 10;
 const listStates = {};
 
 function initListControl(key, cfg) {
-    listStates[key] = { cfg, data: [], page: 1 };
+    // cfg.views (optional) lets one list key render into more than one
+    // container with its own rowHtml/columns — e.g. Public Projects' Cards
+    // vs Table toggle — while sharing the same fetched data, search query,
+    // filter, and pager. Falls back to a single implicit view built from
+    // cfg itself when cfg.views isn't set, so trackedFeedback/expenses (one
+    // view each) don't need to change.
+    const views = cfg.views || { default: cfg };
+    const defaultView = cfg.views ? (loadListViewPref(key) || cfg.defaultView || Object.keys(views)[0]) : 'default';
+    listStates[key] = { cfg, views, data: [], page: 1, view: defaultView };
+    if (cfg.views) applyListViewUI(key);
 
     const search = document.getElementById(cfg.searchId);
     if (search) search.addEventListener('input', debounce(() => {
@@ -1633,11 +1675,51 @@ function setListData(key, data) {
     renderListControl(key);
 }
 
+// ===== Multi-view lists (e.g. Public Projects' Cards/Table toggle) =====
+// The chosen view is remembered per list key across visits — a citizen who
+// prefers the table shouldn't have to re-toggle it every time they come back.
+function listViewPrefKey(key) {
+    return `ipms_citizen_list_view_${key}`;
+}
+function loadListViewPref(key) {
+    try { return localStorage.getItem(listViewPrefKey(key)); } catch { return null; }
+}
+function saveListViewPref(key, view) {
+    try { localStorage.setItem(listViewPrefKey(key), view); } catch { /* private browsing, etc. — fine to skip */ }
+}
+
+// Shows the active view's container (hides the others) and syncs the
+// toggle buttons' active state — used both on first render and on switch.
+function applyListViewUI(key) {
+    const state = listStates[key];
+    if (!state) return;
+
+    Object.entries(state.views).forEach(([v, viewCfg]) => {
+        const wrap = document.getElementById(viewCfg.wrapId || viewCfg.bodyId);
+        if (wrap) wrap.style.display = v === state.view ? '' : 'none';
+    });
+    document.querySelectorAll(`.view-toggle-btn[data-list="${key}"]`).forEach(btn => {
+        btn.classList.toggle('active', btn.dataset.view === state.view);
+    });
+}
+
+function setListView(key, view) {
+    const state = listStates[key];
+    if (!state || !state.views[view] || state.view === view) return;
+
+    state.view = view;
+    state.page = 1;
+    saveListViewPref(key, view);
+    applyListViewUI(key);
+    renderListControl(key);
+}
+
 function renderListControl(key) {
     const state = listStates[key];
     if (!state) return;
     const { cfg } = state;
-    const body = document.getElementById(cfg.bodyId);
+    const activeView = state.views[state.view] || Object.values(state.views)[0];
+    const body = document.getElementById(activeView.bodyId);
     if (!body) return;
 
     const query = (document.getElementById(cfg.searchId)?.value || '').trim().toLowerCase();
@@ -1649,7 +1731,7 @@ function renderListControl(key) {
         return true;
     });
 
-    const pageSize = cfg.pageSize || LIST_PAGE_SIZE;
+    const pageSize = activeView.pageSize || cfg.pageSize || LIST_PAGE_SIZE;
     const total = filtered.length;
     const lastPage = Math.max(1, Math.ceil(total / pageSize));
     state.page = Math.min(Math.max(1, state.page), lastPage);
@@ -1657,13 +1739,13 @@ function renderListControl(key) {
     const end = Math.min(start + pageSize, total);
     const pageItems = filtered.slice(start, end);
 
-    // cfg.columns marks a <tbody> target; without it the control renders
-    // into a plain list container (e.g. the Project Status tracker cards).
+    // activeView.columns marks a <tbody> target; without it the control
+    // renders into a plain list container (e.g. the tracker cards view).
     const emptyMsg = state.data.length ? 'No results match your search.' : cfg.emptyText;
     body.innerHTML = pageItems.length
-        ? pageItems.map(cfg.rowHtml).join('')
-        : (cfg.columns
-            ? `<tr><td colspan="${cfg.columns}" class="table-empty">${emptyMsg}</td></tr>`
+        ? pageItems.map(activeView.rowHtml).join('')
+        : (activeView.columns
+            ? `<tr><td colspan="${activeView.columns}" class="table-empty">${emptyMsg}</td></tr>`
             : `<p class="empty-state">${emptyMsg}</p>`);
 
     const info = document.getElementById(cfg.infoId);
@@ -1675,36 +1757,52 @@ function renderListControl(key) {
 }
 
 function setupListControls() {
+    // Public Projects: one dataset (citizen/api/project-status.php), two
+    // presentations. Cards (default) walks each project's workflow stage;
+    // Table is the dense scanning view the old standalone "Public Projects"
+    // page used. Toggled by setListView('projects', ...) — see
+    // setupViewToggles() — search/filter/pager stay shared across both.
     initListControl('projects', {
-        bodyId: 'projectsTableBody', searchId: 'projectSearch', filterId: 'statusFilter',
+        searchId: 'projectSearch', filterId: 'statusFilter',
         infoId: 'projectsPagerInfo', prevId: 'projectsPagerPrev', nextId: 'projectsPagerNext',
-        columns: 5, emptyText: 'No projects found',
+        emptyText: 'No projects found',
         searchText: p => `${p.name} ${p.location || ''} ${p.description || ''}`,
         matchesFilter: (p, status) => p.status === status,
-        rowHtml: p => `
-            <tr class="row-click" onclick="openProjectDetail(${Number(p.id)})" title="View project details">
-                <td>
-                    <div class="cell-title">${escapeHtml(p.name)}</div>
-                    <div class="cell-sub">${escapeHtml(p.location || 'Location N/A')}</div>
-                </td>
-                <td class="cell-money">₱${formatNumber(p.budget)}</td>
-                <td class="cell-nowrap">${formatDate(p.start_date)} – ${formatDate(p.end_date)}</td>
-                <td>
-                    <div class="cell-progress">
-                        <div class="mini-progress"><div style="width:${Number(p.progress) || 0}%"></div></div>
-                        <span>${Number(p.progress) || 0}%</span>
-                    </div>
-                </td>
-                <td><span class="project-badge badge-${escapeHtml(p.status)}">${projectStatusLabel(p.status)}</span></td>
-            </tr>`,
+        defaultView: 'cards',
+        views: {
+            cards: {
+                bodyId: 'projectsCardBody', pageSize: 5,
+                rowHtml: createTrackerCard,
+            },
+            table: {
+                bodyId: 'projectsTableBody', wrapId: 'projectsTableWrap', columns: 5,
+                rowHtml: p => `
+                    <tr class="row-click" onclick="openProjectDetail(${Number(p.id)})" title="View project details">
+                        <td>
+                            <div class="cell-title">${escapeHtml(p.name)}</div>
+                            <div class="cell-sub">${escapeHtml(p.location || 'Location N/A')}</div>
+                        </td>
+                        <td class="cell-money">₱${formatNumber(p.budget)}</td>
+                        <td class="cell-nowrap">${formatDate(p.start_date)} – ${formatDate(p.end_date)}</td>
+                        <td>
+                            <div class="cell-progress">
+                                <div class="mini-progress"><div style="width:${Number(p.progress) || 0}%"></div></div>
+                                <span>${Number(p.progress) || 0}%</span>
+                            </div>
+                        </td>
+                        <td><span class="project-badge badge-${escapeHtml(p.status)}">${projectStatusLabel(p.status)}</span></td>
+                    </tr>`,
+            },
+        },
     });
 
-    initListControl('projectStatus', {
-        bodyId: 'projectStatusBody', searchId: 'psSearch',
-        infoId: 'psPagerInfo', prevId: 'psPagerPrev', nextId: 'psPagerNext',
-        pageSize: 5, emptyText: 'No projects to display',
-        searchText: p => `${p.name} ${p.location || ''} ${p.description || ''}`,
-        rowHtml: createTrackerCard,
+    initListControl('announcements', {
+        bodyId: 'announcementsBody', searchId: 'annSearch', filterId: 'annCategoryFilter',
+        infoId: 'annPagerInfo', prevId: 'annPagerPrev', nextId: 'annPagerNext',
+        pageSize: 9, emptyText: 'No announcements yet — check back soon.',
+        searchText: a => `${a.title} ${a.body || ''} ${a.project_name || ''}`,
+        matchesFilter: (a, category) => a.category === category,
+        rowHtml: createAnnouncementCard,
     });
 
     initListControl('trackedFeedback', {
@@ -1739,6 +1837,18 @@ function setupListControls() {
                 <td class="cell-nowrap">${formatDate(e.expense_date)}</td>
                 <td class="cell-num cell-money">₱${formatNumber(e.amount)}</td>
             </tr>`,
+    });
+}
+
+// Delegated so it works for any current/future .view-toggle-btn without
+// needing a per-button listener registered by hand.
+function setupViewToggles() {
+    document.querySelectorAll('.view-toggle-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+            const listKey = btn.dataset.list;
+            const view = btn.dataset.view;
+            if (listKey && view) setListView(listKey, view);
+        });
     });
 }
 
@@ -1806,22 +1916,119 @@ function createTrackerCard(p) {
         </div>`;
 }
 
+// ===== Announcements (events, new-project spotlights, official notices/posters) =====
+const ANNOUNCEMENT_CATEGORY_LABELS = { event: 'Event', new_project: 'New Project', notice: 'Notice', general: 'General' };
+const ANNOUNCEMENT_CATEGORY_CLASS = { event: 'ann-badge-event', new_project: 'ann-badge-project', notice: 'ann-badge-notice', general: 'ann-badge-general' };
+
+function announcementCategoryBadge(category) {
+    return `<span class="ann-badge ${ANNOUNCEMENT_CATEGORY_CLASS[category] || 'ann-badge-general'}">${ANNOUNCEMENT_CATEGORY_LABELS[category] || category}</span>`;
+}
+
+function loadAnnouncements() {
+    fetch(citizenUrl('citizen/api/announcements.php'))
+        .then(res => res.json())
+        .then(data => {
+            setListData('announcements', data.announcements);
+        })
+        .catch(err => console.error('Error loading announcements:', err));
+}
+
+function createAnnouncementCard(a) {
+    const rawBody = a.body || '';
+    const excerpt = rawBody.length > 160 ? rawBody.slice(0, 160).trim() + '…' : rawBody;
+    const isEvent = a.category === 'event' && a.event_date;
+
+    return `
+        <article class="announcement-card row-click" onclick="openAnnouncementDetail(${Number(a.id)})" title="View announcement">
+            ${a.poster_path ? `<div class="announcement-card-poster"><img src="${citizenUrl(escapeHtml(a.poster_path))}" alt="" loading="lazy"></div>` : ''}
+            <div class="announcement-card-body">
+                <div class="announcement-card-head">
+                    ${announcementCategoryBadge(a.category)}
+                    ${Number(a.is_pinned) === 1 ? '<span class="ann-pin" title="Pinned">📌</span>' : ''}
+                </div>
+                <h3 class="announcement-card-title">${escapeHtml(a.title)}</h3>
+                ${isEvent ? `
+                <p class="announcement-card-meta">
+                    <svg width="14" height="14" viewBox="0 0 20 20" fill="currentColor" class="meta-icon"><path fill-rule="evenodd" d="M6 2a1 1 0 00-1 1v1H4a2 2 0 00-2 2v10a2 2 0 002 2h12a2 2 0 002-2V6a2 2 0 00-2-2h-1V3a1 1 0 10-2 0v1H7V3a1 1 0 00-1-1zm0 5a1 1 0 000 2h8a1 1 0 100-2H6z" clip-rule="evenodd"/></svg>
+                    ${formatDate(a.event_date)}${a.event_time ? ' · ' + escapeHtml(a.event_time.slice(0, 5)) : ''}${a.event_location ? ' · ' + escapeHtml(a.event_location) : ''}
+                </p>` : ''}
+                <p class="announcement-card-excerpt">${escapeHtml(excerpt)}</p>
+                <div class="announcement-card-foot">
+                    ${a.project_name ? `<span class="announcement-card-project">${escapeHtml(a.project_name)}</span>` : '<span></span>'}
+                    <span class="announcement-card-date">${formatDate(a.published_at || a.created_at)}</span>
+                </div>
+            </div>
+        </article>`;
+}
+
+function setupAnnouncementDetailModal() {
+    const modal = document.getElementById('announcementDetailModal');
+    if (!modal) return;
+
+    const closeModal = () => { modal.style.display = 'none'; };
+    document.getElementById('announcementDetailClose').addEventListener('click', closeModal);
+    modal.addEventListener('click', (e) => {
+        if (e.target === modal) closeModal();
+    });
+    document.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape' && modal.style.display !== 'none') closeModal();
+    });
+}
+
+function openAnnouncementDetail(id) {
+    const modal = document.getElementById('announcementDetailModal');
+    const body = document.getElementById('announcementDetailBody');
+    if (!modal || !body) return;
+
+    const item = (listStates.announcements?.data || []).find(a => Number(a.id) === Number(id));
+    body.innerHTML = item
+        ? renderAnnouncementDetail(item)
+        : '<p class="empty-state">Could not find this announcement. Please refresh and try again.</p>';
+    modal.style.display = 'flex';
+}
+
+function renderAnnouncementDetail(a) {
+    const isEvent = a.category === 'event' && a.event_date;
+
+    return `
+        <div class="detail-header">
+            ${announcementCategoryBadge(a.category)}
+            <h4 class="detail-name">${escapeHtml(a.title)}</h4>
+            <p class="detail-code">${formatDate(a.published_at || a.created_at)}</p>
+        </div>
+        ${a.poster_path ? `
+        <div class="detail-section">
+            <img src="${citizenUrl(escapeHtml(a.poster_path))}" alt="" style="width:100%;border-radius:8px;border:1px solid var(--border, #dbe4ef);">
+        </div>` : ''}
+        ${isEvent ? `
+        <div class="detail-stats">
+            <div class="detail-stat"><span class="profile-label">Date</span><strong>${formatDate(a.event_date)}</strong></div>
+            ${a.event_time ? `<div class="detail-stat"><span class="profile-label">Time</span><strong>${escapeHtml(a.event_time.slice(0, 5))}</strong></div>` : ''}
+            ${a.event_location ? `<div class="detail-stat"><span class="profile-label">Location</span><strong>${escapeHtml(a.event_location)}</strong></div>` : ''}
+        </div>` : ''}
+        <div class="detail-section">
+            <p class="detail-desc" style="white-space:pre-wrap;">${escapeHtml(a.body)}</p>
+        </div>
+        ${a.project_id ? `
+        <div class="detail-section">
+            <button type="button" class="btn-outline" onclick="document.getElementById('announcementDetailModal').style.display='none'; openProjectDetail(${Number(a.project_id)});">
+                View Related Project: ${escapeHtml(a.project_name || '')}
+            </button>
+        </div>` : ''}
+    `;
+}
+
+// Public Projects (merged Cards/Table view) is backed by project-status.php
+// rather than projects.php — it's the richer superset (milestone counts,
+// spend-to-date, delay reports, latest photo) the Cards view needs, and the
+// Table view simply ignores the extra fields it doesn't use.
 function loadProjects() {
-    fetch(citizenUrl('citizen/api/projects.php'))
+    fetch(citizenUrl('citizen/api/project-status.php'))
         .then(res => res.json())
         .then(data => {
             setListData('projects', data.projects);
         })
         .catch(err => console.error('Error loading projects:', err));
-}
-
-function loadProjectStatus() {
-    fetch(citizenUrl('citizen/api/project-status.php'))
-        .then(res => res.json())
-        .then(data => {
-            setListData('projectStatus', data.projects);
-        })
-        .catch(err => console.error('Error loading project status:', err));
 }
 
 function loadTrackedFeedback() {

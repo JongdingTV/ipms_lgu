@@ -32,6 +32,11 @@ if ($method === 'GET') {
         $stmt->execute([$id]);
         $row = $stmt->fetch();
         if (!$row) respond(['error' => 'Not found'], 404);
+
+        $photoStmt = $db->prepare("SELECT photo_path FROM feedback_photos WHERE feedback_id = ? ORDER BY id");
+        $photoStmt->execute([$id]);
+        $row['photos'] = $photoStmt->fetchAll(PDO::FETCH_COLUMN);
+
         respond($row);
     }
 

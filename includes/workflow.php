@@ -621,6 +621,43 @@ function projectDeletionEnsureSchema(PDO $db): void
     }
 }
 
+// Maker-checker gate for editing an already-registered project: Admin
+// (api/projects.php's request_edit) submits a reasoned set of field changes,
+// HOPE (hope/api/portal.php's decide_edit) approves or rejects them, and
+// only an approval actually applies the changes to the projects row. Same
+// shape as projectDeletionEnsureSchema() just below — proposed_changes is a
+// JSON blob ({"fields": {...}, "road_geometry": {...}|null}) rather than a
+// single reason, since an edit (unlike a deletion) needs to carry the actual
+// proposed values for HOPE to review as a before/after comparison.
+function projectEditEnsureSchema(PDO $db): void
+{
+    try {
+        $db->exec("
+            CREATE TABLE IF NOT EXISTS project_edit_requests (
+                id INT AUTO_INCREMENT PRIMARY KEY,
+                project_id INT NULL,
+                project_code VARCHAR(20) NOT NULL,
+                project_name VARCHAR(200) NOT NULL,
+                proposed_changes TEXT NOT NULL,
+                reason TEXT NOT NULL,
+                status ENUM('pending','approved','rejected') NOT NULL DEFAULT 'pending',
+                requested_by INT NULL,
+                decided_by INT NULL,
+                decided_at DATETIME NULL,
+                decision_remarks TEXT NULL,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+                INDEX idx_per_status (status),
+                INDEX idx_per_project (project_id),
+                CONSTRAINT fk_per_project FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE SET NULL,
+                CONSTRAINT fk_per_requested_by FOREIGN KEY (requested_by) REFERENCES users(id) ON DELETE SET NULL,
+                CONSTRAINT fk_per_decided_by FOREIGN KEY (decided_by) REFERENCES users(id) ON DELETE SET NULL
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+        ");
+    } catch (Throwable $e) {
+    }
+}
+
 // Calendar & Schedule — Admin-created meetings shown alongside the
 // auto-derived calendar events (milestones/inspections/payments/deadlines/
 // HOPE decisions/BAC activity) that api/calendar.php assembles from existing
@@ -646,6 +683,44 @@ function calendarMeetingEnsureSchema(PDO $db): void
                 INDEX idx_calendar_meeting_date (meeting_date),
                 CONSTRAINT fk_calendar_meeting_project FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE SET NULL,
                 CONSTRAINT fk_calendar_meeting_creator FOREIGN KEY (created_by) REFERENCES users(id) ON DELETE SET NULL
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+        ");
+    } catch (Throwable $e) {
+    }
+}
+
+// Citizen Announcements — Admin-posted public bulletin board content
+// (events, new-project spotlights, official notices/posters, general
+// updates), read by citizen/api/announcements.php and managed via
+// api/announcements.php. Self-healed the same way as every other table in
+// this file; see calendarMeetingEnsureSchema() just above for the identical
+// pattern (another Admin-authored, citizen-facing content type).
+function announcementsEnsureSchema(PDO $db): void
+{
+    try {
+        $db->exec("
+            CREATE TABLE IF NOT EXISTS announcements (
+                id INT AUTO_INCREMENT PRIMARY KEY,
+                title VARCHAR(200) NOT NULL,
+                body TEXT NOT NULL,
+                category ENUM('event','new_project','notice','general') NOT NULL DEFAULT 'general',
+                project_id INT NULL,
+                event_date DATE NULL,
+                event_time TIME NULL,
+                event_location VARCHAR(255) NULL,
+                poster_path VARCHAR(255) NULL,
+                poster_original_name VARCHAR(255) NULL,
+                is_pinned TINYINT(1) NOT NULL DEFAULT 0,
+                status ENUM('draft','published','archived') NOT NULL DEFAULT 'published',
+                published_at DATETIME NULL,
+                created_by INT NULL,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+                INDEX idx_announcements_status (status),
+                INDEX idx_announcements_category (category),
+                INDEX idx_announcements_project (project_id),
+                CONSTRAINT fk_announcements_project FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE SET NULL,
+                CONSTRAINT fk_announcements_created_by FOREIGN KEY (created_by) REFERENCES users(id) ON DELETE SET NULL
             ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
         ");
     } catch (Throwable $e) {

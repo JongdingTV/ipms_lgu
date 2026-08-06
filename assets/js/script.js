@@ -26,6 +26,10 @@ const API = {
   staffAccounts: window.BASE_PATH + 'superadmin/api/accounts.php',
   publicFacilities: window.BASE_PATH + 'api/public-facilities.php',
   calendar:    window.BASE_PATH + 'api/calendar.php',
+  contractorPerformance: window.BASE_PATH + 'api/contractor-performance.php',
+  engineerPerformance: window.BASE_PATH + 'api/engineer-performance.php',
+  aiAssistant: window.BASE_PATH + 'api/ai-assistant.php',
+  announcements: window.BASE_PATH + 'api/announcements.php',
 };
 
 const CSRF_HEADERS = window.CSRF_TOKEN ? { 'X-CSRF-Token': window.CSRF_TOKEN } : {};
@@ -252,9 +256,12 @@ function navigate(page) {
     'calendar-schedule': loadCalendarSchedulePage,
     'gis-map': loadGisMapPage,
     reports: loadReportsPage,
-    'ai-risk-insights': loadAIRiskInsightsPage,
+    'ai-risk-insights': loadAiAssistantPage,
+    announcements: loadAnnouncementsPage,
     'citizen-feedback': () => loadFeedbackPage('page-citizen-feedback', 'Citizen Feedback Review', false),
     'staff-requests': loadStaffRequestsPage,
+    'contractor-performance': loadContractorPerformancePage,
+    'engineer-performance': loadEngineerPerformancePage,
     'completed-projects': () => loadStatusFilteredProjectsPage('page-completed-projects', 'Completed Projects', 'completed,turnover'),
     'cancelled-projects': () => loadStatusFilteredProjectsPage('page-cancelled-projects', 'Cancelled Projects', 'cancelled'),
     'public-facilities-integration': loadPublicFacilitiesPage,
@@ -1130,7 +1137,10 @@ function renderProjectsTable(rows) {
           return `
           <tr>
             <td><span class="proj-id">${escapeHtml(p.project_code)}</span></td>
-            <td><strong>${escapeHtml(p.name)}</strong><br><small style="color:#94a3b8">${escapeHtml(p.location||'')}</small></td>
+            <td>
+              <strong>${escapeHtml(p.name)}</strong><br><small style="color:#94a3b8">${escapeHtml(p.location||'')}</small>
+              ${p.has_pending_edit_request ? '<br><span class="badge badge-highprio" style="margin-top:4px;display:inline-block;">Edit Pending HOPE Review</span>' : ''}
+            </td>
             <td>${escapeHtml(p.location || '—')}</td>
             <td>${p.contractor_name || '—'}</td>
             <td>₱${Number(p.budget).toLocaleString()}</td>
@@ -1148,7 +1158,7 @@ function renderProjectsTable(rows) {
             <td>
               <div class="action-btns">
                 <button class="btn-icon" title="View" onclick="openProjectModal(${p.id})"><svg viewBox="0 0 20 20" fill="currentColor" width="14" height="14"><path d="M10 12.5a2.5 2.5 0 100-5 2.5 2.5 0 000 5z"/><path fill-rule="evenodd" d="M.664 10.59a1.651 1.651 0 010-1.186A10.004 10.004 0 0110 3c4.257 0 7.893 2.66 9.336 6.41.147.381.146.804 0 1.186A10.004 10.004 0 0110 17c-4.257 0-7.893-2.66-9.336-6.41zM14 10a4 4 0 11-8 0 4 4 0 018 0z" clip-rule="evenodd"/></svg></button>
-                <button class="btn-icon" title="Edit" onclick="showProjectForm(${p.id})"><svg viewBox="0 0 20 20" fill="currentColor" width="14" height="14"><path d="M13.586 3.586a2 2 0 112.828 2.828l-.793.793-2.828-2.828.793-.793z"/><path d="M11.379 5.793L3 14.172V17h2.828l8.38-8.379-2.83-2.828z"/></svg></button>
+                <button class="btn-icon" title="${p.has_pending_edit_request ? 'An edit request for this project is already pending HOPE review' : 'Edit (requires HOPE approval)'}" ${p.has_pending_edit_request ? 'disabled' : ''} onclick="showProjectForm(${p.id})"><svg viewBox="0 0 20 20" fill="currentColor" width="14" height="14"><path d="M13.586 3.586a2 2 0 112.828 2.828l-.793.793-2.828-2.828.793-.793z"/><path d="M11.379 5.793L3 14.172V17h2.828l8.38-8.379-2.83-2.828z"/></svg></button>
                 <button class="btn-icon btn-danger" title="Request Deletion (requires HOPE approval)" onclick="deleteProject(${p.id})"><svg viewBox="0 0 20 20" fill="currentColor" width="14" height="14"><path fill-rule="evenodd" d="M9 2a1 1 0 00-.894.553L7.382 4H4a1 1 0 000 2v10a2 2 0 002 2h8a2 2 0 002-2V6a1 1 0 100-2h-3.382l-.724-1.447A1 1 0 0011 2H9zM7 8a1 1 0 012 0v6a1 1 0 11-2 0V8zm5-1a1 1 0 00-1 1v6a1 1 0 102 0V8a1 1 0 00-1-1z" clip-rule="evenodd"/></svg></button>
               </div>
             </td>
@@ -1169,6 +1179,7 @@ async function showProjectForm(id = null) {
   const title = id ? `Edit Project #${id}` : 'New Project';
   openModal(title, `
     <form id="projectForm" onsubmit="submitProjectForm(event, ${id})">
+      ${id ? '<p class="empty-state" style="margin-bottom:10px;">Editing a registered project now requires HOPE\'s approval. Your proposed changes are only applied once HOPE reviews and approves this request.</p>' : ''}
       <div class="form-grid">
         <div class="form-group" style="grid-column: span 2;">
           <label>Project Name *</label>
@@ -1263,9 +1274,15 @@ async function showProjectForm(id = null) {
           <button type="button" class="doc-add-btn" id="projectDocAddBtn">+ Add another document</button>
         </div>
       ` : ''}
+      ${id ? `
+        <div class="form-group" style="margin-top:8px;">
+          <label>Reason for This Edit *</label>
+          <textarea name="reason" class="form-input" rows="2" required placeholder="Explain why this change is needed — HOPE will review this before it takes effect."></textarea>
+        </div>
+      ` : ''}
       <div class="form-actions">
         <button type="button" class="btn-secondary" onclick="closeModal()">Cancel</button>
-        <button type="submit" class="btn-primary">${id ? 'Update' : 'Submit for Registration'}</button>
+        <button type="submit" class="btn-primary">${id ? 'Submit Edit Request' : 'Submit for Registration'}</button>
       </div>
     </form>
   `);
@@ -1980,14 +1997,24 @@ async function submitProjectForm(e, id) {
   try {
     let res;
     if (id) {
+      // Edits to an already-registered project are no longer applied
+      // instantly — they're submitted as a request_edit for HOPE to review
+      // and approve/reject (see api/projects.php + hope/api/portal.php's
+      // decide_edit). Direct PUT stays in place for contractor/engineer
+      // assignment and status-transition actions elsewhere, which this form
+      // never touches.
       const fd = new FormData(e.target);
       const body = Object.fromEntries(fd.entries());
-      res = await put(API.projects, id, body);
+      res = await fetch(`${API.projects}?action=request_edit&id=${id}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...CSRF_HEADERS },
+        body: JSON.stringify(body),
+      }).then(r => r.json());
     } else {
       res = await postForm(API.projects, new FormData(e.target));
     }
     if (res.error) { toast(res.error, 'error'); return; }
-    toast(id ? 'Project updated!' : 'Project registered — awaiting Engineering Review.');
+    toast(id ? 'Edit request submitted — awaiting HOPE review.' : 'Project registered — awaiting Engineering Review.');
     closeModal();
     fetchProjects();
   } catch { toast('Something went wrong', 'error'); }
@@ -3345,6 +3372,606 @@ async function deleteCalendarMeeting(id) {
 }
 
 /* ============================================================
+   CONTRACTOR PERFORMANCE DASHBOARD
+   Reads from api/contractor-performance.php (frozen contract:
+   action=leaderboard for the ranked table + chart, action=detail for one
+   contractor's full score breakdown + 12-month trend). Reuses the same
+   85/70 risk-label thresholds BAC's own evaluation view already uses.
+   ============================================================ */
+let contractorPerfChartInst = null;
+let contractorPerfTrendChartInst = null;
+
+const PERF_RISK_COLORS = { low: '#22c55e', medium: '#f97316', high: '#ef4444' };
+const PERF_RISK_LABELS = { low: 'Low Risk', medium: 'Medium Risk', high: 'High Risk' };
+function perfRiskBadge(label) {
+  const color = PERF_RISK_COLORS[label] || PERF_RISK_COLORS.high;
+  return `<span class="badge" style="background:${color}22;color:${color};">${PERF_RISK_LABELS[label] || label}</span>`;
+}
+function perfPct(value, suffix = '%') {
+  return value === null || value === undefined ? '—' : `${value}${suffix}`;
+}
+
+async function loadContractorPerformancePage() {
+  const container = document.getElementById('page-contractor-performance');
+  if (!container) return;
+
+  container.innerHTML = `
+    <div class="page-header">
+      <h2 class="page-title">Contractor Performance Dashboard</h2>
+    </div>
+    <div class="chart-card chart-main">
+      <div class="chart-header"><h2 class="chart-title">Performance Score Ranking</h2></div>
+      <div class="chart-body"><canvas id="contractorPerfChart"></canvas></div>
+    </div>
+    <div id="contractorPerfTable" class="table-card"></div>
+  `;
+
+  setLoading(container, true);
+  try {
+    const res = await get(API.contractorPerformance, { action: 'leaderboard' });
+    const rows = (res && res.contractors) || [];
+    renderContractorPerfChart(rows);
+    renderContractorPerfTable(rows);
+  } catch (e) {
+    document.getElementById('contractorPerfTable').innerHTML = '<p class="empty-state">Failed to load contractor performance data.</p>';
+    toast('Failed to load contractor performance data', 'error');
+    console.error(e);
+  } finally {
+    setLoading(container, false);
+  }
+}
+
+function renderContractorPerfChart(rows) {
+  const ctx = document.getElementById('contractorPerfChart')?.getContext('2d');
+  if (!ctx) return;
+  if (contractorPerfChartInst) contractorPerfChartInst.destroy();
+
+  contractorPerfChartInst = new Chart(ctx, {
+    type: 'bar',
+    data: {
+      labels: rows.map(r => r.name),
+      datasets: [{
+        label: 'Score',
+        data: rows.map(r => r.score),
+        backgroundColor: rows.map(r => PERF_RISK_COLORS[r.risk_label] || PERF_RISK_COLORS.high),
+        borderRadius: 6,
+        maxBarThickness: 42,
+      }],
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      animation: { duration: 900, easing: 'easeOutQuart' },
+      plugins: {
+        legend: { display: false },
+        tooltip: { backgroundColor: '#1e2a3b', callbacks: { label: c => ` Score: ${c.raw}/100` } },
+      },
+      scales: { y: { min: 0, max: 100, ticks: { stepSize: 25 } } },
+    },
+  });
+}
+
+function renderContractorPerfTable(rows) {
+  const wrap = document.getElementById('contractorPerfTable');
+  if (!wrap) return;
+
+  if (!rows.length) {
+    wrap.innerHTML = '<p class="empty-state">No contractors on file yet.</p>';
+    return;
+  }
+
+  wrap.innerHTML = `
+    <table class="data-table">
+      <thead>
+        <tr>
+          <th>Rank</th><th>Contractor</th><th>Score</th><th>Risk</th>
+          <th>Completed</th><th>Delayed</th><th>Avg Completion</th>
+          <th>Inspections Approved</th><th>Feedback Positive</th><th>Budget Perf.</th><th></th>
+        </tr>
+      </thead>
+      <tbody>
+        ${rows.map(r => `
+          <tr class="clickable-row" onclick="openContractorPerformanceModal(${r.contractor_id})">
+            <td>#${r.rank}</td>
+            <td><strong>${escapeHtml(r.name)}</strong>${r.is_blacklisted ? ' <span class="badge status-cancelled">Blacklisted</span>' : ''}</td>
+            <td>${r.score}/100</td>
+            <td>${perfRiskBadge(r.risk_label)}</td>
+            <td>${r.projects_completed}</td>
+            <td>${r.projects_delayed}</td>
+            <td>${r.avg_completion_days !== null ? r.avg_completion_days + ' days' : '—'}</td>
+            <td>${perfPct(r.inspection_pct_approved)}</td>
+            <td>${perfPct(r.feedback_positive_pct)}</td>
+            <td>${perfPct(r.budget_performance_pct)}</td>
+            <td><button type="button" class="btn-secondary btn-compact" onclick="event.stopPropagation();openContractorPerformanceModal(${r.contractor_id})">View</button></td>
+          </tr>
+        `).join('')}
+      </tbody>
+    </table>
+  `;
+}
+
+async function openContractorPerformanceModal(id) {
+  try {
+    const res = await get(API.contractorPerformance, { action: 'detail', contractor_id: id });
+    if (!res || !res.success) { toast((res && res.message) || 'Failed to load contractor detail', 'error'); return; }
+    const c = res.contractor;
+
+    openModal(`#${c.rank} ${escapeHtml(c.name)} — Performance`, `
+      <div style="display:flex;flex-direction:column;gap:14px;">
+        <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
+          <span class="badge" style="background:#3b82f622;color:#3b82f6;font-size:.95rem;">${c.score}/100</span>
+          ${perfRiskBadge(c.risk_label)}
+          ${c.is_blacklisted ? '<span class="badge status-cancelled">Blacklisted</span>' : ''}
+        </div>
+
+        <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;">
+          <div><p class="modal-label">PROJECTS COMPLETED</p><p class="modal-val">${c.projects_completed}</p></div>
+          <div><p class="modal-label">PROJECTS DELAYED</p><p class="modal-val">${c.projects_delayed}</p></div>
+          <div><p class="modal-label">AVG COMPLETION</p><p class="modal-val">${c.avg_completion_days !== null ? c.avg_completion_days + ' days' : '—'}</p></div>
+          <div><p class="modal-label">INSPECTIONS</p><p class="modal-val">${c.total_inspections} <small style="font-weight:400;color:#94a3b8;">(${perfPct(c.inspection_pct_approved)} approved)</small></p></div>
+          <div><p class="modal-label">CITIZEN FEEDBACK</p><p class="modal-val">${perfPct(c.feedback_positive_pct)} positive <small style="font-weight:400;color:#94a3b8;">(${c.feedback_commendation_count} commendations, ${c.feedback_complaint_count} complaints)</small></p></div>
+          <div><p class="modal-label">BUDGET PERFORMANCE</p><p class="modal-val">${perfPct(c.budget_performance_pct)} of budget spent</p></div>
+          <div><p class="modal-label">CREDIBILITY SCORE</p><p class="modal-val">${Number(c.credibility_score).toFixed(2)}/5.00</p></div>
+          <div><p class="modal-label">OPEN ISSUES</p><p class="modal-val">${c.open_issue_count}</p></div>
+          <div><p class="modal-label">DELAY REPORTS</p><p class="modal-val">${c.delay_report_count}</p></div>
+        </div>
+
+        <div>
+          <p class="modal-label">SCORE BREAKDOWN <small style="font-weight:400;color:#94a3b8;">— advisory only</small></p>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-top:8px;font-size:.8rem;color:#64748b;">
+            <span>Completion: ${c.components.completion.earned ?? '—'}/${c.components.completion.weight}</span>
+            <span>Delay: ${c.components.delay.earned ?? '—'}/${c.components.delay.weight}</span>
+            <span>Issues: ${c.components.issues.earned ?? '—'}/${c.components.issues.weight}</span>
+            <span>Financial: ${c.components.financial.earned ?? '—'}/${c.components.financial.weight}</span>
+          </div>
+        </div>
+
+        <div class="chart-card chart-main" style="box-shadow:none;">
+          <div class="chart-header"><h2 class="chart-title">12-Month Trend</h2></div>
+          <div class="chart-body"><canvas id="contractorPerfTrendChart"></canvas></div>
+        </div>
+      </div>
+    `);
+
+    renderContractorPerfTrendChart(c.trend);
+  } catch (err) {
+    toast('Failed to load contractor detail', 'error');
+    console.error(err);
+  }
+}
+
+function renderContractorPerfTrendChart(trend) {
+  const ctx = document.getElementById('contractorPerfTrendChart')?.getContext('2d');
+  if (!ctx) return;
+  if (contractorPerfTrendChartInst) contractorPerfTrendChartInst.destroy();
+
+  contractorPerfTrendChartInst = new Chart(ctx, {
+    type: 'line',
+    data: {
+      labels: trend.months,
+      datasets: [
+        { label: 'Completions', data: trend.completions, borderColor: '#22c55e', backgroundColor: 'rgba(34,197,94,0.08)', borderWidth: 2, tension: 0.35, fill: true, pointRadius: 3 },
+        { label: 'Delay Reports', data: trend.delay_reports, borderColor: '#f97316', backgroundColor: 'rgba(249,115,22,0.06)', borderWidth: 2, tension: 0.35, fill: true, pointRadius: 3 },
+        { label: 'Flagged Expenses', data: trend.flagged_expenses, borderColor: '#ef4444', backgroundColor: 'rgba(239,68,68,0.06)', borderWidth: 2, tension: 0.35, fill: true, pointRadius: 3 },
+      ],
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      animation: { duration: 700 },
+      plugins: { legend: { position: 'bottom', labels: { boxWidth: 10, font: { size: 11 } } } },
+      scales: { y: { beginAtZero: true, ticks: { precision: 0 } } },
+    },
+  });
+}
+
+/* ============================================================
+   ENGINEER PERFORMANCE DASHBOARD
+   Reads from api/engineer-performance.php (frozen contract:
+   action=leaderboard for the ranked table + chart, action=detail for one
+   engineer's full score breakdown + 12-month trend). Reuses the same
+   85/70 risk-label thresholds as the Contractor Performance Dashboard.
+   ============================================================ */
+let engineerPerfChartInst = null;
+let engineerPerfTrendChartInst = null;
+
+async function loadEngineerPerformancePage() {
+  const container = document.getElementById('page-engineer-performance');
+  if (!container) return;
+
+  container.innerHTML = `
+    <div class="page-header">
+      <h2 class="page-title">Engineer Performance Dashboard</h2>
+    </div>
+    <div class="chart-card chart-main">
+      <div class="chart-header"><h2 class="chart-title">Performance Score Ranking</h2></div>
+      <div class="chart-body"><canvas id="engineerPerfChart"></canvas></div>
+    </div>
+    <div id="engineerPerfTable" class="table-card"></div>
+  `;
+
+  setLoading(container, true);
+  try {
+    const res = await get(API.engineerPerformance, { action: 'leaderboard' });
+    const rows = (res && res.engineers) || [];
+    renderEngineerPerfChart(rows);
+    renderEngineerPerfTable(rows);
+  } catch (e) {
+    document.getElementById('engineerPerfTable').innerHTML = '<p class="empty-state">Failed to load engineer performance data.</p>';
+    toast('Failed to load engineer performance data', 'error');
+    console.error(e);
+  } finally {
+    setLoading(container, false);
+  }
+}
+
+function renderEngineerPerfChart(rows) {
+  const ctx = document.getElementById('engineerPerfChart')?.getContext('2d');
+  if (!ctx) return;
+  if (engineerPerfChartInst) engineerPerfChartInst.destroy();
+
+  engineerPerfChartInst = new Chart(ctx, {
+    type: 'bar',
+    data: {
+      labels: rows.map(r => r.name),
+      datasets: [{
+        label: 'Score',
+        data: rows.map(r => r.score),
+        backgroundColor: rows.map(r => PERF_RISK_COLORS[r.risk_label] || PERF_RISK_COLORS.high),
+        borderRadius: 6,
+        maxBarThickness: 42,
+      }],
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      animation: { duration: 900, easing: 'easeOutQuart' },
+      plugins: {
+        legend: { display: false },
+        tooltip: { backgroundColor: '#1e2a3b', callbacks: { label: c => ` Score: ${c.raw}/100` } },
+      },
+      scales: { y: { min: 0, max: 100, ticks: { stepSize: 25 } } },
+    },
+  });
+}
+
+function renderEngineerPerfTable(rows) {
+  const wrap = document.getElementById('engineerPerfTable');
+  if (!wrap) return;
+
+  if (!rows.length) {
+    wrap.innerHTML = '<p class="empty-state">No engineers on file yet.</p>';
+    return;
+  }
+
+  wrap.innerHTML = `
+    <table class="data-table">
+      <thead>
+        <tr>
+          <th>Rank</th><th>Engineer</th><th>Score</th><th>Risk</th>
+          <th>Total Inspections</th><th>Completed</th><th>Pending</th>
+          <th>Avg Inspection Time</th><th>Projects Assigned</th><th>Reports Submitted</th><th></th>
+        </tr>
+      </thead>
+      <tbody>
+        ${rows.map(r => `
+          <tr class="clickable-row" onclick="openEngineerPerformanceModal(${r.engineer_id})">
+            <td>#${r.rank}</td>
+            <td><strong>${escapeHtml(r.name)}</strong>${!r.is_active ? ' <span class="badge status-cancelled">Inactive</span>' : ''}</td>
+            <td>${r.score}/100</td>
+            <td>${perfRiskBadge(r.risk_label)}</td>
+            <td>${r.total_inspections}</td>
+            <td>${r.completed_inspections}</td>
+            <td>${r.pending_inspections}</td>
+            <td>${r.avg_inspection_days !== null ? r.avg_inspection_days + ' days' : '—'}</td>
+            <td>${r.projects_assigned}</td>
+            <td>${r.reports_submitted}</td>
+            <td><button type="button" class="btn-secondary btn-compact" onclick="event.stopPropagation();openEngineerPerformanceModal(${r.engineer_id})">View</button></td>
+          </tr>
+        `).join('')}
+      </tbody>
+    </table>
+  `;
+}
+
+async function openEngineerPerformanceModal(id) {
+  try {
+    const res = await get(API.engineerPerformance, { action: 'detail', engineer_id: id });
+    if (!res || !res.success) { toast((res && res.message) || 'Failed to load engineer detail', 'error'); return; }
+    const e = res.engineer;
+
+    openModal(`#${e.rank} ${escapeHtml(e.name)} — Performance`, `
+      <div style="display:flex;flex-direction:column;gap:14px;">
+        <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
+          <span class="badge" style="background:#3b82f622;color:#3b82f6;font-size:.95rem;">${e.score}/100</span>
+          ${perfRiskBadge(e.risk_label)}
+          ${!e.is_active ? '<span class="badge status-cancelled">Inactive</span>' : ''}
+        </div>
+
+        <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;">
+          <div><p class="modal-label">TOTAL INSPECTIONS</p><p class="modal-val">${e.total_inspections}</p></div>
+          <div><p class="modal-label">COMPLETED</p><p class="modal-val">${e.completed_inspections}</p></div>
+          <div><p class="modal-label">PENDING</p><p class="modal-val">${e.pending_inspections}</p></div>
+          <div><p class="modal-label">AVG INSPECTION TIME</p><p class="modal-val">${e.avg_inspection_days !== null ? e.avg_inspection_days + ' days' : '—'}</p></div>
+          <div><p class="modal-label">PROJECTS ASSIGNED</p><p class="modal-val">${e.projects_assigned}</p></div>
+          <div><p class="modal-label">REPORTS SUBMITTED</p><p class="modal-val">${e.reports_submitted}</p></div>
+        </div>
+
+        <div>
+          <p class="modal-label">SCORE BREAKDOWN <small style="font-weight:400;color:#94a3b8;">— advisory only</small></p>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-top:8px;font-size:.8rem;color:#64748b;">
+            <span>Quality: ${e.components.quality.earned ?? '—'}/${e.components.quality.weight}</span>
+            <span>Responsiveness: ${e.components.responsiveness.earned ?? '—'}/${e.components.responsiveness.weight}</span>
+            <span>Activity: ${e.components.activity.earned ?? '—'}/${e.components.activity.weight}</span>
+            <span>Delay Impact: ${e.components.delay_impact.earned ?? '—'}/${e.components.delay_impact.weight}</span>
+          </div>
+        </div>
+
+        <div class="chart-card chart-main" style="box-shadow:none;">
+          <div class="chart-header"><h2 class="chart-title">12-Month Trend</h2></div>
+          <div class="chart-body"><canvas id="engineerPerfTrendChart"></canvas></div>
+        </div>
+      </div>
+    `);
+
+    renderEngineerPerfTrendChart(e.trend);
+  } catch (err) {
+    toast('Failed to load engineer detail', 'error');
+    console.error(err);
+  }
+}
+
+function renderEngineerPerfTrendChart(trend) {
+  const ctx = document.getElementById('engineerPerfTrendChart')?.getContext('2d');
+  if (!ctx) return;
+  if (engineerPerfTrendChartInst) engineerPerfTrendChartInst.destroy();
+
+  engineerPerfTrendChartInst = new Chart(ctx, {
+    type: 'line',
+    data: {
+      labels: trend.months,
+      datasets: [
+        { label: 'Inspections Completed', data: trend.inspections_completed, borderColor: '#22c55e', backgroundColor: 'rgba(34,197,94,0.08)', borderWidth: 2, tension: 0.35, fill: true, pointRadius: 3 },
+        { label: 'Reports Submitted', data: trend.reports_submitted, borderColor: '#3b82f6', backgroundColor: 'rgba(59,130,246,0.06)', borderWidth: 2, tension: 0.35, fill: true, pointRadius: 3 },
+        { label: 'Delay Reports', data: trend.delay_reports, borderColor: '#f97316', backgroundColor: 'rgba(249,115,22,0.06)', borderWidth: 2, tension: 0.35, fill: true, pointRadius: 3 },
+      ],
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      animation: { duration: 700 },
+      plugins: { legend: { position: 'bottom', labels: { boxWidth: 10, font: { size: 11 } } } },
+      scales: { y: { beginAtZero: true, ticks: { precision: 0 } } },
+    },
+  });
+}
+
+/* ============================================================
+   ANNOUNCEMENTS — Citizen-facing bulletin board (events, new-project
+   spotlights, official notices/posters, general updates). Admin creates
+   here via api/announcements.php; citizen/api/announcements.php serves
+   only status='published' rows, read-only, on the citizen portal's own
+   Announcements page.
+   ============================================================ */
+let announcementsState = { page: 1, search: '', category: '', status: '' };
+
+const ANNOUNCEMENT_CATEGORY_LABELS = { event: 'Event', new_project: 'New Project', notice: 'Notice', general: 'General' };
+const ANNOUNCEMENT_CATEGORY_BADGE = { event: 'badge-highprio', new_project: 'badge-resolved', notice: 'badge-urgent', general: 'badge-spike' };
+const ANNOUNCEMENT_STATUS_BADGE = { draft: 'badge-spike', published: 'badge-resolved', archived: 'badge-urgent' };
+
+async function loadAnnouncementsPage() {
+  const container = document.getElementById('page-announcements');
+  if (!container) return;
+
+  container.innerHTML = `
+    <div class="page-header">
+      <div>
+        <h2 class="page-title">Announcements</h2>
+        <p style="font-size:.8rem;color:var(--text-muted);margin-top:4px;max-width:640px;">
+          Post events, new-project spotlights, official notices, or posters to the citizen portal.
+        </p>
+      </div>
+      <button class="btn-primary" onclick="showAnnouncementForm()">+ New Announcement</button>
+    </div>
+    <div class="filter-bar">
+      <input class="filter-input" placeholder="Search announcements…" oninput="announcementsState.search=this.value;announcementsState.page=1;fetchAnnouncements()" />
+      <select class="filter-select" onchange="announcementsState.category=this.value;announcementsState.page=1;fetchAnnouncements()">
+        <option value="">All Categories</option>
+        <option value="event">Event</option>
+        <option value="new_project">New Project</option>
+        <option value="notice">Notice</option>
+        <option value="general">General</option>
+      </select>
+      <select class="filter-select" onchange="announcementsState.status=this.value;announcementsState.page=1;fetchAnnouncements()">
+        <option value="">All Statuses</option>
+        <option value="published">Published</option>
+        <option value="draft">Draft</option>
+        <option value="archived">Archived</option>
+      </select>
+    </div>
+    <div id="announcementsTable" class="table-card"></div>
+    <div id="announcementsPager" class="pager"></div>
+  `;
+  fetchAnnouncements();
+}
+
+async function fetchAnnouncements() {
+  const wrap = document.getElementById('announcementsTable');
+  if (!wrap) return;
+  setLoading(wrap, true);
+  try {
+    const d = await get(API.announcements, { action: 'list', ...announcementsState });
+    renderAnnouncementsTable(d.data || []);
+    renderPager('announcementsPager', d.page, d.last_page, p => { announcementsState.page = p; fetchAnnouncements(); });
+  } catch (e) {
+    wrap.innerHTML = '<p class="empty-state">Failed to load announcements.</p>';
+    console.error(e);
+  } finally {
+    setLoading(wrap, false);
+  }
+}
+
+function renderAnnouncementsTable(rows) {
+  const wrap = document.getElementById('announcementsTable');
+  if (!wrap) return;
+  if (!rows.length) { wrap.innerHTML = '<p class="empty-state">No announcements yet.</p>'; return; }
+
+  wrap.innerHTML = `
+    <table class="data-table">
+      <thead>
+        <tr><th></th><th>Title</th><th>Category</th><th>Event</th><th>Status</th><th>Posted</th><th>Actions</th></tr>
+      </thead>
+      <tbody>
+        ${rows.map(a => `
+          <tr>
+            <td>${a.poster_path
+              ? `<img src="${(window.BASE_PATH || '') + a.poster_path}" alt="" class="announcement-thumb" />`
+              : '<span class="announcement-thumb announcement-thumb-empty">—</span>'}
+            </td>
+            <td>
+              ${a.is_pinned == 1 ? '<span title="Pinned">📌</span> ' : ''}<strong>${escapeHtml(a.title)}</strong>
+              ${a.project_name ? `<br><small style="color:#94a3b8;">${escapeHtml(a.project_name)}</small>` : ''}
+            </td>
+            <td><span class="badge ${ANNOUNCEMENT_CATEGORY_BADGE[a.category] || 'badge-spike'}">${ANNOUNCEMENT_CATEGORY_LABELS[a.category] || a.category}</span></td>
+            <td style="font-size:.78rem;">${a.category === 'event' && a.event_date ? formatDate(a.event_date) + (a.event_time ? ' ' + a.event_time.slice(0, 5) : '') : '—'}</td>
+            <td><span class="badge ${ANNOUNCEMENT_STATUS_BADGE[a.status] || 'badge-spike'}">${formatStatus(a.status)}</span></td>
+            <td style="font-size:.75rem;color:#94a3b8;">${formatDate(a.created_at)}</td>
+            <td>
+              <div class="action-btns">
+                <button class="btn-secondary btn-compact" onclick="showAnnouncementForm(${a.id})">Edit</button>
+                <button class="btn-icon btn-danger" title="Delete" onclick="deleteAnnouncement(${a.id})"><svg viewBox="0 0 20 20" fill="currentColor" width="14" height="14"><path fill-rule="evenodd" d="M9 2a1 1 0 00-.894.553L7.382 4H4a1 1 0 000 2v10a2 2 0 002 2h8a2 2 0 002-2V6a1 1 0 100-2h-3.382l-.724-1.447A1 1 0 0011 2H9zM7 8a1 1 0 012 0v6a1 1 0 11-2 0V8zm5-1a1 1 0 00-1 1v6a1 1 0 102 0V8a1 1 0 00-1-1z" clip-rule="evenodd"/></svg></button>
+              </div>
+            </td>
+          </tr>
+        `).join('')}
+      </tbody>
+    </table>
+  `;
+}
+
+async function showAnnouncementForm(id = null) {
+  let a = null;
+  if (id) {
+    try { const res = await get(API.announcements, { action: 'detail', id }); a = res.announcement; } catch {}
+  }
+  let projects = [];
+  try { const d = await get(API.projects, {}); projects = d.data || []; } catch {}
+
+  openModal(id ? `Edit Announcement #${id}` : 'New Announcement', `
+    <form id="announcementForm" onsubmit="submitAnnouncementForm(event, ${id})">
+      <div class="form-group">
+        <label>Title *</label>
+        <input name="title" class="form-input" required value="${escapeHtml(a?.title || '')}" />
+      </div>
+      <div class="form-grid">
+        <div class="form-group">
+          <label>Category *</label>
+          <select name="category" id="annCategory" class="form-input" onchange="toggleAnnouncementEventFields(this.value)">
+            <option value="general" ${a?.category === 'general' ? 'selected' : ''}>General</option>
+            <option value="event" ${a?.category === 'event' ? 'selected' : ''}>Event</option>
+            <option value="new_project" ${a?.category === 'new_project' ? 'selected' : ''}>New Project</option>
+            <option value="notice" ${a?.category === 'notice' ? 'selected' : ''}>Notice</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>Related Project</label>
+          <select name="project_id" class="form-input">
+            <option value="">— None —</option>
+            ${projects.map(p => `<option value="${p.id}" ${String(a?.project_id || '') === String(p.id) ? 'selected' : ''}>${escapeHtml(p.project_code)} — ${escapeHtml(p.name)}</option>`).join('')}
+          </select>
+        </div>
+        <div class="form-group">
+          <label>Status *</label>
+          <select name="status" class="form-input">
+            <option value="published" ${!a || a.status === 'published' ? 'selected' : ''}>Published</option>
+            <option value="draft" ${a?.status === 'draft' ? 'selected' : ''}>Draft</option>
+            <option value="archived" ${a?.status === 'archived' ? 'selected' : ''}>Archived</option>
+          </select>
+        </div>
+        <div class="form-group" style="display:flex;align-items:center;padding-top:22px;">
+          <label style="display:flex;align-items:center;gap:8px;font-weight:600;cursor:pointer;">
+            <input type="checkbox" name="is_pinned" value="1" ${a?.is_pinned == 1 ? 'checked' : ''} />
+            Pin to top of feed
+          </label>
+        </div>
+      </div>
+      <div id="annEventFields" class="form-grid" style="display:${a?.category === 'event' ? 'grid' : 'none'};">
+        <div class="form-group">
+          <label>Event Date</label>
+          <input name="event_date" type="date" class="form-input" value="${a?.event_date || ''}" />
+        </div>
+        <div class="form-group">
+          <label>Event Time</label>
+          <input name="event_time" type="time" class="form-input" value="${a?.event_time ? a.event_time.slice(0, 5) : ''}" />
+        </div>
+        <div class="form-group" style="grid-column: span 2;">
+          <label>Event Location</label>
+          <input name="event_location" class="form-input" value="${escapeHtml(a?.event_location || '')}" />
+        </div>
+      </div>
+      <div class="form-group" style="margin-top:8px;">
+        <label>Body *</label>
+        <textarea name="body" class="form-input" rows="5" required>${escapeHtml(a?.body || '')}</textarea>
+      </div>
+      <div class="form-group" style="margin-top:8px;">
+        <label>Poster Image <small>(PNG/JPG, max 5MB, optional)</small></label>
+        ${a?.poster_path ? `
+          <div style="display:flex;align-items:center;gap:10px;margin-bottom:6px;">
+            <img src="${(window.BASE_PATH || '') + a.poster_path}" style="width:64px;height:64px;object-fit:cover;border-radius:8px;border:1px solid var(--border);" />
+            <label style="display:flex;align-items:center;gap:6px;font-size:.8rem;font-weight:500;cursor:pointer;">
+              <input type="checkbox" name="remove_poster" value="1" /> Remove current poster
+            </label>
+          </div>
+        ` : ''}
+        <input type="file" name="poster" accept=".png,.jpg,.jpeg" class="form-input" />
+      </div>
+      <div class="form-actions">
+        <button type="button" class="btn-secondary" onclick="closeModal()">Cancel</button>
+        <button type="submit" class="btn-primary">${id ? 'Save Changes' : 'Post Announcement'}</button>
+      </div>
+    </form>
+  `);
+}
+
+function toggleAnnouncementEventFields(category) {
+  const el = document.getElementById('annEventFields');
+  if (el) el.style.display = category === 'event' ? 'grid' : 'none';
+}
+
+async function submitAnnouncementForm(e, id) {
+  e.preventDefault();
+  try {
+    const fd = new FormData(e.target);
+    const url = id ? `${API.announcements}?action=update&id=${id}` : `${API.announcements}?action=create`;
+    const res = await postForm(url, fd);
+    if (!res.success) { toast(res.message || 'Failed to save announcement', 'error'); return; }
+    toast(id ? 'Announcement updated!' : 'Announcement posted!');
+    closeModal();
+    fetchAnnouncements();
+  } catch {
+    toast('Something went wrong', 'error');
+  }
+}
+
+async function deleteAnnouncement(id) {
+  const confirmed = await showConfirm({
+    title: 'Delete this announcement?',
+    message: 'This removes it from the citizen portal immediately and cannot be undone.',
+    confirmLabel: 'Delete',
+    tone: 'danger',
+  });
+  if (!confirmed) return;
+
+  try {
+    const res = await fetch(`${API.announcements}?action=delete&id=${id}`, {
+      method: 'POST',
+      headers: { ...CSRF_HEADERS },
+    }).then(r => r.json());
+    if (!res.success) { toast(res.message || 'Delete failed', 'error'); return; }
+    toast('Announcement deleted');
+    fetchAnnouncements();
+  } catch {
+    toast('Delete failed', 'error');
+  }
+}
+
+/* ============================================================
    GIS MAP
    ============================================================ */
 const GIS_STATUS_COLORS = {
@@ -3790,80 +4417,197 @@ function exportReportsCsv() {
 }
 
 /* ============================================================
-   AI RISK INSIGHTS
+   AI PROJECT ASSISTANT (formerly "AI Risk Insights")
+   Reads/writes api/ai-assistant.php (frozen contract: action=ask for a
+   chat turn, action=history to restore the session's prior transcript,
+   action=reset to start over). The assistant is grounded entirely in a
+   live data snapshot the backend queries fresh on every turn — it is
+   read-only decision support and can never approve, reject, or modify a
+   record; see includes/AiAssistantContext.php's persona for the full
+   contract enforced server-side.
    ============================================================ */
-async function loadAIRiskInsightsPage() {
+const AI_ASST_SUGGESTIONS = [
+  'Which projects are delayed?',
+  'Which projects have budget risks?',
+  'Which contractors have the highest performance?',
+  'Which inspections are overdue?',
+  'Summarize citizen feedback.',
+  'Recommend projects requiring immediate attention.',
+];
+
+let aiAsstSending = false;
+// Suggested-question chips stay available for the whole conversation (not
+// just the first message) — the user can collapse/reopen them instead of
+// losing them permanently after the first send.
+let aiAsstSuggestionsOpen = true;
+
+async function loadAiAssistantPage() {
   const container = document.getElementById('page-ai-risk-insights');
   if (!container) return;
 
   container.innerHTML = `
     <div class="page-header">
-      <h2 class="page-title">AI Risk Insights</h2>
+      <div>
+        <h2 class="page-title">AI Project Assistant</h2>
+        <p style="font-size:.8rem;color:var(--text-muted);margin-top:4px;max-width:640px;">
+          Ask about delays, budget risk, contractor and engineer performance, inspections, or
+          citizen feedback — answered from your live project data.
+        </p>
+      </div>
+      <button type="button" class="btn-secondary btn-compact" onclick="aiAsstClearChat()">New Chat</button>
     </div>
-    <div id="riskInsightsContent" class="reports-layout"></div>
+
+    <div class="ai-asst-shell">
+      <div class="ai-asst-disclaimer">
+        <svg viewBox="0 0 20 20" fill="currentColor" width="15" height="15"><path fill-rule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l6.518 11.596c.75 1.334-.213 2.995-1.742 2.995H3.48c-1.53 0-2.492-1.66-1.742-2.995L8.257 3.1zM11 13a1 1 0 10-2 0 1 1 0 002 0zm-1-6a1 1 0 00-1 1v3a1 1 0 102 0V8a1 1 0 00-1-1z" clip-rule="evenodd"/></svg>
+        <span>Advisory only — this assistant answers questions and surfaces insights, but it never approves, rejects, or modifies any record itself.</span>
+      </div>
+      <div class="ai-asst-messages" id="aiAsstMessages"></div>
+
+      <div class="ai-asst-suggestions-bar">
+        <button type="button" class="ai-asst-suggestions-toggle" id="aiAsstSuggestionsToggle">
+          <svg viewBox="0 0 20 20" fill="currentColor"><path d="M10 2a1 1 0 01.967.744L11.98 6.9a3 3 0 002.12 2.12l4.156 1.013a1 1 0 010 1.934l-4.156 1.013a3 3 0 00-2.12 2.12l-1.013 4.156a1 1 0 01-1.934 0l-1.013-4.156a3 3 0 00-2.12-2.12L1.744 11.9a1 1 0 010-1.934L5.9 8.953a3 3 0 002.12-2.12L9.033 2.744A1 1 0 0110 2z"/></svg>
+          <span id="aiAsstSuggestionsToggleLabel">Hide suggestions</span>
+          <svg class="ai-asst-chevron" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z" clip-rule="evenodd"/></svg>
+        </button>
+        <div class="ai-asst-suggestions" id="aiAsstSuggestions">
+          ${AI_ASST_SUGGESTIONS.map(q => `<button type="button" class="ai-asst-chip" data-q="${escapeHtml(q)}">${escapeHtml(q)}</button>`).join('')}
+        </div>
+      </div>
+
+      <form class="ai-asst-composer" id="aiAsstForm">
+        <textarea id="aiAsstInput" class="ai-asst-input" rows="1" placeholder="Ask about your projects…" maxlength="1000"></textarea>
+        <button type="submit" class="ai-asst-send" id="aiAsstSend" aria-label="Send">
+          <svg viewBox="0 0 20 20" fill="currentColor"><path d="M3.4 20l17.6-8.6a1 1 0 000-1.8L3.4 1a1 1 0 00-1.4 1.1L4.6 10l-2.6 7.9A1 1 0 003.4 20z"/></svg>
+        </button>
+      </form>
+    </div>
   `;
 
-  const wrap = document.getElementById('riskInsightsContent');
-  setLoading(wrap, true);
+  container.querySelectorAll('.ai-asst-chip').forEach(chip => {
+    chip.addEventListener('click', () => aiAsstSend(chip.dataset.q));
+  });
+  document.getElementById('aiAsstSuggestionsToggle').addEventListener('click', aiAsstToggleSuggestions);
+  aiAsstApplySuggestionsState();
 
+  const input = document.getElementById('aiAsstInput');
+  input.addEventListener('input', () => {
+    input.style.height = 'auto';
+    input.style.height = Math.min(input.scrollHeight, 120) + 'px';
+  });
+  input.addEventListener('keydown', e => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      document.getElementById('aiAsstForm').requestSubmit();
+    }
+  });
+  document.getElementById('aiAsstForm').addEventListener('submit', e => {
+    e.preventDefault();
+    aiAsstSend(input.value);
+  });
+
+  aiAsstRestoreHistory();
+}
+
+function aiAsstToggleSuggestions() {
+  aiAsstSuggestionsOpen = !aiAsstSuggestionsOpen;
+  aiAsstApplySuggestionsState();
+}
+
+function aiAsstApplySuggestionsState() {
+  const panel = document.getElementById('aiAsstSuggestions');
+  const toggle = document.getElementById('aiAsstSuggestionsToggle');
+  const label = document.getElementById('aiAsstSuggestionsToggleLabel');
+  if (!panel || !toggle || !label) return;
+  panel.classList.toggle('open', aiAsstSuggestionsOpen);
+  toggle.classList.toggle('open', aiAsstSuggestionsOpen);
+  label.textContent = aiAsstSuggestionsOpen ? 'Hide suggestions' : 'Show suggestions';
+}
+
+async function aiAsstRestoreHistory() {
+  const messagesEl = document.getElementById('aiAsstMessages');
+  if (!messagesEl) return;
   try {
-    const dashboard = await get(API.dashboard);
-    renderAIRiskInsights(dashboard);
+    const res = await get(API.aiAssistant, { action: 'history' });
+    const history = (res && res.history) || [];
+    if (!history.length) {
+      aiAsstAddMessage('assistant', "Hi! I'm your AI Project Assistant. Ask me about delays, budget risk, contractor performance, inspections, or citizen feedback — or try one of the suggested questions.");
+      return;
+    }
+    history.forEach(turn => aiAsstAddMessage(turn.role === 'assistant' ? 'assistant' : 'user', turn.content));
   } catch {
-    wrap.innerHTML = '<p class="empty-state">Failed to load risk insights.</p>';
-  } finally {
-    setLoading(wrap, false);
+    aiAsstAddMessage('assistant', "Hi! I'm your AI Project Assistant. Ask me about delays, budget risk, contractor performance, inspections, or citizen feedback — or try one of the suggested questions.");
   }
 }
 
-function renderAIRiskInsights(dashboard) {
-  const wrap = document.getElementById('riskInsightsContent');
-  if (!wrap) return;
-  const ai = dashboard.ai_insights || {};
-  const anomalies = dashboard.budget_anomalies || [];
-  const delayed = dashboard.top_delayed || [];
-  const riskClass = ai.delay_risk === 'High' ? 'risk-high' : ai.delay_risk === 'Medium' ? 'risk-medium' : 'risk-low';
+function aiAsstAddMessage(role, text) {
+  const messagesEl = document.getElementById('aiAsstMessages');
+  if (!messagesEl) return;
+  const row = document.createElement('div');
+  row.className = `ai-asst-msg ${role}`;
+  const bubble = document.createElement('div');
+  bubble.className = 'ai-asst-bubble';
+  bubble.innerHTML = escapeHtml(text).replace(/\n/g, '<br>');
+  row.appendChild(bubble);
+  messagesEl.appendChild(row);
+  messagesEl.scrollTop = messagesEl.scrollHeight;
+}
 
-  wrap.innerHTML = `
-    <section class="risk-grid">
-      <article class="risk-card ${riskClass}">
-        <span>Delay Risk</span>
-        <strong>${ai.delay_risk || 'Low'}</strong>
-        <p>${dashboard.delayed_projects || 0} delayed project(s) currently need management attention.</p>
-      </article>
-      <article class="risk-card ${dashboard.high_risk_alerts > 0 ? 'risk-high' : 'risk-low'}">
-        <span>Budget Risk</span>
-        <strong>${dashboard.high_risk_alerts || 0} alerts</strong>
-        <p>${ai.budget_alert ? 'Flagged expenses are present in the budget ledger.' : 'No flagged expenses in the current ledger.'}</p>
-      </article>
-      <article class="risk-card risk-low">
-        <span>Best Contractor Signal</span>
-        <strong>${ai.top_contractor ? ai.top_contractor.name : 'No data'}</strong>
-        <p>${ai.top_contractor ? `Performance score ${ai.top_contractor.performance_score}.` : 'Contractor performance data is not available yet.'}</p>
-      </article>
-    </section>
+function aiAsstShowTyping() {
+  const messagesEl = document.getElementById('aiAsstMessages');
+  if (!messagesEl) return;
+  const row = document.createElement('div');
+  row.className = 'ai-asst-msg assistant';
+  row.id = 'aiAsstTyping';
+  row.innerHTML = '<div class="ai-asst-bubble"><div class="ai-asst-typing"><span></span><span></span><span></span></div></div>';
+  messagesEl.appendChild(row);
+  messagesEl.scrollTop = messagesEl.scrollHeight;
+}
 
-    <section class="report-columns">
-      <article class="report-panel">
-        <h3>Priority Delays</h3>
-        ${delayed.length ? delayed.map(p => `
-          <div class="report-row">
-            <span>${escapeHtml(p.name)}</span>
-            <button class="btn-secondary btn-compact" onclick="openProjectModal(${p.id})">Review</button>
-          </div>
-        `).join('') : '<p class="empty-state">No delayed projects.</p>'}
-      </article>
-      <article class="report-panel">
-        <h3>Budget Anomalies</h3>
-        ${anomalies.length ? anomalies.map(a => `
-          <div class="report-row">
-            <span>${a.project_name}</span>
-            <strong>${formatMoney(a.amount)}</strong>
-          </div>
-        `).join('') : '<p class="empty-state">No flagged budget items.</p>'}
-      </article>
-    </section>
-  `;
+function aiAsstHideTyping() {
+  document.getElementById('aiAsstTyping')?.remove();
+}
+
+async function aiAsstSend(text) {
+  text = (text || '').trim();
+  if (!text || aiAsstSending) return;
+
+  aiAsstAddMessage('user', text);
+
+  const input = document.getElementById('aiAsstInput');
+  const sendBtn = document.getElementById('aiAsstSend');
+  input.value = '';
+  input.style.height = 'auto';
+  aiAsstSending = true;
+  input.disabled = true;
+  sendBtn.disabled = true;
+  aiAsstShowTyping();
+
+  try {
+    const res = await postAction(API.aiAssistant, 'ask', { message: text });
+    aiAsstHideTyping();
+    if (res && res.success) {
+      aiAsstAddMessage('assistant', res.reply);
+    } else {
+      aiAsstAddMessage('error', (res && res.message) || 'Something went wrong. Please try again.');
+    }
+  } catch (err) {
+    aiAsstHideTyping();
+    aiAsstAddMessage('error', 'Could not reach the assistant. Please check your connection and try again.');
+    console.error(err);
+  } finally {
+    aiAsstSending = false;
+    input.disabled = false;
+    sendBtn.disabled = false;
+    input.focus();
+  }
+}
+
+async function aiAsstClearChat() {
+  try {
+    await postAction(API.aiAssistant, 'reset', {});
+  } catch {}
+  loadAiAssistantPage();
 }
 
 /* ============================================================
@@ -4199,14 +4943,109 @@ function renderFeedbackTable(rows) {
             <td style="font-size:.75rem;color:#94a3b8;">${f.created_at?.slice(0,10)}</td>
             <td>
               <div class="action-btns">
-                <button class="btn-secondary btn-compact" onclick="updateFeedbackStatus(${f.id},'in_progress')" ${f.status==='in_progress'?'disabled':''}>Review</button>
-                <button class="btn-primary btn-compact" onclick="updateFeedbackStatus(${f.id},'resolved')" ${f.status==='resolved'?'disabled':''}>Resolve</button>
-                <button class="btn-secondary btn-compact" onclick="updateFeedbackStatus(${f.id},'closed')" ${f.status==='closed'?'disabled':''}>Close</button>
+                <button class="btn-secondary btn-compact" onclick="openFeedbackDetailModal(${f.id})">View Details</button>
               </div>
             </td>
           </tr>`).join('')}
       </tbody>
     </table>`;
+}
+
+// Row actions open the full detail view first (citizen/contact info, full
+// message, photos, project/location context) — status changes only ever
+// happen from inside that modal, each gated by an on-brand confirm dialog
+// (showConfirm(), not the native confirm()), so staff never act on a
+// truncated table row without seeing the full picture first.
+const FEEDBACK_STATUS_LABELS = { open: 'Open', in_progress: 'In Progress', resolved: 'Resolved', closed: 'Closed' };
+const FEEDBACK_STATUS_CONFIRM = {
+  in_progress: { title: 'Mark as In Progress?', message: 'This flags the concern as actively being reviewed. The citizen will be notified of the change.', confirmLabel: 'Mark In Progress', tone: 'info' },
+  resolved: { title: 'Mark as Resolved?', message: 'This confirms the concern has been addressed. The citizen will be notified that it is resolved.', confirmLabel: 'Mark Resolved', tone: 'success' },
+  closed: { title: 'Close this feedback?', message: 'This closes the entry with no further action expected. The citizen will be notified.', confirmLabel: 'Close Feedback', tone: 'warning' },
+};
+
+async function openFeedbackDetailModal(id) {
+  try {
+    const f = await get(API.feedback, { id });
+    if (f.error) { toast(f.error, 'error'); return; }
+
+    const pBadge = { urgent: 'badge-urgent', high: 'badge-overbudget', medium: 'badge-spike', low: 'badge-resolved' };
+    const sBadge = { open: 'badge-urgent', in_progress: 'badge-highprio', resolved: 'badge-resolved', closed: 'badge-resolved' };
+    const photos = f.photos || [];
+    const hasContact = f.contact_name || f.contact_phone || f.contact_email;
+
+    openModal(`Feedback #${f.id}`, `
+      <div style="display:flex;flex-direction:column;gap:14px;">
+        <div style="display:flex;gap:8px;flex-wrap:wrap;">
+          <span class="badge ${pBadge[f.priority] || 'badge-resolved'}">${escapeHtml(f.priority)} priority</span>
+          <span class="badge ${sBadge[f.status] || 'badge-resolved'}">${FEEDBACK_STATUS_LABELS[f.status] || escapeHtml(f.status)}</span>
+        </div>
+
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">
+          <div><p class="modal-label">SUBMITTED BY</p><p class="modal-val">${f.citizen_name ? escapeHtml(f.citizen_name) : 'Anonymous'}</p></div>
+          <div><p class="modal-label">DATE SUBMITTED</p><p class="modal-val">${formatDateTime(f.created_at)}</p></div>
+          <div><p class="modal-label">TYPE</p><p class="modal-val">${f.concern_type === 'maintenance' ? 'Maintenance' : 'Project'}</p></div>
+          <div><p class="modal-label">CATEGORY</p><p class="modal-val">${escapeHtml(formatStatus(f.category))}</p></div>
+          <div><p class="modal-label">RELATED PROJECT</p><p class="modal-val">${f.project_name ? escapeHtml(f.project_name) : '—'}</p></div>
+          <div><p class="modal-label">LOCATION</p><p class="modal-val">${[f.barangay, f.district].filter(Boolean).map(v => escapeHtml(v)).join(', ') || '—'}</p></div>
+        </div>
+
+        ${hasContact ? `
+        <div>
+          <p class="modal-label">CONTACT INFO</p>
+          <p class="modal-val" style="font-weight:400;">
+            ${f.contact_name ? escapeHtml(f.contact_name) + '<br>' : ''}${f.contact_phone ? escapeHtml(f.contact_phone) + '<br>' : ''}${f.contact_email ? escapeHtml(f.contact_email) : ''}
+          </p>
+        </div>` : ''}
+
+        <div>
+          <p class="modal-label">MESSAGE</p>
+          <p class="modal-val" style="font-weight:400;white-space:pre-wrap;">${escapeHtml(f.message)}</p>
+        </div>
+
+        ${photos.length ? `
+        <div>
+          <p class="modal-label">PHOTOS</p>
+          <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:6px;">
+            ${photos.map(p => `
+              <a href="${(window.BASE_PATH || '') + p}" target="_blank" rel="noopener">
+                <img src="${(window.BASE_PATH || '') + p}" style="width:84px;height:84px;object-fit:cover;border-radius:8px;border:1px solid var(--border);" />
+              </a>
+            `).join('')}
+          </div>
+        </div>` : ''}
+
+        ${f.concern_type === 'maintenance' ? `
+        <div><p class="modal-label">CIMMS SYNC</p><p class="modal-val">${f.cimm_reference ? escapeHtml(f.cimm_reference) : escapeHtml(f.cimm_sync_status || '—')}</p></div>
+        ` : ''}
+
+        <div>
+          <p class="modal-label">ACTIONS</p>
+          <div class="form-actions" style="justify-content:flex-start;margin-top:8px;">
+            <button type="button" class="btn-secondary btn-compact" onclick="confirmFeedbackStatus(${f.id},'in_progress')" ${f.status === 'in_progress' ? 'disabled' : ''}>Mark In Progress</button>
+            <button type="button" class="btn-primary btn-compact" onclick="confirmFeedbackStatus(${f.id},'resolved')" ${f.status === 'resolved' ? 'disabled' : ''}>Mark Resolved</button>
+            <button type="button" class="btn-secondary btn-compact" onclick="confirmFeedbackStatus(${f.id},'closed')" ${f.status === 'closed' ? 'disabled' : ''}>Close</button>
+          </div>
+        </div>
+      </div>
+    `);
+  } catch (err) {
+    toast('Failed to load feedback details', 'error');
+    console.error(err);
+  }
+}
+
+async function confirmFeedbackStatus(id, status) {
+  const cfg = FEEDBACK_STATUS_CONFIRM[status] || { title: 'Change status?', message: `Change status to "${FEEDBACK_STATUS_LABELS[status] || status}"?`, confirmLabel: 'Confirm', tone: 'info' };
+  const confirmed = await showConfirm(cfg);
+  if (!confirmed) return;
+  try {
+    await put(API.feedback, id, { status });
+    toast(`Marked as ${FEEDBACK_STATUS_LABELS[status] || status}`);
+    closeModal();
+    fetchFeedback();
+  } catch {
+    toast('Update failed', 'error');
+  }
 }
 
 async function showFeedbackForm() {
@@ -4269,14 +5108,6 @@ async function submitFeedbackForm(e) {
   } catch { toast('Failed to submit', 'error'); }
 }
 
-async function updateFeedbackStatus(id, status) {
-  try {
-    await put(API.feedback, id, { status });
-    toast('Status updated');
-    fetchFeedback();
-  } catch { toast('Update failed', 'error'); }
-}
-
 async function deleteFeedback(id) {
   if (!confirm('Delete this entry?')) return;
   try {
@@ -4307,7 +5138,66 @@ function closeModal() {
 
 document.getElementById('modalClose')?.addEventListener('click', closeModal);
 modalOverlay?.addEventListener('click', e => { if (e.target === modalOverlay) closeModal(); });
-document.addEventListener('keydown', e => { if (e.key === 'Escape') closeModal(); });
+// Guarded so Escape only dismisses the confirm dialog (not the detail modal
+// underneath it too) when a confirm prompt is open — see showConfirm() below.
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape' && !document.getElementById('confirmOverlay')?.classList.contains('open')) closeModal();
+});
+
+// ── Confirm dialog — on-brand replacement for native confirm(). Stacks
+// above .modal-overlay (its own overlay lives in includes/footer.php), so it
+// can gate an action button that lives inside an already-open detail modal.
+// Usage: if (!(await showConfirm({ title, message, tone }))) return;
+const CONFIRM_ICONS = {
+  info: '<svg viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clip-rule="evenodd"/></svg>',
+  success: '<svg viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-3.293-4.707a1 1 0 00-1.414-1.414L9 8.586 7.207 6.793a1 1 0 00-1.414 1.414l2.5 2.5a1 1 0 001.414 0l4-4z" clip-rule="evenodd"/></svg>',
+  warning: '<svg viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l6.518 11.596c.75 1.334-.213 2.995-1.742 2.995H3.48c-1.53 0-2.492-1.66-1.742-2.995L8.257 3.1zM11 13a1 1 0 10-2 0 1 1 0 002 0zm-1-6a1 1 0 00-1 1v3a1 1 0 102 0V8a1 1 0 00-1-1z" clip-rule="evenodd"/></svg>',
+  danger: '<svg viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.28 7.22a.75.75 0 00-1.06 1.06L8.94 10l-1.72 1.72a.75.75 0 101.06 1.06L10 11.06l1.72 1.72a.75.75 0 101.06-1.06L11.06 10l1.72-1.72a.75.75 0 00-1.06-1.06L10 8.94 8.28 7.22z" clip-rule="evenodd"/></svg>',
+};
+const CONFIRM_BTN_CLASS = { info: 'btn-primary', success: 'btn-primary', warning: 'btn-primary', danger: 'btn-danger' };
+
+function showConfirm({ title = 'Are you sure?', message = '', confirmLabel = 'Confirm', cancelLabel = 'Cancel', tone = 'info' } = {}) {
+  const overlay = document.getElementById('confirmOverlay');
+  const card = overlay.querySelector('.confirmdlg-card');
+  const iconEl = document.getElementById('confirmIcon');
+  const titleEl = document.getElementById('confirmTitle');
+  const msgEl = document.getElementById('confirmMessage');
+  const cancelBtn = document.getElementById('confirmCancelBtn');
+  const okBtn = document.getElementById('confirmOkBtn');
+
+  card.dataset.tone = tone;
+  iconEl.innerHTML = CONFIRM_ICONS[tone] || CONFIRM_ICONS.info;
+  titleEl.textContent = title;
+  msgEl.textContent = message;
+  cancelBtn.textContent = cancelLabel;
+  okBtn.textContent = confirmLabel;
+  okBtn.className = CONFIRM_BTN_CLASS[tone] || 'btn-primary';
+
+  return new Promise(resolve => {
+    function finish(result) {
+      overlay.classList.remove('open');
+      cancelBtn.removeEventListener('click', onCancel);
+      okBtn.removeEventListener('click', onOk);
+      overlay.removeEventListener('click', onBackdrop);
+      document.removeEventListener('keydown', onKeydown);
+      resolve(result);
+    }
+    function onCancel() { finish(false); }
+    function onOk() { finish(true); }
+    function onBackdrop(e) { if (e.target === overlay) finish(false); }
+    function onKeydown(e) {
+      if (e.key === 'Escape') finish(false);
+      else if (e.key === 'Enter') finish(true);
+    }
+
+    cancelBtn.addEventListener('click', onCancel);
+    okBtn.addEventListener('click', onOk);
+    overlay.addEventListener('click', onBackdrop);
+    document.addEventListener('keydown', onKeydown);
+    overlay.classList.add('open');
+    okBtn.focus();
+  });
+}
 
 // ── Pager — same Gmail-style pill as the citizen portal's list-pager ──
 function renderPager(containerId, page, lastPage, onPage) {
@@ -4392,8 +5282,11 @@ document.addEventListener('DOMContentLoaded', () => {
     <div id="page-gis-map" class="page-section" style="display:none;"></div>
     <div id="page-reports" class="page-section" style="display:none;"></div>
     <div id="page-ai-risk-insights" class="page-section" style="display:none;"></div>
+    <div id="page-announcements" class="page-section" style="display:none;"></div>
     <div id="page-citizen-feedback" class="page-section" style="display:none;"></div>
     <div id="page-staff-requests" class="page-section" style="display:none;"></div>
+    <div id="page-contractor-performance" class="page-section" style="display:none;"></div>
+    <div id="page-engineer-performance" class="page-section" style="display:none;"></div>
     <div id="page-completed-projects" class="page-section" style="display:none;"></div>
     <div id="page-cancelled-projects" class="page-section" style="display:none;"></div>
     <div id="page-public-facilities-integration" class="page-section" style="display:none;"></div>

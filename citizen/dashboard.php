@@ -149,11 +149,24 @@ $statusChip = [
         </article>
       </section>
 
+      <!-- Latest Announcements Section -->
+      <section class="dashboard-section reveal" style="transition-delay:.02s;">
+        <div class="section-header">
+          <h2>Latest Announcements</h2>
+          <a href="#" class="view-all-link" onclick="changePage('announcements'); return false;">View All
+            <svg width="15" height="15" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M10.293 5.293a1 1 0 011.414 0l4 4a1 1 0 010 1.414l-4 4a1 1 0 01-1.414-1.414L12.586 11H5a1 1 0 110-2h7.586l-2.293-2.293a1 1 0 010-1.414z" clip-rule="evenodd"/></svg>
+          </a>
+        </div>
+        <div id="recentAnnouncementsContainer" class="announcement-grid announcement-grid-preview">
+          <div class="skeleton-group"><div class="skeleton-row"></div><div class="skeleton-row"></div></div>
+        </div>
+      </section>
+
       <section class="charts-row reveal">
         <article class="chart-card">
           <div class="chart-header">
             <h2 class="chart-title">Latest Updates from the Field</h2>
-            <a href="#" class="view-all-link" onclick="changePage('project-status'); return false;">All Projects
+            <a href="#" class="view-all-link" onclick="changePage('projects'); return false;">All Projects
               <svg width="15" height="15" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M10.293 5.293a1 1 0 011.414 0l4 4a1 1 0 010 1.414l-4 4a1 1 0 01-1.414-1.414L12.586 11H5a1 1 0 110-2h7.586l-2.293-2.293a1 1 0 010-1.414z" clip-rule="evenodd"/></svg>
             </a>
           </div>
@@ -243,10 +256,61 @@ $statusChip = [
       </section>
     </section>
 
+    <!-- Announcements Page -->
+    <section id="page-announcements" class="page-section" style="display: none;">
+      <div class="page-header">
+        <div>
+          <h1 class="page-title">Announcements</h1>
+          <p class="citizen-scope-note">Events, new project spotlights, official notices, and posters from the city.</p>
+        </div>
+      </div>
+      <div class="list-toolbar">
+        <div class="list-search">
+          <svg viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M8 4a4 4 0 100 8 4 4 0 000-8zM2 8a6 6 0 1110.89 3.476l4.817 4.817a1 1 0 01-1.414 1.414l-4.816-4.816A6 6 0 012 8z" clip-rule="evenodd"/></svg>
+          <input type="text" id="annSearch" placeholder="Search announcements">
+        </div>
+        <select id="annCategoryFilter" class="filter-select">
+          <option value="">All Categories</option>
+          <option value="event">Events</option>
+          <option value="new_project">New Projects</option>
+          <option value="notice">Notices</option>
+          <option value="general">General</option>
+        </select>
+        <div class="list-pager">
+          <span class="list-pager-info" id="annPagerInfo">0 of 0</span>
+          <button type="button" class="list-pager-btn" id="annPagerPrev" title="Previous page" aria-label="Previous page"><svg viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M12.707 5.293a1 1 0 010 1.414L9.414 10l3.293 3.293a1 1 0 01-1.414 1.414l-4-4a1 1 0 010-1.414l4-4a1 1 0 011.414 0z" clip-rule="evenodd"/></svg></button>
+          <button type="button" class="list-pager-btn" id="annPagerNext" title="Next page" aria-label="Next page"><svg viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M7.293 14.707a1 1 0 010-1.414L10.586 10 7.293 6.707a1 1 0 011.414-1.414l4 4a1 1 0 010 1.414l-4 4a1 1 0 01-1.414 0z" clip-rule="evenodd"/></svg></button>
+        </div>
+      </div>
+      <div id="announcementsBody" class="announcement-grid">
+        <p class="empty-state">Loading announcements…</p>
+      </div>
+    </section>
+
     <!-- Projects Page -->
+    <!-- Public Projects — merges what used to be two separate pages
+         (Public Projects directory + Project Status tracker) into one:
+         same search/filter/pager, with a Cards/Table toggle so citizens can
+         pick the workflow-stage view or the dense scanning view. Backed by
+         citizen/api/project-status.php, the richer of the two former data
+         sources (adds milestone/expense/delay/photo fields the table simply
+         doesn't use). See citizen.js's initListControl 'projects' entry. -->
     <section id="page-projects" class="page-section" style="display: none;">
       <div class="page-header">
-        <h1 class="page-title">Public Projects</h1>
+        <div>
+          <h1 class="page-title">Public Projects</h1>
+          <p class="citizen-scope-note">Every government infrastructure project — budgets, timelines, and how far along each one is.</p>
+        </div>
+        <div class="view-toggle" role="group" aria-label="Switch project view">
+          <button type="button" class="view-toggle-btn" id="projectsViewCards" data-list="projects" data-view="cards" title="Card view — see workflow progress">
+            <svg viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M3 4a1 1 0 011-1h3a1 1 0 011 1v3a1 1 0 01-1 1H4a1 1 0 01-1-1V4zm0 8a1 1 0 011-1h3a1 1 0 011 1v3a1 1 0 01-1 1H4a1 1 0 01-1-1v-3zm8-8a1 1 0 011-1h3a1 1 0 011 1v3a1 1 0 01-1 1h-3a1 1 0 01-1-1V4zm0 8a1 1 0 011-1h3a1 1 0 011 1v3a1 1 0 01-1 1h-3a1 1 0 01-1-1v-3z" clip-rule="evenodd"/></svg>
+            Cards
+          </button>
+          <button type="button" class="view-toggle-btn" id="projectsViewTable" data-list="projects" data-view="table" title="Table view — scan many at once">
+            <svg viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M3 4a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1zm0 5a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1zm0 5a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1z" clip-rule="evenodd"/></svg>
+            Table
+          </button>
+        </div>
       </div>
       <div class="list-toolbar">
         <div class="list-search">
@@ -272,7 +336,14 @@ $statusChip = [
           <button type="button" class="list-pager-btn" id="projectsPagerNext" title="Next page" aria-label="Next page"><svg viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M7.293 14.707a1 1 0 010-1.414L10.586 10 7.293 6.707a1 1 0 011.414-1.414l4 4a1 1 0 010 1.414l-4 4a1 1 0 01-1.414 0z" clip-rule="evenodd"/></svg></button>
         </div>
       </div>
-      <div class="table-card">
+
+      <!-- Card view: workflow-stage tracker per project. Default. -->
+      <div id="projectsCardBody" class="tracker-list">
+        <p class="empty-state">Loading projects…</p>
+      </div>
+
+      <!-- Table view: dense directory listing, hidden until toggled. -->
+      <div class="table-card" id="projectsTableWrap" style="display: none;">
         <table class="data-table">
           <thead>
             <tr>
@@ -287,29 +358,6 @@ $statusChip = [
             <tr><td colspan="5" class="table-empty">Loading projects…</td></tr>
           </tbody>
         </table>
-      </div>
-    </section>
-
-    <!-- Project Status Page -->
-    <section id="page-project-status" class="page-section" style="display: none;">
-      <div class="page-header">
-        <h1 class="page-title">Project Status Tracking</h1>
-      </div>
-      <div class="list-toolbar">
-        <div class="list-search">
-          <svg viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M8 4a4 4 0 100 8 4 4 0 000-8zM2 8a6 6 0 1110.89 3.476l4.817 4.817a1 1 0 01-1.414 1.414l-4.816-4.816A6 6 0 012 8z" clip-rule="evenodd"/></svg>
-          <input type="text" id="psSearch" placeholder="Search projects">
-        </div>
-        <div class="list-pager">
-          <span class="list-pager-info" id="psPagerInfo">0 of 0</span>
-          <button type="button" class="list-pager-btn" id="psPagerPrev" title="Previous page" aria-label="Previous page"><svg viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M12.707 5.293a1 1 0 010 1.414L9.414 10l3.293 3.293a1 1 0 01-1.414 1.414l-4-4a1 1 0 010-1.414l4-4a1 1 0 011.414 0z" clip-rule="evenodd"/></svg></button>
-          <button type="button" class="list-pager-btn" id="psPagerNext" title="Next page" aria-label="Next page"><svg viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M7.293 14.707a1 1 0 010-1.414L10.586 10 7.293 6.707a1 1 0 011.414-1.414l4 4a1 1 0 010 1.414l-4 4a1 1 0 01-1.414 0z" clip-rule="evenodd"/></svg></button>
-        </div>
-      </div>
-      <!-- Tracker cards, deliberately distinct from the Public Projects
-           directory table: each card walks the project's workflow stages. -->
-      <div id="projectStatusBody" class="tracker-list">
-        <p class="empty-state">Loading project details…</p>
       </div>
     </section>
 
@@ -1114,6 +1162,22 @@ $statusChip = [
     </div>
     <div class="project-detail-body" id="feedbackDetailBody">
       <p class="empty-state">Loading report details...</p>
+    </div>
+  </div>
+</div>
+
+<!-- Announcement Detail Modal -->
+<div class="modal-overlay" id="announcementDetailModal" style="display: none;">
+  <div class="modal-card modal-card-wide">
+    <div class="modal-head">
+      <h3>
+        <svg width="17" height="17" viewBox="0 0 20 20" fill="currentColor"><path d="M9.383 3.076A1 1 0 0110 4v12a1 1 0 01-1.617.816L4.766 14H3a1 1 0 01-1-1V7a1 1 0 011-1h1.766l3.617-2.816a1 1 0 011-.108z"/></svg>
+        Announcement
+      </h3>
+      <button type="button" class="modal-close" id="announcementDetailClose" title="Close">&times;</button>
+    </div>
+    <div class="project-detail-body" id="announcementDetailBody">
+      <p class="empty-state">Loading announcement...</p>
     </div>
   </div>
 </div>

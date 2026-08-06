@@ -29,6 +29,7 @@ requireCsrfProtection();
 $db = getDB();
 projectWorkflowEnsureRoleConnectionTables($db);
 projectDeletionEnsureSchema($db);
+projectEditEnsureSchema($db);
 sidebarBadgesEnsureViewsTable($db);
 
 $user = currentUser();
@@ -403,12 +404,16 @@ function computeHopeBadges(PDO $db, int $userId, array $lv): array
     $stmt->execute([lv($lv, 'deletion-requests')]);
     $b['deletion-requests'] = ['type' => 'red', 'count' => (int) $stmt->fetchColumn()];
 
+    $stmt = $db->prepare("SELECT COUNT(*) FROM project_edit_requests WHERE status = 'pending' AND created_at > ?");
+    $stmt->execute([lv($lv, 'edit-requests')]);
+    $b['edit-requests'] = ['type' => 'red', 'count' => (int) $stmt->fetchColumn()];
+
     // Reuses the same shared per-user notifications feed the topbar bell uses.
     require_once __DIR__ . '/../includes/Notifications.php';
     $b['notifications'] = ['type' => 'blue', 'count' => (int) Notifications::unreadCount($userId)];
 
     $b['dashboard'] = ['type' => 'red', 'count' =>
-        $b['project-approvals']['count'] + $b['award-approvals']['count'] + $b['returned-projects']['count'] + $b['deletion-requests']['count']];
+        $b['project-approvals']['count'] + $b['award-approvals']['count'] + $b['returned-projects']['count'] + $b['deletion-requests']['count'] + $b['edit-requests']['count']];
 
     return $b;
 }

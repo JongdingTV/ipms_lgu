@@ -54,6 +54,16 @@ require_once __DIR__ . '/sidebar.php';
         </article>
 
         <article class="kpi-card">
+          <div class="kpi-icon kpi-orange">
+            <svg viewBox="0 0 20 20" fill="currentColor"><path d="M13.586 3.586a2 2 0 112.828 2.828l-.793.793-2.828-2.828.793-.793z"/><path d="M11.379 5.793L3 14.172V17h2.828l8.38-8.379-2.83-2.828z"/></svg>
+          </div>
+          <div class="kpi-info">
+            <span class="kpi-label">Pending Edit Requests</span>
+            <strong class="kpi-value" id="hopePendingEditsCount">0</strong>
+          </div>
+        </article>
+
+        <article class="kpi-card">
           <div class="kpi-icon kpi-green">
             <svg viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M16.704 4.153a.75.75 0 01.143 1.052l-8 10.5a.75.75 0 01-1.127.075l-4.5-4.5a.75.75 0 011.06-1.06l3.894 3.893 7.48-9.817a.75.75 0 011.05-.143z" clip-rule="evenodd"/></svg>
           </div>
@@ -172,6 +182,7 @@ require_once __DIR__ . '/sidebar.php';
     <section id="page-award-approvals" class="page-section" style="display:none;"></section>
     <section id="page-returned-projects" class="page-section" style="display:none;"></section>
     <section id="page-deletion-requests" class="page-section" style="display:none;"></section>
+    <section id="page-edit-requests" class="page-section" style="display:none;"></section>
     <section id="page-decision-history" class="page-section" style="display:none;"></section>
     <section id="page-approved-projects" class="page-section" style="display:none;"></section>
     <section id="page-ongoing-projects" class="page-section" style="display:none;"></section>

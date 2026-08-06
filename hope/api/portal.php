@@ -13,6 +13,7 @@ require_once __DIR__ . '/../../includes/ContractorScoring.php';
 require_once __DIR__ . '/../../includes/Validator.php';
 require_once __DIR__ . '/../../includes/Pagination.php';
 require_once __DIR__ . '/../../includes/Notifications.php';
+require_once __DIR__ . '/../../includes/RoadGeometry.php';
 
 apiHeaders();
 // super_admin keeps read-only oversight of HOPE's queues (same pattern as
@@ -25,6 +26,7 @@ $db = getDB();
 projectWorkflowEnsureProjectStatusSchema($db);
 projectWorkflowEnsureRoleConnectionTables($db);
 projectDeletionEnsureSchema($db);
+projectEditEnsureSchema($db);
 contractorRefreshPerformanceScores($db);
 
 $user = currentUser();
@@ -84,6 +86,7 @@ if ($method === 'GET') {
         $pending = (int) $db->query("SELECT COUNT(*) FROM projects WHERE status = 'endorsed'")->fetchColumn();
         $pendingAwards = (int) $db->query("SELECT COUNT(*) FROM bac_award_recommendations WHERE status = 'sent_to_admin'")->fetchColumn();
         $pendingDeletions = (int) $db->query("SELECT COUNT(*) FROM project_deletion_requests WHERE status = 'pending'")->fetchColumn();
+        $pendingEdits = (int) $db->query("SELECT COUNT(*) FROM project_edit_requests WHERE status = 'pending'")->fetchColumn();
         $approvedThisMonth = (int) $db->query("
             SELECT COUNT(*) FROM projects
             WHERE status IN ('approved','bidding','awarded','assigned','active','delayed','on_hold','completion_inspection','completed','turnover')
@@ -161,6 +164,7 @@ if ($method === 'GET') {
                 'pending_project_approvals' => $pending,
                 'pending_award_approvals' => $pendingAwards,
                 'pending_deletion_requests' => $pendingDeletions,
+                'pending_edit_requests' => $pendingEdits,
                 'approved_this_month' => $approvedThisMonth,
                 'returned' => $returned,
                 'rejected' => $rejected,
@@ -264,6 +268,59 @@ if ($method === 'GET') {
         respond(['data' => $stmt->fetchAll()]);
     }
 
+    if ($action === 'list_edit_requests') {
+        $stmt = $db->query("
+            SELECT r.id, r.project_id, r.project_code, r.project_name, r.reason, r.created_at,
+                   u.full_name AS requested_by_name,
+                   p.status AS project_status
+            FROM project_edit_requests r
+            LEFT JOIN users u ON u.id = r.requested_by
+            LEFT JOIN projects p ON p.id = r.project_id
+            WHERE r.status = 'pending'
+            ORDER BY r.created_at ASC
+        ");
+        respond(['data' => $stmt->fetchAll()]);
+    }
+
+    // Full before/after comparison for one pending edit request — the list
+    // action above stays lean (matches list_deletion_requests' shape); this
+    // is the only place the proposed field values + current project values
+    // are both fetched together, for the review modal's diff table.
+    if ($action === 'edit_request_detail') {
+        $requestId = (int) ($_GET['id'] ?? 0);
+        if ($requestId <= 0) {
+            respond(['error' => 'A valid request id is required.'], 422);
+        }
+
+        $stmt = $db->prepare("
+            SELECT r.*, u.full_name AS requested_by_name
+            FROM project_edit_requests r
+            LEFT JOIN users u ON u.id = r.requested_by
+            WHERE r.id = ?
+        ");
+        $stmt->execute([$requestId]);
+        $request = $stmt->fetch();
+        if (!$request) {
+            respond(['error' => 'Edit request not found.'], 404);
+        }
+
+        $current = null;
+        if ($request['project_id']) {
+            $p = $db->prepare("SELECT * FROM projects WHERE id = ?");
+            $p->execute([(int) $request['project_id']]);
+            $current = $p->fetch() ?: null;
+        }
+
+        $payload = json_decode((string) $request['proposed_changes'], true) ?: [];
+
+        respond([
+            'request' => $request,
+            'current_project' => $current,
+            'proposed_fields' => $payload['fields'] ?? [],
+            'proposed_road_geometry' => $payload['road_geometry'] ?? null,
+        ]);
+    }
+
     if ($action === 'decision_history') {
         $page = max(1, (int) ($_GET['page'] ?? 1));
         $perPage = min(50, max(1, (int) ($_GET['per_page'] ?? 15)));
@@ -272,7 +329,7 @@ if ($method === 'GET') {
         // upsertable bac_award_recommendations row — a re-recommend cycle
         // overwrites that row's own history, but every decision HOPE has
         // ever made is still preserved here via projectWorkflowLog().
-        $actions = ['Project approved', 'Project returned', 'Project rejected', 'Contract award approved', 'Contract award returned', 'Contract award rejected', 'Project deletion approved', 'Project deletion rejected'];
+        $actions = ['Project approved', 'Project returned', 'Project rejected', 'Contract award approved', 'Contract award returned', 'Contract award rejected', 'Project deletion approved', 'Project deletion rejected', 'Project edit approved', 'Project edit rejected'];
         $placeholders = implode(',', array_fill(0, count($actions), '?'));
 
         // Optional search over action text, details, and project code/name.
@@ -523,6 +580,78 @@ if ($action === 'decide_deletion') {
 
     if (!empty($request['requested_by'])) {
         notifyUser((int) $request['requested_by'], $decision === 'approve' ? 'info' : 'warning', 'Project deletion ' . $pastTense[$decision], $details);
+    }
+
+    respond(['success' => true, 'status' => $pastTense[$decision]]);
+}
+
+if ($action === 'decide_edit') {
+    // Re-narrow within the file's broader ['hope','super_admin'] read gate —
+    // same pattern as decide_deletion/decide_award: super_admin keeps
+    // oversight visibility via the GET actions above but has no authority to
+    // decide an edit request.
+    requireAnyRole(['hope']);
+
+    $body = requestBody();
+    $validated = Validator::make($body, [
+        'request_id' => 'required|integer',
+        'decision' => 'required|in:approve,reject',
+        'remarks' => 'nullable|string|max:1000',
+    ])->stopOnFailure();
+
+    $requestId = (int) $validated['request_id'];
+    $decision = (string) $validated['decision'];
+    $remarks = trim((string) ($validated['remarks'] ?? ''));
+
+    if ($decision === 'reject' && $remarks === '') {
+        respond(['error' => 'A remark is required to reject an edit request.'], 422);
+    }
+
+    $stmt = $db->prepare("SELECT * FROM project_edit_requests WHERE id = ?");
+    $stmt->execute([$requestId]);
+    $request = $stmt->fetch();
+    if (!$request) {
+        respond(['error' => 'Edit request not found.'], 404);
+    }
+    if ($request['status'] !== 'pending') {
+        respond(['error' => 'This request has already been decided.'], 422);
+    }
+
+    $pastTense = ['approve' => 'approved', 'reject' => 'rejected'];
+
+    $db->prepare("
+        UPDATE project_edit_requests
+        SET status = ?, decided_by = ?, decided_at = NOW(), decision_remarks = ?
+        WHERE id = ?
+    ")->execute([$pastTense[$decision], $actorId ?: null, $remarks !== '' ? $remarks : null, $requestId]);
+
+    $details = $request['project_name'] . ' (' . $request['project_code'] . ') edit request was ' . $pastTense[$decision] . ($remarks !== '' ? ' — ' . $remarks : '') . '.';
+
+    if ($decision === 'approve' && $request['project_id']) {
+        $payload = json_decode((string) $request['proposed_changes'], true) ?: [];
+        $fields = $payload['fields'] ?? [];
+        $roadGeometry = $payload['road_geometry'] ?? null;
+
+        if ($fields !== []) {
+            $setSql = [];
+            $params = [];
+            foreach ($fields as $f => $v) {
+                $setSql[] = "$f = ?";
+                $params[] = $v;
+            }
+            $params[] = (int) $request['project_id'];
+            $db->prepare('UPDATE projects SET ' . implode(', ', $setSql) . ' WHERE id = ?')->execute($params);
+        }
+        if ($roadGeometry !== null) {
+            projectStoreRoadGeometry($db, (int) $request['project_id'], $roadGeometry);
+        }
+    }
+
+    projectWorkflowLog($db, 'Project edit ' . $pastTense[$decision], $request['project_id'] ? (int) $request['project_id'] : null, $details, $actorId ?: null);
+    logActivity($actorId, 'project_edit_' . $pastTense[$decision], $details, 'Projects', $request['project_id'] ? (int) $request['project_id'] : null);
+
+    if (!empty($request['requested_by'])) {
+        notifyUser((int) $request['requested_by'], $decision === 'approve' ? 'info' : 'warning', 'Project edit ' . $pastTense[$decision], $details);
     }
 
     respond(['success' => true, 'status' => $pastTense[$decision]]);
