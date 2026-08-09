@@ -727,6 +727,109 @@ function announcementsEnsureSchema(PDO $db): void
     }
 }
 
+// Admin-uploaded blueprint/design/reference photos for the citizen dashboard's
+// project slideshow + gallery — deliberately separate from
+// engineer_progress_photos (engineer-owned field photos, a different concern).
+// Admin owns this table because Admin manages all projects regardless of
+// assignment and holds the official design documents. One photo per project
+// may be flagged the "cover" shown in the slideshow
+// (citizen/api/project-gallery.php); see projectGallerySetCover() below for
+// how that exclusivity is enforced.
+function projectGalleryEnsureSchema(PDO $db): void
+{
+    try {
+        $db->exec("
+            CREATE TABLE IF NOT EXISTS project_gallery_photos (
+                id INT AUTO_INCREMENT PRIMARY KEY,
+                project_id INT NOT NULL,
+                title VARCHAR(180) NOT NULL,
+                caption TEXT NULL,
+                file_path VARCHAR(255) NOT NULL,
+                original_name VARCHAR(255) NOT NULL,
+                file_size INT UNSIGNED NULL,
+                mime_type VARCHAR(120) NULL,
+                photo_type ENUM('blueprint','render','photo') NOT NULL DEFAULT 'blueprint',
+                is_cover TINYINT(1) NOT NULL DEFAULT 0,
+                uploaded_by INT NULL,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                INDEX idx_project_gallery_project (project_id),
+                INDEX idx_project_gallery_cover (project_id, is_cover),
+                CONSTRAINT fk_project_gallery_project FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE,
+                CONSTRAINT fk_project_gallery_uploaded_by FOREIGN KEY (uploaded_by) REFERENCES users(id) ON DELETE SET NULL
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+        ");
+    } catch (Throwable $e) {
+    }
+}
+
+// MySQL has no clean partial-unique-index for "at most one is_cover=1 row per
+// project" (a UNIQUE(project_id, is_cover) would also block having 2+
+// non-cover photos, since 0 isn't NULL) — so exclusivity is enforced here,
+// transactionally, rather than at the schema level. Called both by the
+// upload action (when the admin checks "Set as cover") and the dedicated
+// set_cover action.
+function projectGallerySetCover(PDO $db, int $projectId, int $photoId): void
+{
+    $db->beginTransaction();
+    try {
+        $db->prepare("UPDATE project_gallery_photos SET is_cover = 0 WHERE project_id = ? AND is_cover = 1")
+            ->execute([$projectId]);
+        $db->prepare("UPDATE project_gallery_photos SET is_cover = 1 WHERE id = ? AND project_id = ?")
+            ->execute([$photoId, $projectId]);
+        $db->commit();
+    } catch (Throwable $e) {
+        $db->rollBack();
+        throw $e;
+    }
+}
+
+// Citizen star + text ratings on a project — one per (project, citizen),
+// edit-in-place via upsert (citizen/api/project-rating.php). Admin gets a
+// read-only view (api/project-ratings.php) with no mutation route at all —
+// deliberately NOT following api/feedback.php's admin-PUT/DELETE precedent
+// for the general complaint system.
+function projectRatingsEnsureSchema(PDO $db): void
+{
+    try {
+        $db->exec("
+            CREATE TABLE IF NOT EXISTS project_ratings (
+                id INT AUTO_INCREMENT PRIMARY KEY,
+                project_id INT NOT NULL,
+                citizen_id INT NOT NULL,
+                rating TINYINT UNSIGNED NOT NULL,
+                comment TEXT NULL,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+                UNIQUE KEY uq_project_ratings_citizen (project_id, citizen_id),
+                INDEX idx_project_ratings_project (project_id),
+                CONSTRAINT fk_project_ratings_project FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE,
+                CONSTRAINT fk_project_ratings_citizen FOREIGN KEY (citizen_id) REFERENCES citizens(id) ON DELETE CASCADE,
+                CONSTRAINT chk_project_ratings_range CHECK (rating BETWEEN 1 AND 5)
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+        ");
+    } catch (Throwable $e) {
+    }
+}
+
+// AI ID Verification — the automated Quezon-City-residency gate on citizen
+// registration (includes/IdVerification.php, citizen/register.php,
+// citizen/api/verify-id.php). Recorded on the citizens row itself (not a
+// separate table) since it's a 1:1 property of one registration attempt's ID
+// photo, read back by the superadmin manual-review queue so a human
+// reviewer sees what the AI already found instead of approving blind.
+function citizenAiVerificationEnsureSchema(PDO $db): void
+{
+    try {
+        $db->exec("ALTER TABLE citizens ADD COLUMN IF NOT EXISTS ai_verification_passed TINYINT(1) NULL AFTER id_photo_path");
+        $db->exec("ALTER TABLE citizens ADD COLUMN IF NOT EXISTS ai_extracted_name VARCHAR(250) NULL AFTER ai_verification_passed");
+        $db->exec("ALTER TABLE citizens ADD COLUMN IF NOT EXISTS ai_extracted_address VARCHAR(250) NULL AFTER ai_extracted_name");
+        $db->exec("ALTER TABLE citizens ADD COLUMN IF NOT EXISTS ai_id_type_guess VARCHAR(80) NULL AFTER ai_extracted_address");
+        $db->exec("ALTER TABLE citizens ADD COLUMN IF NOT EXISTS ai_verification_notes TEXT NULL AFTER ai_id_type_guess");
+        $db->exec("ALTER TABLE citizens ADD COLUMN IF NOT EXISTS ai_verified_at DATETIME NULL AFTER ai_verification_notes");
+    } catch (Throwable $e) {
+    }
+}
+
 // Road Geometry — conditional module on Project Registration, visible only
 // when category = 'Roads and Bridges'. One row per project (UNIQUE on
 // project_id, upserted). This is the data IPMS shares with the separate

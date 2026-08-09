@@ -63,6 +63,55 @@ $stmt = $pdo->prepare("
 $stmt->execute([$projectId]);
 $photos = $stmt->fetchAll();
 
+// Admin-uploaded blueprint/gallery photos (separate from the engineer's
+// progress photos above)
+projectGalleryEnsureSchema($pdo);
+$stmt = $pdo->prepare("
+    SELECT id, title, caption, file_path, photo_type, is_cover, created_at
+    FROM project_gallery_photos
+    WHERE project_id = ?
+    ORDER BY is_cover DESC, created_at DESC
+");
+$stmt->execute([$projectId]);
+$galleryPhotos = $stmt->fetchAll();
+
+// Star ratings: aggregate, other citizens' reviews, and the requesting
+// citizen's own rating (so the frontend knows Submit vs Edit/Delete)
+projectRatingsEnsureSchema($pdo);
+$stmt = $pdo->prepare("SELECT COUNT(*) AS count, COALESCE(AVG(rating), 0) AS average FROM project_ratings WHERE project_id = ?");
+$stmt->execute([$projectId]);
+$ratingRow = $stmt->fetch();
+$ratingSummary = ['count' => (int) $ratingRow['count'], 'average' => round((float) $ratingRow['average'], 1)];
+
+$stmt = $pdo->prepare('SELECT id, verification_status FROM citizens WHERE user_id = ?');
+$stmt->execute([$user['user_id']]);
+$citizenRow = $stmt->fetch();
+$citizenId = $citizenRow['id'] ?? null;
+$citizenVerified = ($citizenRow['verification_status'] ?? null) === 'verified';
+
+$ownRating = null;
+if ($citizenId) {
+    $ownStmt = $pdo->prepare('SELECT id, rating, comment, created_at, updated_at FROM project_ratings WHERE project_id = ? AND citizen_id = ?');
+    $ownStmt->execute([$projectId, $citizenId]);
+    $ownRating = $ownStmt->fetch() ?: null;
+}
+
+// Other citizens shown as "Juan D." (first name + last initial) — privacy-
+// conscious, consistent with the timeline widget's role-only convention
+// elsewhere on this page. Excludes the requester's own rating, which is
+// already surfaced separately via $ownRating above.
+$stmt = $pdo->prepare("
+    SELECT r.id, r.rating, r.comment, r.created_at,
+           CONCAT(c.first_name, ' ', LEFT(c.last_name, 1), '.') AS citizen_name
+    FROM project_ratings r
+    INNER JOIN citizens c ON c.id = r.citizen_id
+    WHERE r.project_id = ? AND r.citizen_id " . ($citizenId ? '!= ?' : 'IS NOT NULL') . "
+    ORDER BY r.created_at DESC
+    LIMIT 20
+");
+$stmt->execute($citizenId ? [$projectId, $citizenId] : [$projectId]);
+$ratings = $stmt->fetchAll();
+
 // Public procurement notice, if any
 $stmt = $pdo->prepare("
     SELECT reference_no, published_at, deadline, status
@@ -84,6 +133,11 @@ echo json_encode([
     'milestones' => $milestones,
     'updates' => $updates,
     'photos' => $photos,
+    'gallery_photos' => $galleryPhotos,
+    'rating_summary' => $ratingSummary,
+    'ratings' => $ratings,
+    'own_rating' => $ownRating,
+    'citizen_verified' => $citizenVerified,
     'bid_notice' => $bidNotice,
     'total_expenses' => $totalExpenses,
 ]);

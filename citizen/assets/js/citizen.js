@@ -16,6 +16,7 @@ function resolvePageHash(page) {
 document.addEventListener('DOMContentLoaded', function() {
     // Initialize the page
     loadDashboardData();
+    loadProjectSlideshow();
     setupEventListeners();
 
     // Deep-linking: #projects, #profile, etc. restore the page on load…
@@ -805,6 +806,83 @@ function setupChangePassword() {
     });
 }
 
+// ===== Project highlights slideshow (dashboard hero card) =====
+let slideshowState = { projects: [], index: 0, timer: null, intervalMs: 6000 };
+
+function loadProjectSlideshow() {
+    fetch(citizenUrl('citizen/api/project-gallery.php'))
+        .then(res => res.json())
+        .then(data => {
+            if (!data.success || !data.projects || !data.projects.length) return;
+            slideshowState.projects = data.projects;
+            renderProjectSlideshow();
+        })
+        .catch(() => {});
+}
+
+function renderProjectSlideshow() {
+    const card = document.getElementById('projectSlideshowCard');
+    const track = document.getElementById('projectSlideshowTrack');
+    const dots = document.getElementById('projectSlideshowDots');
+    if (!card || !track || !dots) return;
+
+    const projects = slideshowState.projects;
+    if (!projects.length) return;
+
+    track.innerHTML = projects.map(p => `
+        <div class="slideshow-slide" onclick="openProjectDetail(${p.id})">
+            <img src="${citizenUrl(escapeHtml(p.cover_photo))}" alt="${escapeHtml(p.cover_title || p.name)}" loading="lazy">
+            <div class="slideshow-caption">
+                <span class="project-badge badge-${escapeHtml(p.status)}">${projectStatusLabel(p.status)}</span>
+                <h3>${escapeHtml(p.name)}</h3>
+                <p>${escapeHtml(p.project_code || '')}${p.location ? ' · ' + escapeHtml(p.location) : ''}</p>
+                <div class="slideshow-progress">
+                    <div class="progress-bar"><div class="progress-fill" style="width:${Number(p.progress || 0)}%"></div></div>
+                    <span>${Number(p.progress || 0)}% complete</span>
+                </div>
+            </div>
+        </div>
+    `).join('');
+
+    dots.innerHTML = projects.map((_, i) => `<button type="button" class="slideshow-dot" onclick="goToSlide(${i})" aria-label="Go to slide ${i + 1}"></button>`).join('');
+
+    card.style.display = 'block';
+    goToSlide(0);
+    card.addEventListener('mouseenter', stopSlideshowAutoplay);
+    card.addEventListener('mouseleave', startSlideshowAutoplay);
+    startSlideshowAutoplay();
+}
+
+function goToSlide(index) {
+    const track = document.getElementById('projectSlideshowTrack');
+    const count = slideshowState.projects.length;
+    if (!track || !count) return;
+
+    slideshowState.index = ((index % count) + count) % count;
+    track.style.transform = `translateX(-${slideshowState.index * 100}%)`;
+    document.querySelectorAll('#projectSlideshowDots .slideshow-dot').forEach((dot, i) => {
+        dot.classList.toggle('active', i === slideshowState.index);
+    });
+}
+
+function nextSlide() {
+    goToSlide(slideshowState.index + 1);
+    startSlideshowAutoplay(); // manual click resets the idle timer instead of getting instantly overridden
+}
+
+function startSlideshowAutoplay() {
+    stopSlideshowAutoplay();
+    if (slideshowState.projects.length < 2) return;
+    slideshowState.timer = setInterval(() => goToSlide(slideshowState.index + 1), slideshowState.intervalMs);
+}
+
+function stopSlideshowAutoplay() {
+    if (slideshowState.timer) {
+        clearInterval(slideshowState.timer);
+        slideshowState.timer = null;
+    }
+}
+
 // ===== Project detail modal (read-only view of staff-side project data) =====
 function setupProjectDetailModal() {
     const modal = document.getElementById('projectDetailModal');
@@ -855,6 +933,10 @@ function renderProjectDetail(data) {
     const milestones = data.milestones || [];
     const updates = data.updates || [];
     const photos = data.photos || [];
+    const galleryPhotos = data.gallery_photos || [];
+    const ratingSummary = data.rating_summary || { count: 0, average: 0 };
+    const ratings = data.ratings || [];
+    const ownRating = data.own_rating || null;
     const doneMilestones = milestones.filter(m => Number(m.completed) === 1).length;
 
     return `
@@ -938,11 +1020,127 @@ function renderProjectDetail(data) {
             </div>
         </div>` : ''}
 
+        ${galleryPhotos.length ? `
+        <div class="detail-section">
+            <h5>Blueprints &amp; Gallery</h5>
+            <div class="detail-photos">
+                ${galleryPhotos.map(ph => `
+                    <a href="${citizenUrl(escapeHtml(ph.file_path))}" target="_blank" rel="noopener" title="${escapeHtml(ph.title || 'Project photo')}" style="position:relative;">
+                        <img src="${citizenUrl(escapeHtml(ph.file_path))}" alt="${escapeHtml(ph.title || 'Project photo')}" loading="lazy">
+                        ${Number(ph.is_cover) === 1 ? '<span class="gallery-cover-tag">Cover</span>' : ''}
+                    </a>
+                `).join('')}
+            </div>
+        </div>` : ''}
+
         <div class="detail-section">
             <h5>Activity Timeline</h5>
             <div id="projectTimelineSection"></div>
         </div>
+
+        <div class="detail-section">
+            <h5>Ratings &amp; Feedback</h5>
+            <div class="rating-summary">
+                <div class="rating-summary-score">${ratingSummary.average || 0}</div>
+                <div>
+                    <div class="star-display">${renderStarIcons(Math.round(ratingSummary.average || 0))}</div>
+                    <span class="profile-label">${ratingSummary.count} rating${ratingSummary.count === 1 ? '' : 's'}</span>
+                </div>
+            </div>
+
+            ${data.citizen_verified ? `
+            <form id="projectRatingForm" class="rating-form" onsubmit="submitProjectRating(event, ${p.id})">
+                <div class="star-input" id="ratingStarInput">
+                    ${[1, 2, 3, 4, 5].map(n => `
+                        <button type="button" class="star-input-btn${ownRating && Number(ownRating.rating) >= n ? ' active' : ''}" data-star="${n}" onclick="setRatingStars(${n})" aria-label="${n} star${n === 1 ? '' : 's'}">★</button>
+                    `).join('')}
+                </div>
+                <textarea class="form-input" name="comment" rows="3" maxlength="1000" placeholder="Share your experience with this project (optional)">${ownRating && ownRating.comment ? escapeHtml(ownRating.comment) : ''}</textarea>
+                <div class="rating-form-actions">
+                    <button class="btn-primary" type="submit">${ownRating ? 'Update Rating' : 'Submit Rating'}</button>
+                    ${ownRating ? `<button type="button" class="btn-secondary" onclick="deleteProjectRating(${p.id})">Delete</button>` : ''}
+                </div>
+                <p class="rating-form-status" id="ratingFormStatus"></p>
+            </form>
+            ` : '<p class="empty-state empty-state-compact">Verify your account in Profile to rate this project.</p>'}
+
+            <div class="rating-list">
+                ${ratings.length ? ratings.map(r => `
+                    <div class="rating-item">
+                        <div class="rating-item-head">
+                            <span class="star-display">${renderStarIcons(Number(r.rating))}</span>
+                            <strong>${escapeHtml(r.citizen_name)}</strong>
+                            <span class="update-date">${formatDate(r.created_at)}</span>
+                        </div>
+                        ${r.comment ? `<p class="rating-item-comment">${escapeHtml(r.comment)}</p>` : ''}
+                    </div>
+                `).join('') : '<p class="empty-state empty-state-compact">No ratings yet. Be the first to rate this project.</p>'}
+            </div>
+        </div>
     `;
+}
+
+function renderStarIcons(count) {
+    return [1, 2, 3, 4, 5].map(n => `<span class="star${n <= count ? ' filled' : ''}">★</span>`).join('');
+}
+
+function setRatingStars(n) {
+    document.querySelectorAll('#ratingStarInput .star-input-btn').forEach(btn => {
+        btn.classList.toggle('active', Number(btn.dataset.star) <= n);
+    });
+}
+
+function submitProjectRating(event, projectId) {
+    event.preventDefault();
+    const formEl = event.target;
+    const statusEl = document.getElementById('ratingFormStatus');
+    const stars = document.querySelectorAll('#ratingStarInput .star-input-btn.active').length;
+
+    if (!stars) {
+        statusEl.textContent = 'Please select a star rating.';
+        statusEl.className = 'rating-form-status error';
+        return;
+    }
+
+    const formData = new FormData(formEl);
+    formData.append('project_id', projectId);
+    formData.append('rating', stars);
+    formData.append('_csrf', window.CSRF_TOKEN || '');
+
+    fetch(citizenUrl('citizen/api/project-rating.php') + '?action=submit', {
+        method: 'POST',
+        body: formData,
+    })
+        .then(res => res.json())
+        .then(data => {
+            if (!data.success) throw new Error(data.message || 'Unable to save your rating.');
+            openProjectDetail(projectId);
+        })
+        .catch(error => {
+            statusEl.textContent = error.message;
+            statusEl.className = 'rating-form-status error';
+        });
+}
+
+function deleteProjectRating(projectId) {
+    if (!window.confirm('Delete your rating for this project?')) return;
+
+    const formData = new FormData();
+    formData.append('project_id', projectId);
+    formData.append('_csrf', window.CSRF_TOKEN || '');
+
+    fetch(citizenUrl('citizen/api/project-rating.php') + '?action=delete', {
+        method: 'POST',
+        body: formData,
+    })
+        .then(res => res.json())
+        .then(data => {
+            if (!data.success) throw new Error(data.message || 'Unable to delete your rating.');
+            openProjectDetail(projectId);
+        })
+        .catch(error => {
+            window.alert(error.message);
+        });
 }
 
 // ===== Feedback detail modal (full view of a citizen's own submitted report) =====

@@ -1415,6 +1415,229 @@ body {
 }
 
 /* ===== Dashboard hero ===== */
+/* ===== Dashboard: project highlights slideshow ===== */
+.project-slideshow-card {
+    position: relative;
+    height: clamp(220px, 32vw, 340px);
+    border-radius: var(--radius, 8px);
+    box-shadow: var(--card-shadow, 0 14px 34px rgba(15, 23, 42, .12));
+    overflow: hidden;
+    margin-bottom: 22px;
+    background: #0f172a;
+}
+
+.slideshow-track {
+    display: flex;
+    height: 100%;
+    transition: transform .5s ease;
+}
+
+.slideshow-slide {
+    flex: 0 0 100%;
+    position: relative;
+    cursor: pointer;
+}
+
+.slideshow-slide img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    display: block;
+}
+
+.slideshow-caption {
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    padding: 20px clamp(20px, 3vw, 32px);
+    background: linear-gradient(180deg, transparent 0%, rgba(9, 15, 28, .55) 45%, rgba(9, 15, 28, .88) 100%);
+    color: #fff;
+}
+
+.slideshow-caption h3 {
+    font-size: 1.15rem;
+    margin: 6px 0 2px;
+    text-shadow: 0 1px 3px rgba(0, 0, 0, .35);
+}
+
+.slideshow-caption p {
+    font-size: .82rem;
+    opacity: .88;
+    margin: 0 0 10px;
+}
+
+.slideshow-progress {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    max-width: 320px;
+}
+
+.slideshow-progress .progress-bar {
+    flex: 1;
+    height: 6px;
+    background: rgba(255, 255, 255, .25);
+}
+
+.slideshow-progress span {
+    font-size: .72rem;
+    font-weight: 600;
+    white-space: nowrap;
+}
+
+.slideshow-next {
+    position: absolute;
+    top: 50%;
+    right: 16px;
+    transform: translateY(-50%);
+    width: 38px;
+    height: 38px;
+    border-radius: 50%;
+    border: none;
+    background: rgba(15, 23, 42, .45);
+    color: #fff;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    transition: background .15s;
+}
+
+.slideshow-next:hover {
+    background: rgba(15, 23, 42, .7);
+}
+
+.slideshow-dots {
+    position: absolute;
+    left: clamp(20px, 3vw, 32px);
+    bottom: 14px;
+    display: flex;
+    gap: 6px;
+}
+
+.slideshow-dot {
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    border: none;
+    background: rgba(255, 255, 255, .4);
+    cursor: pointer;
+    padding: 0;
+}
+
+.slideshow-dot.active {
+    background: #fff;
+    width: 18px;
+    border-radius: 4px;
+}
+
+/* ===== Project detail modal: ratings & gallery ===== */
+.gallery-cover-tag {
+    position: absolute;
+    top: 4px;
+    left: 4px;
+    background: var(--primary, #2563eb);
+    color: #fff;
+    font-size: .62rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: .03em;
+    padding: 2px 6px;
+    border-radius: 4px;
+}
+
+.rating-summary {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    margin-bottom: 14px;
+}
+
+.rating-summary-score {
+    font-size: 1.9rem;
+    font-weight: 800;
+    color: var(--text-primary, #1e293b);
+}
+
+.star-display .star,
+.star-input .star-input-btn {
+    color: #d8dfe9;
+}
+
+.star-display .star.filled,
+.star-input .star-input-btn.active {
+    color: #f59e0b;
+}
+
+.star-input {
+    display: flex;
+    gap: 4px;
+    margin-bottom: 10px;
+}
+
+.star-input .star-input-btn {
+    background: none;
+    border: none;
+    font-size: 1.5rem;
+    line-height: 1;
+    cursor: pointer;
+    padding: 2px;
+    transition: transform .1s;
+}
+
+.star-input .star-input-btn:hover {
+    transform: scale(1.15);
+}
+
+.rating-form textarea {
+    resize: vertical;
+    margin-bottom: 10px;
+}
+
+.rating-form-actions {
+    display: flex;
+    gap: 10px;
+}
+
+.rating-form-status {
+    margin: 8px 0 0;
+    font-size: .82rem;
+}
+
+.rating-form-status.error {
+    color: var(--danger, #e74c3c);
+}
+
+.rating-list {
+    margin-top: 16px;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+.rating-item {
+    border-top: 1px solid var(--border, #dbe4ef);
+    padding-top: 10px;
+}
+
+.rating-item-head {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 4px;
+}
+
+.rating-item-head strong {
+    font-size: .85rem;
+}
+
+.rating-item-comment {
+    font-size: .85rem;
+    color: var(--text-light, #666);
+    margin: 0;
+}
+
 .dashboard-hero {
     display: flex;
     justify-content: space-between;

@@ -63,24 +63,6 @@ PROMPT;
      */
     public static function sendMessage(array $history, string $userMessage, ?string $systemPrompt = null): array
     {
-        if (!self::isEnabled()) {
-            return [
-                'success' => false,
-                'reply' => null,
-                'message' => 'The chatbot is not configured yet. Set GEMINI_API_KEY in .env to enable it (free key: aistudio.google.com/apikey).',
-                'http_status' => 0,
-            ];
-        }
-
-        if (!function_exists('curl_init')) {
-            return [
-                'success' => false,
-                'reply' => null,
-                'message' => 'PHP cURL extension is required for the chatbot.',
-                'http_status' => 0,
-            ];
-        }
-
         // Gemini's "contents" shape differs from a generic {role, content}
         // history: role is 'user'|'model' (not 'assistant'), and each turn's
         // text sits under parts[].text rather than a plain string.
@@ -91,14 +73,75 @@ PROMPT;
         }
         $contents[] = ['role' => 'user', 'parts' => [['text' => $userMessage]]];
 
-        $model = defined('GEMINI_MODEL') && GEMINI_MODEL !== '' ? GEMINI_MODEL : 'gemini-flash-lite-latest';
-        $url = self::API_BASE . rawurlencode($model) . ':generateContent?key=' . rawurlencode(GEMINI_API_KEY);
-
         $body = [
             'system_instruction' => ['parts' => ['text' => $systemPrompt ?? self::SYSTEM_PROMPT]],
             'contents' => $contents,
             'generationConfig' => ['maxOutputTokens' => self::MAX_OUTPUT_TOKENS],
         ];
+
+        return self::callGemini($body);
+    }
+
+    /**
+     * Multimodal call: one image + one text prompt, no conversation history.
+     * Used by includes/IdVerification.php to read a citizen's uploaded ID
+     * photo during registration (name/address/document-type extraction).
+     * Requests JSON-only output so the caller can json_decode() the reply
+     * directly — the prompt itself must still ask for a specific shape,
+     * responseMimeType only forces syntactically-valid JSON, not the schema.
+     *
+     * @param string $base64Image Raw image bytes, base64-encoded (no data: URI prefix).
+     * @param string $mimeType e.g. 'image/jpeg', 'image/png'.
+     * @return array{success:bool,reply:?string,message:string,http_status:int}
+     */
+    public static function analyzeImage(string $base64Image, string $mimeType, string $prompt): array
+    {
+        $body = [
+            'contents' => [[
+                'role' => 'user',
+                'parts' => [
+                    ['text' => $prompt],
+                    ['inline_data' => ['mime_type' => $mimeType, 'data' => $base64Image]],
+                ],
+            ]],
+            'generationConfig' => [
+                'maxOutputTokens' => self::MAX_OUTPUT_TOKENS,
+                'responseMimeType' => 'application/json',
+            ],
+        ];
+
+        return self::callGemini($body, 'ID verification');
+    }
+
+    /**
+     * Shared HTTP call + response parsing for both sendMessage() and
+     * analyzeImage() — the only thing that differs between them is the
+     * request body (text-only conversation vs. one image+prompt turn).
+     *
+     * @return array{success:bool,reply:?string,message:string,http_status:int}
+     */
+    private static function callGemini(array $body, string $errorContext = 'Chatbot'): array
+    {
+        if (!self::isEnabled()) {
+            return [
+                'success' => false,
+                'reply' => null,
+                'message' => "$errorContext is not configured yet. Set GEMINI_API_KEY in .env to enable it (free key: aistudio.google.com/apikey).",
+                'http_status' => 0,
+            ];
+        }
+
+        if (!function_exists('curl_init')) {
+            return [
+                'success' => false,
+                'reply' => null,
+                'message' => 'PHP cURL extension is required for ' . lcfirst($errorContext) . '.',
+                'http_status' => 0,
+            ];
+        }
+
+        $model = defined('GEMINI_MODEL') && GEMINI_MODEL !== '' ? GEMINI_MODEL : 'gemini-flash-lite-latest';
+        $url = self::API_BASE . rawurlencode($model) . ':generateContent?key=' . rawurlencode(GEMINI_API_KEY);
 
         $ch = curl_init($url);
         curl_setopt_array($ch, [
@@ -119,7 +162,7 @@ PROMPT;
             return [
                 'success' => false,
                 'reply' => null,
-                'message' => 'Chatbot connection failed: ' . $error,
+                'message' => "$errorContext connection failed: " . $error,
                 'http_status' => $status,
             ];
         }
@@ -129,7 +172,7 @@ PROMPT;
             return [
                 'success' => false,
                 'reply' => null,
-                'message' => 'Chatbot returned an unexpected response (HTTP ' . $status . ').',
+                'message' => "$errorContext returned an unexpected response (HTTP $status).",
                 'http_status' => $status,
             ];
         }
@@ -138,7 +181,7 @@ PROMPT;
             return [
                 'success' => false,
                 'reply' => null,
-                'message' => 'The assistant is getting a lot of requests right now (free-tier limit). Please try again in a minute.',
+                'message' => 'Getting a lot of requests right now (free-tier limit). Please try again in a minute.',
                 'http_status' => $status,
             ];
         }
@@ -147,7 +190,7 @@ PROMPT;
             return [
                 'success' => false,
                 'reply' => null,
-                'message' => (string) ($decoded['error']['message'] ?? 'Chatbot request failed (HTTP ' . $status . ').'),
+                'message' => (string) ($decoded['error']['message'] ?? "$errorContext request failed (HTTP $status)."),
                 'http_status' => $status,
             ];
         }
@@ -158,8 +201,8 @@ PROMPT;
                 'success' => false,
                 'reply' => null,
                 'message' => $blockReason
-                    ? 'That message could not be answered (' . $blockReason . '). Please rephrase it.'
-                    : 'Chatbot did not return a response.',
+                    ? "That could not be processed ($blockReason). Please try a different one."
+                    : "$errorContext did not return a response.",
                 'http_status' => $status,
             ];
         }
@@ -175,7 +218,7 @@ PROMPT;
             return [
                 'success' => false,
                 'reply' => null,
-                'message' => 'Chatbot did not return a text response.',
+                'message' => "$errorContext did not return a text response.",
                 'http_status' => $status,
             ];
         }

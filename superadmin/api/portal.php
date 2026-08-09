@@ -13,11 +13,13 @@ require_once __DIR__ . '/../../includes/auth.php';
 require_once __DIR__ . '/../../includes/Validator.php';
 require_once __DIR__ . '/../../includes/Pagination.php';
 require_once __DIR__ . '/../../includes/Settings.php';
+require_once __DIR__ . '/../../includes/workflow.php';
 apiHeaders();
 requireAnyRole(['super_admin']);
 requireCsrfProtection();
 
 $db = getDB();
+citizenAiVerificationEnsureSchema($db);
 $method = $_SERVER['REQUEST_METHOD'] ?? 'GET';
 $action = $_GET['action'] ?? 'summary';
 $user = currentUser();
@@ -152,7 +154,15 @@ function superadminListUsers(PDO $db, int $page, int $perPage, string $search, s
 
 function superadminListPendingCitizens(PDO $db, int $page, int $perPage): array
 {
-    $select = "SELECT id, user_id, first_name, last_name, email, phone, barangay, id_type, id_number, verification_status, created_at
+    // id_photo_path + ai_* included so the review modal can finally show the
+    // reviewer the actual ID (previously this list — and the decision modal
+    // built from it — never carried the photo at all, so a super admin could
+    // click Verify/Reject without ever seeing the document) plus what the
+    // registration-time AI check already found, as a starting point for the
+    // human's own judgment call, not a replacement for it.
+    $select = "SELECT id, user_id, first_name, last_name, email, phone, address, barangay, city, province,
+                      id_type, id_number, id_photo_path, verification_status, created_at,
+                      ai_verification_passed, ai_extracted_name, ai_extracted_address, ai_id_type_guess, ai_verification_notes
                FROM citizens WHERE verification_status = 'unverified' ORDER BY created_at ASC";
     $count = "SELECT COUNT(*) FROM citizens WHERE verification_status = 'unverified'";
     return paginate($db, $select, $count, [], $page, $perPage);

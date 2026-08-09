@@ -52,6 +52,15 @@ $statusChip = [
 
   <main class="content citizen-content">
     <section id="page-dashboard" class="page-section">
+      <!-- Project Highlights Slideshow -->
+      <div class="project-slideshow-card" id="projectSlideshowCard" style="display:none;">
+        <div class="slideshow-track" id="projectSlideshowTrack"></div>
+        <button type="button" class="slideshow-next" onclick="nextSlide()" aria-label="Next project">
+          <svg width="18" height="18" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M7.293 14.707a1 1 0 010-1.414L10.586 10 7.293 6.707a1 1 0 011.414-1.414l4 4a1 1 0 010 1.414l-4 4a1 1 0 01-1.414 0z" clip-rule="evenodd"/></svg>
+        </button>
+        <div class="slideshow-dots" id="projectSlideshowDots"></div>
+      </div>
+
       <!-- Hero banner -->
       <div class="dashboard-hero">
         <div class="hero-content">
@@ -1042,13 +1051,13 @@ $statusChip = [
                 <div class="current-id-preview">
                   <div class="current-id-head">
                     <span class="profile-label">Submitted ID</span>
-                    <a class="id-fullsize-link" href="<?= htmlspecialchars(appUrl($citizen['id_photo_path'])) ?>" target="_blank" rel="noopener">
+                    <a class="id-fullsize-link" href="<?= htmlspecialchars(appUrl('/citizen/api/id-photo.php?citizen_id=' . (int) $citizen['id'])) ?>" target="_blank" rel="noopener">
                       <svg width="13" height="13" viewBox="0 0 20 20" fill="currentColor"><path d="M11 3a1 1 0 100 2h2.586l-6.293 6.293a1 1 0 101.414 1.414L15 6.414V9a1 1 0 102 0V4a1 1 0 00-1-1h-5z"/><path d="M5 5a2 2 0 00-2 2v8a2 2 0 002 2h8a2 2 0 002-2v-3a1 1 0 10-2 0v3H5V7h3a1 1 0 000-2H5z"/></svg>
                       View full size
                     </a>
                   </div>
-                  <a href="<?= htmlspecialchars(appUrl($citizen['id_photo_path'])) ?>" target="_blank" rel="noopener" title="Open your submitted ID in a new tab">
-                    <img src="<?= htmlspecialchars(appUrl($citizen['id_photo_path'])) ?>" alt="Submitted ID photo" id="currentIdImage">
+                  <a href="<?= htmlspecialchars(appUrl('/citizen/api/id-photo.php?citizen_id=' . (int) $citizen['id'])) ?>" target="_blank" rel="noopener" title="Open your submitted ID in a new tab">
+                    <img src="<?= htmlspecialchars(appUrl('/citizen/api/id-photo.php?citizen_id=' . (int) $citizen['id'])) ?>" alt="Submitted ID photo" id="currentIdImage">
                   </a>
                 </div>
               <?php else: ?>

@@ -434,6 +434,34 @@ if ($method === 'POST') {
         respond(['success' => true], 201);
     }
 
+    // Milestone *tracking* (list + mark complete, above) was already fully
+    // engineer-owned; this is the missing piece — engineers define what the
+    // milestones for their own assigned project actually are. Admin/HOPE
+    // never touch this table directly.
+    if ($action === 'add_milestone') {
+        $validated = Validator::make(requestBody(), [
+            'project_id' => 'required|integer',
+            'title' => 'required|string|max:200',
+            'due_date' => 'nullable|date',
+        ])->stopOnFailure();
+
+        $projectId = (int) $validated['project_id'];
+        $title = trim((string) $validated['title']);
+        $dueDate = !empty($validated['due_date']) ? $validated['due_date'] : null;
+
+        if (!engineerScopeHasAssignedProject($db, $engineerId, $projectId)) {
+            respond(['error' => 'Project not found.'], 404);
+        }
+
+        $stmt = $db->prepare("INSERT INTO milestones (project_id, title, due_date, completed) VALUES (?, ?, ?, 0)");
+        $stmt->execute([$projectId, $title, $dueDate]);
+        $newId = (int) $db->lastInsertId();
+
+        logActivity($engineerId, 'milestone_added', $title . ' was added as a new milestone.', 'Milestones', $newId);
+
+        respond(['success' => true, 'id' => $newId], 201);
+    }
+
     if ($action === 'photo') {
         $projectId = (int) ($_POST['project_id'] ?? 0);
 

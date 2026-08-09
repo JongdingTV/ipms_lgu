@@ -3,18 +3,16 @@ require_once __DIR__ . '/../includes/config.php';
 require_once __DIR__ . '/../includes/db.php';
 require_once __DIR__ . '/../auth/session.php';
 require_once __DIR__ . '/../includes/OTPManager.php';
+require_once __DIR__ . '/../includes/IdVerification.php';
+require_once __DIR__ . '/../includes/workflow.php';
 
 if (isLoggedIn()) {
     redirectToRoleDashboard();
 }
 
-const MAX_ID_PHOTO_BYTES = 3 * 1024 * 1024; // 3MB
-const ALLOWED_ID_PHOTO_MIME = [
-    'image/jpeg' => 'jpg',
-    'image/png' => 'png',
-    'image/gif' => 'gif',
-    'image/webp' => 'webp',
-];
+// ID photo size/type limits now live on IdVerification::MAX_PHOTO_BYTES /
+// ::ALLOWED_PHOTO_MIME, shared with citizen/api/verify-id.php's inline
+// pre-check so both validate identically.
 const MAX_REGISTRATIONS_PER_WINDOW = 8;
 const REGISTRATION_WINDOW_MINUTES = 30;
 
@@ -176,37 +174,22 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $errors[] = 'Passwords do not match';
     }
 
-    // ID photo is optional: an account can be created without one, but stays
-    // 'unverified' (see verification_status below) until the citizen submits it.
-    $idPhotoExt = null;
-    $idPhotoProvided = !empty($_FILES['id_photo']['name'] ?? '');
-    if ($idPhotoProvided) {
-        $file = $_FILES['id_photo'];
-
-        if ($file['error'] !== UPLOAD_ERR_OK) {
-            $errors[] = match ($file['error']) {
-                UPLOAD_ERR_INI_SIZE, UPLOAD_ERR_FORM_SIZE => 'ID photo is too large. Please upload a file 3MB or smaller.',
-                UPLOAD_ERR_PARTIAL => 'ID photo upload was interrupted. Please try again.',
-                UPLOAD_ERR_NO_TMP_DIR, UPLOAD_ERR_CANT_WRITE, UPLOAD_ERR_EXTENSION => 'Could not save the uploaded file. Please try again.',
-                default => 'Failed to upload ID photo. Please try again.',
-            };
-        } elseif ($file['size'] > MAX_ID_PHOTO_BYTES) {
-            $errors[] = 'ID photo must be 3MB or smaller. Please compress the image or retake a smaller photo.';
-        } else {
-            // Verify actual file content, not just the client-supplied name/type (which can be spoofed).
-            $imageInfo = is_uploaded_file($file['tmp_name'] ?? '') ? @getimagesize($file['tmp_name']) : false;
-            if ($imageInfo === false || !isset(ALLOWED_ID_PHOTO_MIME[$imageInfo['mime']])) {
-                $errors[] = 'ID photo must be a valid JPG, PNG, GIF, or WEBP image.';
-            } else {
-                $idPhotoExt = ALLOWED_ID_PHOTO_MIME[$imageInfo['mime']];
-            }
-        }
+    // ID photo is now REQUIRED — registration gates on AI-verified Quezon
+    // City residency (IdVerification::verify(), called further below), which
+    // needs a photo to check against. Content-sniffed validation is shared
+    // with citizen/api/verify-id.php's inline pre-check via
+    // IdVerification::validateUploadedPhoto(), so the two can never validate
+    // differently.
+    $idPhotoCheck = IdVerification::validateUploadedPhoto($_FILES['id_photo'] ?? null);
+    if (!$idPhotoCheck['ok']) {
+        $errors[] = $idPhotoCheck['error'];
     }
 
     // If no errors, proceed with registration
     if (empty($errors)) {
         try {
             $pdo = getDB();
+            citizenAiVerificationEnsureSchema($pdo);
 
             // Check if the email already exists (username is derived below, so it
             // can never collide on its own — only the email identifies the citizen).
@@ -215,86 +198,105 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             if ($stmt->fetch()) {
                 $errors[] = 'That email is already registered. Please log in instead.';
             } else {
-                $username = generateUsernameFromEmail($pdo, $email);
-                $idPhotoPath = null;
-                $filePath = null;
+                // AI ID verification — the Quezon City residency gate. Runs against
+                // the uploaded photo's tmp file, before anything is moved to
+                // permanent storage or any row written, so a rejected/failed check
+                // never leaves an orphaned upload or a half-created account behind.
+                $fullNameForAi = trim((string) preg_replace('/\s+/', ' ', "$firstName $middleName $lastName"));
+                $aiResult = IdVerification::verify($_FILES['id_photo']['tmp_name'], $idPhotoCheck['mime_type'], $fullNameForAi);
 
-                if ($idPhotoProvided) {
+                if (!$aiResult['success']) {
+                    // The AI check itself couldn't run (network/quota/parse failure) —
+                    // fail closed. Registration is a residency compliance gate, so a
+                    // transient service outage must block account creation, not
+                    // silently let it through unverified.
+                    $errors[] = $aiResult['message'];
+                } elseif (!$aiResult['passed']) {
+                    array_push($errors, ...$aiResult['reasons']);
+                } else {
+                    $username = generateUsernameFromEmail($pdo, $email);
+
                     $uploadDir = __DIR__ . '/../assets/img/citizen-ids/';
                     if (!is_dir($uploadDir)) {
                         mkdir($uploadDir, 0755, true);
                     }
-
-                    $fileName = 'citizen_id_' . time() . '_' . bin2hex(random_bytes(8)) . '.' . $idPhotoExt;
+                    $fileName = 'citizen_id_' . time() . '_' . bin2hex(random_bytes(8)) . '.' . $idPhotoCheck['extension'];
                     $filePath = $uploadDir . $fileName;
-                }
 
-                $pdo->beginTransaction();
-                try {
-                    if ($idPhotoProvided) {
+                    $pdo->beginTransaction();
+                    try {
                         if (!move_uploaded_file($_FILES['id_photo']['tmp_name'], $filePath)) {
                             throw new RuntimeException('Failed to upload ID photo');
                         }
                         $idPhotoPath = '/assets/img/citizen-ids/' . $fileName;
-                    }
 
-                    // Create user account. Status starts 'inactive' — the account
-                    // is only activated once the citizen verifies the OTP sent to
-                    // their email (see citizen/verify-otp.php).
-                    $passwordHash = password_hash($password, PASSWORD_BCRYPT);
-                    $stmt = $pdo->prepare("
-                        INSERT INTO users (username, email, password_hash, full_name, role, status)
-                        VALUES (?, ?, ?, ?, 'citizen', 'inactive')
-                    ");
-                    $stmt->execute([$username, $email, $passwordHash, "$firstName $lastName"]);
-                    $userId = $pdo->lastInsertId();
+                        // Create user account. Status starts 'inactive' — the account
+                        // is only activated once the citizen verifies the OTP sent to
+                        // their email (see citizen/verify-otp.php).
+                        $passwordHash = password_hash($password, PASSWORD_BCRYPT);
+                        $stmt = $pdo->prepare("
+                            INSERT INTO users (username, email, password_hash, full_name, role, status)
+                            VALUES (?, ?, ?, ?, 'citizen', 'inactive')
+                        ");
+                        $stmt->execute([$username, $email, $passwordHash, "$firstName $lastName"]);
+                        $userId = $pdo->lastInsertId();
 
-                    // Create citizen profile. verification_status stays 'unverified' either way —
-                    // without a photo there's simply nothing yet for staff to cross-check.
-                    $stmt = $pdo->prepare("
-                        INSERT INTO citizens (
-                            user_id, first_name, last_name, middle_name, email, phone,
-                            date_of_birth, gender, civil_status, address, barangay, city, province, postal_code,
-                            id_type, id_number, id_photo_path, verification_status
-                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'unverified')
-                    ");
-                    $stmt->execute([
-                        $userId, $firstName, $lastName, $middleName, $email, $phone,
-                        $dateOfBirth, $gender, $civilStatus, $address, $barangay, $city, $province, $postalCode,
-                        $idType, $idNumber, $idPhotoPath
-                    ]);
+                        // Create citizen profile. verification_status still starts
+                        // 'unverified' — passing the AI gate proves the ID is a
+                        // legible QC-resident document matching this applicant's
+                        // name, but final sign-off stays a human staff decision
+                        // (superadmin's citizen-verification review), same as before.
+                        // The ai_* columns give that reviewer the AI's own findings
+                        // instead of a blind photo.
+                        $stmt = $pdo->prepare("
+                            INSERT INTO citizens (
+                                user_id, first_name, last_name, middle_name, email, phone,
+                                date_of_birth, gender, civil_status, address, barangay, city, province, postal_code,
+                                id_type, id_number, id_photo_path,
+                                ai_verification_passed, ai_extracted_name, ai_extracted_address, ai_id_type_guess, ai_verification_notes, ai_verified_at,
+                                verification_status
+                            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), 'unverified')
+                        ");
+                        $stmt->execute([
+                            $userId, $firstName, $lastName, $middleName, $email, $phone,
+                            $dateOfBirth, $gender, $civilStatus, $address, $barangay, $city, $province, $postalCode,
+                            $idType, $idNumber, $idPhotoPath,
+                            1, $aiResult['extracted_name'], $aiResult['extracted_address'], $aiResult['id_type_guess'], $aiResult['notes'],
+                        ]);
 
-                    $pdo->commit();
+                        $pdo->commit();
 
-                    // Send an OTP to verify the citizen's email before their
-                    // account can log in.
-                    $otp = new OTPManager();
-                    $otpResult = $otp->createOTP($userId, 'citizen_verification');
+                        // Send an OTP to verify the citizen's email before their
+                        // account can log in.
+                        $otp = new OTPManager();
+                        $otpResult = $otp->createOTP($userId, 'citizen_verification');
 
-                    $_SESSION['pending_otp_user_id'] = $userId;
-                    $_SESSION['pending_otp_email'] = $email;
-                    // Carried through the OTP step so the post-verification login
-                    // page can still remind them to submit an ID photo.
-                    $_SESSION['pending_needs_id'] = !$idPhotoProvided;
+                        $_SESSION['pending_otp_user_id'] = $userId;
+                        $_SESSION['pending_otp_email'] = $email;
+                        // ID photo is required now, so this is always false — kept
+                        // (rather than removed) since the post-OTP login page still
+                        // reads it.
+                        $_SESSION['pending_needs_id'] = false;
 
-                    if ($otpResult['success']) {
-                        $sendResult = $otp->sendOTPEmail($email, "$firstName $lastName", $otpResult['otp_code']);
-                        if (!$sendResult['success'] && !empty($sendResult['dev_fallback'])) {
-                            // Mail isn't configured on this environment (e.g. local
-                            // dev without SMTP credentials) — surface the code
-                            // directly so the flow stays testable end-to-end.
-                            $_SESSION['dev_otp_preview'] = $otpResult['otp_code'];
+                        if ($otpResult['success']) {
+                            $sendResult = $otp->sendOTPEmail($email, "$firstName $lastName", $otpResult['otp_code']);
+                            if (!$sendResult['success'] && !empty($sendResult['dev_fallback'])) {
+                                // Mail isn't configured on this environment (e.g. local
+                                // dev without SMTP credentials) — surface the code
+                                // directly so the flow stays testable end-to-end.
+                                $_SESSION['dev_otp_preview'] = $otpResult['otp_code'];
+                            }
                         }
-                    }
 
-                    header('Location: ' . appUrl('/citizen/verify-otp.php'));
-                    exit;
-                } catch (Throwable $inner) {
-                    $pdo->rollBack();
-                    if ($filePath !== null && is_file($filePath)) {
-                        unlink($filePath);
+                        header('Location: ' . appUrl('/citizen/verify-otp.php'));
+                        exit;
+                    } catch (Throwable $inner) {
+                        $pdo->rollBack();
+                        if (isset($filePath) && is_file($filePath)) {
+                            unlink($filePath);
+                        }
+                        throw $inner;
                     }
-                    throw $inner;
                 }
             }
         } catch (PDOException $e) {
@@ -887,6 +889,14 @@ $civilStatuses = ['Single', 'Married', 'Divorced', 'Widowed', 'Separated'];
             display: block;
         }
 
+        .verify-summary {
+            margin-bottom: 0.75rem;
+        }
+        .verify-summary .confidence-badge {
+            font-size: 0.9rem;
+            padding: 0.5rem 0.9rem;
+        }
+
         .result-item {
             display: flex;
             justify-content: space-between;
@@ -1141,7 +1151,7 @@ $civilStatuses = ['Single', 'Married', 'Divorced', 'Widowed', 'Separated'];
                     <h3 class="section-title">Identification</h3>
 
                     <div class="verification-notice">
-                        <strong>📷 Optional AI-assisted autofill:</strong> After you upload your ID, we'll try to read the face and text on it to pre-fill some fields below. This is only a convenience — it does not verify your identity. Please double-check every field before submitting.
+                        <strong>🛡️ Required ID verification:</strong> After you upload your ID, we automatically check that it shows a Quezon City address and that the name on it matches what you entered above. This portal is for verified Quezon City residents only — registration cannot continue until your ID passes this check.
                     </div>
 
                     <div class="form-row">
@@ -1163,14 +1173,14 @@ $civilStatuses = ['Single', 'Married', 'Divorced', 'Widowed', 'Separated'];
                     </div>
 
                     <div class="form-group">
-                        <label for="id_photo">ID Photo/Document <span style="color: var(--muted); font-weight: 500;">(optional — you can add this later, but your account stays unverified until you do)</span></label>
+                        <label for="id_photo">ID Photo/Document <span class="required">*</span></label>
                         <label for="id_photo" class="file-upload" id="uploadLabel">
-                            <input type="file" id="id_photo" name="id_photo" accept="image/jpeg,image/png,image/gif,image/webp">
+                            <input type="file" id="id_photo" name="id_photo" accept="image/jpeg,image/png,image/gif,image/webp" required>
                             <p>📷 Click to upload your ID photo</p>
                             <p style="font-size: 0.8rem; color: #4d6b60; margin-top: 0.5rem;">JPG, PNG, GIF, or WEBP — max 3MB. Large photos are automatically resized to fit.</p>
                         </label>
 
-                        <!-- Upload / AI assist status -->
+                        <!-- Real-time AI verification status (citizen/api/verify-id.php) -->
                         <div class="ai-detection-container">
                             <div class="preview-section" id="previewSection">
                                 <img id="id_preview" alt="ID Preview">
@@ -1178,37 +1188,32 @@ $civilStatuses = ['Single', 'Married', 'Divorced', 'Widowed', 'Separated'];
 
                             <div class="detection-status" id="detectionStatus">
                                 <span class="detection-spinner"></span>
-                                <span id="statusText">Processing ID image...</span>
+                                <span id="statusText">Verifying your ID...</span>
                             </div>
 
                             <div class="detection-results" id="detectionResults">
-                                <div class="result-item">
-                                    <div class="result-label">Face Detected</div>
-                                    <div class="result-value" id="resultFace">-</div>
-                                    <div class="result-confidence"><span class="confidence-badge confidence-high" id="faceBadge">-</span></div>
-                                </div>
+                                <div class="verify-summary" id="verifySummary"></div>
 
                                 <div class="result-item">
-                                    <div class="result-label">Name</div>
+                                    <div class="result-label">Name on ID</div>
                                     <div class="result-value" id="resultName">-</div>
-                                    <div class="result-confidence"><span class="confidence-badge confidence-medium" id="nameBadge">-</span></div>
+                                    <div class="result-confidence"><span class="confidence-badge" id="nameBadge">-</span></div>
                                 </div>
 
                                 <div class="result-item">
-                                    <div class="result-label">ID Number</div>
-                                    <div class="result-value" id="resultIDNumber">-</div>
-                                    <div class="result-confidence"><span class="confidence-badge confidence-medium" id="idnumBadge">-</span></div>
-                                </div>
-
-                                <div class="result-item">
-                                    <div class="result-label">Address</div>
+                                    <div class="result-label">Address on ID</div>
                                     <div class="result-value" id="resultAddress">-</div>
-                                    <div class="result-confidence"><span class="confidence-badge confidence-medium" id="addressBadge">-</span></div>
+                                    <div class="result-confidence"><span class="confidence-badge" id="addressBadge">-</span></div>
+                                </div>
+
+                                <div class="result-item">
+                                    <div class="result-label">ID Type</div>
+                                    <div class="result-value" id="resultIdType">-</div>
+                                    <div class="result-confidence"></div>
                                 </div>
 
                                 <div class="ai-actions">
-                                    <button type="button" class="btn-small btn-accept" onclick="acceptDetectedData()">✓ Accept & Fill</button>
-                                    <button type="button" class="btn-small btn-retry" onclick="retryDetection()">↻ Try Again</button>
+                                    <button type="button" class="btn-small btn-retry" onclick="document.getElementById('id_photo').click()">↻ Upload a Different Photo</button>
                                 </div>
                             </div>
                         </div>
@@ -1310,6 +1315,16 @@ $civilStatuses = ['Single', 'Married', 'Divorced', 'Widowed', 'Separated'];
 
         wizardNextBtn.addEventListener('click', () => {
             if (!validateWizardStep(wizardStep)) return;
+            // Identification step cannot be left until the uploaded ID has
+            // actually passed AI verification — the real, unbypassable gate
+            // is still register.php's own server-side re-check on submit,
+            // but there's no reason to let someone fill in a password first
+            // only to be rejected at the very end.
+            if (wizardStep === 3 && !idVerificationPassed) {
+                setStatus('Please upload your ID and wait for it to be verified before continuing.', 'error');
+                detectionStatus.classList.add('active');
+                return;
+            }
             if (wizardStep < WIZARD_TOTAL_STEPS) showWizardStep(wizardStep + 1);
         });
 
@@ -1368,11 +1383,11 @@ $civilStatuses = ['Single', 'Married', 'Divorced', 'Widowed', 'Separated'];
         passwordInput.addEventListener('input', validatePassword);
         validatePassword(); // Initial check
 
-        // ========== UPLOAD + COMPRESSION + AI ASSIST =========
+        // ========== UPLOAD + COMPRESSION + AI ID VERIFICATION =========
         const MAX_UPLOAD_BYTES = 3 * 1024 * 1024; // 3MB, must match server-side limit
         const MAX_DIMENSION = 1920;
 
-        let detectedData = null;
+        let idVerificationPassed = false;
         const idPhotoInput = document.getElementById('id_photo');
         const previewSection = document.getElementById('previewSection');
         const preview = document.getElementById('id_preview');
@@ -1475,198 +1490,96 @@ $civilStatuses = ['Single', 'Married', 'Divorced', 'Widowed', 'Separated'];
             }
 
             clearStatus();
+            idVerificationPassed = false;
 
             // Show preview
             const dataUrl = await readAsDataURL(file);
             preview.src = dataUrl;
             previewSection.classList.add('active');
 
-            // Start optional AI assist
-            await detectID(dataUrl);
+            // Run the real, server-side AI verification (citizen/api/verify-id.php).
+            // This is a UX pre-check only — register.php re-runs the identical
+            // check on final submit regardless, so it can never be bypassed by
+            // skipping this step.
+            await verifyIdWithServer(file);
         });
 
-        // Load AI libraries
-        const loadAILibraries = async () => {
-            if (!window.faceapi) {
-                const script1 = document.createElement('script');
-                script1.src = 'https://cdn.jsdelivr.net/npm/face-api.js@0.22.2/dist/face-api.min.js';
-                document.head.appendChild(script1);
-                await new Promise((resolve, reject) => {
-                    script1.onload = resolve;
-                    script1.onerror = reject;
-                });
+        async function verifyIdWithServer(file) {
+            const firstName = document.getElementById('first_name').value.trim();
+            const middleName = document.getElementById('middle_name').value.trim();
+            const lastName = document.getElementById('last_name').value.trim();
+
+            if (!firstName || !lastName) {
+                idVerificationPassed = false;
+                setStatus('Please fill in your first and last name on Step 1 before uploading your ID.', 'error');
+                return;
             }
 
-            if (!window.Tesseract) {
-                const script2 = document.createElement('script');
-                script2.src = 'https://cdn.jsdelivr.net/npm/tesseract.js@4.1.1/dist/tesseract.min.js';
-                document.head.appendChild(script2);
-                await new Promise((resolve, reject) => {
-                    script2.onload = resolve;
-                    script2.onerror = reject;
-                });
-            }
-        };
+            setStatus('🔍 Verifying your ID — checking name and Quezon City address...', 'processing');
+            detectionResults.classList.remove('active');
 
-        // Main detection function
-        async function detectID(imageSrc) {
+            const formData = new FormData();
+            formData.append('id_photo', file);
+            formData.append('first_name', firstName);
+            formData.append('middle_name', middleName);
+            formData.append('last_name', lastName);
+            formData.append('_csrf', document.querySelector('input[name="_csrf"]').value);
+
             try {
-                await loadAILibraries();
-
-                setStatus('🔍 Analyzing ID document...', 'processing');
-                detectionResults.classList.remove('active');
-                detectedData = {
-                    faceDetected: false,
-                    faceConfidence: 0,
-                    name: '',
-                    nameConfidence: 0,
-                    idNumber: '',
-                    idNumberConfidence: 0,
-                    address: '',
-                    addressConfidence: 0
-                };
-
-                await detectFace(imageSrc);
-                await extractText(imageSrc);
-                displayResults();
-            } catch (error) {
-                console.error('Detection error:', error);
-                setStatus('The optional AI-assist could not run, but you can still fill in the form and submit normally.', 'warning');
-            }
-        }
-
-        async function detectFace(imageSrc) {
-            try {
-                const img = await loadImage(imageSrc);
-
-                const modelsUrl = 'https://cdn.jsdelivr.net/npm/face-api.js@0.22.2/weights/';
-                await faceapi.nets.tinyFaceDetector.load(modelsUrl);
-                await faceapi.nets.faceLandmark68Net.load(modelsUrl);
-
-                const detections = await faceapi.detectAllFaces(img, new faceapi.TinyFaceDetectorOptions());
-
-                if (detections.length > 0) {
-                    detectedData.faceDetected = true;
-                    detectedData.faceConfidence = Math.round(detections[0].score * 100);
-                } else {
-                    detectedData.faceDetected = false;
-                    detectedData.faceConfidence = 0;
-                }
-            } catch (error) {
-                console.warn('Face detection not available:', error.message);
-            }
-        }
-
-        async function extractText(imageSrc) {
-            try {
-                statusText.textContent = '📝 Extracting text from ID...';
-
-                const result = await Tesseract.recognize(imageSrc, 'eng', {
-                    logger: m => console.log('OCR progress:', m.progress)
+                const res = await fetch('<?= htmlspecialchars(appUrl('/citizen/api/verify-id.php')) ?>', {
+                    method: 'POST',
+                    body: formData,
                 });
+                const result = await res.json();
 
-                extractIDInfo(result.data.text);
-            } catch (error) {
-                console.error('OCR error:', error);
-                detectedData.name = 'N/A';
-                detectedData.idNumber = 'N/A';
-                detectedData.address = 'N/A';
+                if (!result.success) {
+                    idVerificationPassed = false;
+                    setStatus(result.message || 'We could not verify your ID right now. Please try again.', 'error');
+                    return;
+                }
+
+                displayVerificationResult(result);
+            } catch (err) {
+                console.error('ID verification error:', err);
+                idVerificationPassed = false;
+                setStatus('Could not reach the verification service. Please check your connection and try again.', 'error');
             }
         }
 
-        function extractIDInfo(text) {
-            const nameMatch = text.match(/^([A-Z\s]+?)(?:\n|$)/m);
-            if (nameMatch) {
-                detectedData.name = nameMatch[1].trim();
-                detectedData.nameConfidence = 75;
-            }
+        function displayVerificationResult(result) {
+            idVerificationPassed = !!result.passed;
 
-            const idPatterns = [
-                /ID\s*[:=]?\s*(\d{2,}[-\s]?\d{2,}[-\s]?\d{2,})/i,
-                /(\d{4}[-\s]?\d{4}[-\s]?\d{4}[-\s]?\d{4})/,
-                /(\d{12,})/
-            ];
-
-            for (let pattern of idPatterns) {
-                const match = text.match(pattern);
-                if (match) {
-                    detectedData.idNumber = match[1].replace(/[-\s]/g, '');
-                    detectedData.idNumberConfidence = 70;
-                    break;
-                }
-            }
-
-            const addressPatterns = [
-                /(?:Address|Address:)\s*[:=]?\s*([^\n]{10,})/i,
-                /(.*?(?:Purok|Brgy|Barangay|St\.|Ave|Rd)[^\n]*)/i,
-                /([A-Z][a-z\s,]{15,})/
-            ];
-
-            for (let pattern of addressPatterns) {
-                const match = text.match(pattern);
-                if (match) {
-                    detectedData.address = match[1].trim().substring(0, 100);
-                    detectedData.addressConfidence = 60;
-                    break;
-                }
-            }
-        }
-
-        function displayResults() {
-            detectionStatus.className = 'detection-status active success';
-            statusText.textContent = '✓ Scan complete. Review the extracted info below, then Accept & Fill if it looks right.';
+            detectionStatus.className = 'detection-status active ' + (result.passed ? 'success' : 'error');
+            statusText.textContent = result.passed
+                ? '✓ Your ID has been verified.'
+                : '✗ ' + (result.reasons && result.reasons.length ? result.reasons.join(' ') : 'We could not verify this ID. Please try a different photo.');
             detectionResults.classList.add('active');
 
-            document.getElementById('resultFace').textContent = detectedData.faceDetected ? '✓ Yes' : '✗ No';
-            document.getElementById('faceBadge').textContent = detectedData.faceDetected ? 'Yes' : 'No';
-            document.getElementById('faceBadge').className = detectedData.faceDetected ? 'confidence-badge confidence-high' : 'confidence-badge confidence-low';
+            document.getElementById('verifySummary').innerHTML = result.passed
+                ? '<span class="confidence-badge confidence-high">✓ Verified — Quezon City resident ID</span>'
+                : '<span class="confidence-badge confidence-low">✗ Not verified</span>';
 
-            document.getElementById('resultName').textContent = detectedData.name || 'Not detected';
-            document.getElementById('nameBadge').textContent = detectedData.nameConfidence + '%';
-            updateConfidenceBadge('nameBadge', detectedData.nameConfidence);
+            document.getElementById('resultName').textContent = result.extracted_name || 'Not detected';
+            setResultBadge('nameBadge', result.is_id_document ? result.name_matches : null);
 
-            document.getElementById('resultIDNumber').textContent = detectedData.idNumber || 'Not detected';
-            document.getElementById('idnumBadge').textContent = detectedData.idNumberConfidence + '%';
-            updateConfidenceBadge('idnumBadge', detectedData.idNumberConfidence);
+            document.getElementById('resultAddress').textContent = result.extracted_address || 'Not detected';
+            setResultBadge('addressBadge', result.is_id_document ? result.is_qc_address : null);
 
-            document.getElementById('resultAddress').textContent = detectedData.address || 'Not detected';
-            document.getElementById('addressBadge').textContent = detectedData.addressConfidence + '%';
-            updateConfidenceBadge('addressBadge', detectedData.addressConfidence);
+            document.getElementById('resultIdType').textContent = result.id_type_guess || 'Not detected';
         }
 
-        function updateConfidenceBadge(elementId, confidence) {
+        function setResultBadge(elementId, isGood) {
             const el = document.getElementById(elementId);
             el.className = 'confidence-badge';
-            if (confidence >= 75) {
+            if (isGood === true) {
                 el.classList.add('confidence-high');
-            } else if (confidence >= 50) {
-                el.classList.add('confidence-medium');
-            } else {
+                el.textContent = '✓ Match';
+            } else if (isGood === false) {
                 el.classList.add('confidence-low');
-            }
-        }
-
-        function acceptDetectedData() {
-            if (detectedData.name) {
-                const nameParts = detectedData.name.split(' ');
-                document.getElementById('first_name').value = nameParts[0] || '';
-                document.getElementById('last_name').value = nameParts.slice(1).join(' ') || '';
-            }
-
-            if (detectedData.idNumber) {
-                document.getElementById('id_number').value = detectedData.idNumber;
-            }
-
-            if (detectedData.address) {
-                document.getElementById('address').value = detectedData.address;
-            }
-
-            alert('✓ Detected information filled into form. Please verify and complete any remaining fields.');
-        }
-
-        function retryDetection() {
-            if (idPhotoInput.files[0]) {
-                readAsDataURL(idPhotoInput.files[0]).then(dataUrl => detectID(dataUrl));
+                el.textContent = '✗ Issue';
+            } else {
+                el.classList.add('confidence-medium');
+                el.textContent = '—';
             }
         }
 

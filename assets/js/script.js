@@ -30,6 +30,8 @@ const API = {
   engineerPerformance: window.BASE_PATH + 'api/engineer-performance.php',
   aiAssistant: window.BASE_PATH + 'api/ai-assistant.php',
   announcements: window.BASE_PATH + 'api/announcements.php',
+  projectGallery: window.BASE_PATH + 'api/project-gallery.php',
+  projectRatings: window.BASE_PATH + 'api/project-ratings.php',
 };
 
 const CSRF_HEADERS = window.CSRF_TOKEN ? { 'X-CSRF-Token': window.CSRF_TOKEN } : {};
@@ -259,6 +261,8 @@ function navigate(page) {
     'ai-risk-insights': loadAiAssistantPage,
     announcements: loadAnnouncementsPage,
     'citizen-feedback': () => loadFeedbackPage('page-citizen-feedback', 'Citizen Feedback Review', false),
+    'project-gallery': loadProjectGalleryPage,
+    'citizen-ratings': loadCitizenRatingsPage,
     'staff-requests': loadStaffRequestsPage,
     'contractor-performance': loadContractorPerformancePage,
     'engineer-performance': loadEngineerPerformancePage,
@@ -3972,6 +3976,310 @@ async function deleteAnnouncement(id) {
 }
 
 /* ============================================================
+   PROJECT GALLERY (Admin — blueprint/gallery photo uploads)
+   ============================================================ */
+let galleryState = { page: 1, projectId: '' };
+const GALLERY_TYPE_LABELS = { blueprint: 'Blueprint', render: 'Render', photo: 'Photo' };
+
+async function loadProjectGalleryPage() {
+  const container = document.getElementById('page-project-gallery');
+  if (!container) return;
+
+  let projects = [];
+  try { const d = await get(API.projects, {}); projects = d.data || []; } catch {}
+  window.galleryProjectsCache = projects;
+
+  container.innerHTML = `
+    <div class="page-header">
+      <div>
+        <h2 class="page-title">Project Gallery</h2>
+        <p style="font-size:.8rem;color:var(--text-muted);margin-top:4px;max-width:640px;">
+          Upload blueprints, renders, and reference photos citizens see on the dashboard. One photo per project can be set as the cover shown in the slideshow.
+        </p>
+      </div>
+      <button class="btn-primary" onclick="showGalleryUploadForm()">+ Upload Photo</button>
+    </div>
+    <div class="filter-bar">
+      <select class="filter-select" onchange="galleryState.projectId=this.value;galleryState.page=1;fetchGalleryPhotos()">
+        <option value="">All Projects</option>
+        ${projects.map(p => `<option value="${p.id}">${escapeHtml(p.project_code)} — ${escapeHtml(p.name)}</option>`).join('')}
+      </select>
+    </div>
+    <div id="galleryGrid"></div>
+    <div id="galleryPager" class="pager"></div>
+  `;
+  fetchGalleryPhotos();
+}
+
+async function fetchGalleryPhotos() {
+  const wrap = document.getElementById('galleryGrid');
+  if (!wrap) return;
+  setLoading(wrap, true);
+  try {
+    const d = await get(API.projectGallery, { action: 'list', project_id: galleryState.projectId, page: galleryState.page });
+    renderGalleryGrid(d.data || []);
+    renderPager('galleryPager', d.page, d.last_page, p => { galleryState.page = p; fetchGalleryPhotos(); });
+  } catch (e) {
+    wrap.innerHTML = '<p class="empty-state">Failed to load gallery photos.</p>';
+    console.error(e);
+  } finally {
+    setLoading(wrap, false);
+  }
+}
+
+function renderGalleryGrid(rows) {
+  const wrap = document.getElementById('galleryGrid');
+  if (!wrap) return;
+  if (!rows.length) { wrap.innerHTML = '<p class="empty-state">No gallery photos yet.</p>'; return; }
+
+  wrap.innerHTML = `
+    <div class="gallery-admin-grid">
+      ${rows.map(g => `
+        <div class="gallery-admin-card">
+          <div class="gallery-admin-thumb">
+            <img src="${(window.BASE_PATH || '') + g.file_path}" alt="" />
+            ${Number(g.is_cover) === 1 ? '<span class="gallery-cover-badge">Cover</span>' : ''}
+          </div>
+          <div class="gallery-admin-body">
+            <strong>${escapeHtml(g.title)}</strong>
+            <span class="badge badge-spike">${GALLERY_TYPE_LABELS[g.photo_type] || g.photo_type}</span>
+            <p style="font-size:.75rem;color:#94a3b8;margin:4px 0 0;">${escapeHtml(g.project_code)} — ${escapeHtml(g.project_name)}</p>
+          </div>
+          <div class="action-btns">
+            ${Number(g.is_cover) !== 1 ? `<button class="btn-secondary btn-compact" onclick="setGalleryCover(${g.id})">Set as Cover</button>` : ''}
+            <button class="btn-secondary btn-compact" onclick="showGalleryEditForm(${g.id})">Edit</button>
+            <button class="btn-icon btn-danger" title="Delete" onclick="deleteGalleryPhoto(${g.id})"><svg viewBox="0 0 20 20" fill="currentColor" width="14" height="14"><path fill-rule="evenodd" d="M9 2a1 1 0 00-.894.553L7.382 4H4a1 1 0 000 2v10a2 2 0 002 2h8a2 2 0 002-2V6a1 1 0 100-2h-3.382l-.724-1.447A1 1 0 0011 2H9zM7 8a1 1 0 012 0v6a1 1 0 11-2 0V8zm5-1a1 1 0 00-1 1v6a1 1 0 102 0V8a1 1 0 00-1-1z" clip-rule="evenodd"/></svg></button>
+          </div>
+        </div>
+      `).join('')}
+    </div>
+  `;
+}
+
+async function showGalleryUploadForm() {
+  const projects = window.galleryProjectsCache || [];
+  openModal('Upload Gallery Photo', `
+    <form id="galleryUploadForm" onsubmit="submitGalleryUpload(event)" enctype="multipart/form-data">
+      <div class="form-group">
+        <label>Project *</label>
+        <select name="project_id" class="form-input" required>
+          <option value="">— Select —</option>
+          ${projects.map(p => `<option value="${p.id}">${escapeHtml(p.project_code)} — ${escapeHtml(p.name)}</option>`).join('')}
+        </select>
+      </div>
+      <div class="form-grid">
+        <div class="form-group">
+          <label>Title *</label>
+          <input name="title" class="form-input" required />
+        </div>
+        <div class="form-group">
+          <label>Type *</label>
+          <select name="photo_type" class="form-input">
+            <option value="blueprint">Blueprint</option>
+            <option value="render">Render</option>
+            <option value="photo">Photo</option>
+          </select>
+        </div>
+      </div>
+      <div class="form-group">
+        <label>Caption</label>
+        <textarea name="caption" class="form-input" rows="3"></textarea>
+      </div>
+      <div class="form-group" style="display:flex;align-items:center;">
+        <label style="display:flex;align-items:center;gap:8px;font-weight:600;cursor:pointer;">
+          <input type="checkbox" name="is_cover" value="1" />
+          Set as cover photo (shown in citizen dashboard slideshow)
+        </label>
+      </div>
+      <div class="form-group">
+        <label>Photo * <small>(PNG/JPG, max 8MB)</small></label>
+        <input type="file" name="photo" accept=".png,.jpg,.jpeg" class="form-input" required />
+      </div>
+      <div class="form-actions">
+        <button type="button" class="btn-secondary" onclick="closeModal()">Cancel</button>
+        <button type="submit" class="btn-primary">Upload</button>
+      </div>
+    </form>
+  `);
+}
+
+async function submitGalleryUpload(e) {
+  e.preventDefault();
+  try {
+    const fd = new FormData(e.target);
+    const res = await postForm(`${API.projectGallery}?action=upload`, fd);
+    if (!res.success) { toast(res.message || 'Failed to upload photo', 'error'); return; }
+    toast('Photo uploaded!');
+    closeModal();
+    fetchGalleryPhotos();
+  } catch {
+    toast('Something went wrong', 'error');
+  }
+}
+
+async function showGalleryEditForm(id) {
+  let g = null;
+  try { const res = await get(API.projectGallery, { action: 'detail', id }); g = res.photo; } catch {}
+  if (!g) { toast('Photo not found', 'error'); return; }
+
+  openModal('Edit Gallery Photo', `
+    <form id="galleryEditForm" onsubmit="submitGalleryEdit(event, ${id})">
+      <div class="form-group">
+        <label>Title *</label>
+        <input name="title" class="form-input" required value="${escapeHtml(g.title || '')}" />
+      </div>
+      <div class="form-group">
+        <label>Type *</label>
+        <select name="photo_type" class="form-input">
+          <option value="blueprint" ${g.photo_type === 'blueprint' ? 'selected' : ''}>Blueprint</option>
+          <option value="render" ${g.photo_type === 'render' ? 'selected' : ''}>Render</option>
+          <option value="photo" ${g.photo_type === 'photo' ? 'selected' : ''}>Photo</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label>Caption</label>
+        <textarea name="caption" class="form-input" rows="3">${escapeHtml(g.caption || '')}</textarea>
+      </div>
+      <div class="form-actions">
+        <button type="button" class="btn-secondary" onclick="closeModal()">Cancel</button>
+        <button type="submit" class="btn-primary">Save Changes</button>
+      </div>
+    </form>
+  `);
+}
+
+async function submitGalleryEdit(e, id) {
+  e.preventDefault();
+  try {
+    const fd = new FormData(e.target);
+    const res = await postForm(`${API.projectGallery}?action=update&id=${id}`, fd);
+    if (!res.success) { toast(res.message || 'Failed to save changes', 'error'); return; }
+    toast('Photo updated!');
+    closeModal();
+    fetchGalleryPhotos();
+  } catch {
+    toast('Something went wrong', 'error');
+  }
+}
+
+async function setGalleryCover(id) {
+  const confirmed = await showConfirm({
+    title: 'Set as cover photo?',
+    message: 'This replaces the current cover photo shown in the citizen dashboard slideshow for this project.',
+    confirmLabel: 'Set as Cover',
+    tone: 'info',
+  });
+  if (!confirmed) return;
+
+  try {
+    const res = await fetch(`${API.projectGallery}?action=set_cover&id=${id}`, {
+      method: 'POST',
+      headers: { ...CSRF_HEADERS },
+    }).then(r => r.json());
+    if (!res.success) { toast(res.message || 'Failed to set cover', 'error'); return; }
+    toast('Cover photo updated');
+    fetchGalleryPhotos();
+  } catch {
+    toast('Failed to set cover', 'error');
+  }
+}
+
+async function deleteGalleryPhoto(id) {
+  const confirmed = await showConfirm({
+    title: 'Delete this photo?',
+    message: 'This removes it from the citizen portal immediately and cannot be undone.',
+    confirmLabel: 'Delete',
+    tone: 'danger',
+  });
+  if (!confirmed) return;
+
+  try {
+    const res = await fetch(`${API.projectGallery}?action=delete&id=${id}`, {
+      method: 'POST',
+      headers: { ...CSRF_HEADERS },
+    }).then(r => r.json());
+    if (!res.success) { toast(res.message || 'Delete failed', 'error'); return; }
+    toast('Photo deleted');
+    fetchGalleryPhotos();
+  } catch {
+    toast('Delete failed', 'error');
+  }
+}
+
+/* ============================================================
+   CITIZEN RATINGS (Admin — read-only view; citizens own their reviews,
+   so there is deliberately no edit/delete action anywhere on this page —
+   api/project-ratings.php has no mutation route to call even if there were)
+   ============================================================ */
+let ratingsState = { page: 1, search: '', project_id: '' };
+
+async function loadCitizenRatingsPage() {
+  const container = document.getElementById('page-citizen-ratings');
+  if (!container) return;
+
+  container.innerHTML = `
+    <div class="page-header">
+      <div>
+        <h2 class="page-title">Citizen Ratings</h2>
+        <p style="font-size:.8rem;color:var(--text-muted);margin-top:4px;max-width:640px;">
+          Star ratings and reviews citizens leave on projects. View-only — citizens own their reviews and manage them from their own dashboard.
+        </p>
+      </div>
+      <div id="ratingsSummary" style="font-size:.82rem;font-weight:600;color:var(--text-muted);"></div>
+    </div>
+    <div class="filter-bar">
+      <input class="filter-input" placeholder="Search citizen or project…" oninput="ratingsState.search=this.value;ratingsState.page=1;fetchCitizenRatings()" />
+    </div>
+    <div id="ratingsTable" class="table-card"></div>
+    <div id="ratingsPager" class="pager"></div>
+  `;
+  fetchCitizenRatings();
+}
+
+async function fetchCitizenRatings() {
+  const wrap = document.getElementById('ratingsTable');
+  if (!wrap) return;
+  setLoading(wrap, true);
+  try {
+    const d = await get(API.projectRatings, ratingsState);
+    renderCitizenRatingsTable(d.data || []);
+    renderPager('ratingsPager', d.page, d.last_page, p => { ratingsState.page = p; fetchCitizenRatings(); });
+    const summaryEl = document.getElementById('ratingsSummary');
+    if (summaryEl) summaryEl.textContent = `${d.total} rating${d.total === 1 ? '' : 's'} · avg ${d.average || 0}★`;
+  } catch (e) {
+    wrap.innerHTML = '<p class="empty-state">Failed to load ratings.</p>';
+    console.error(e);
+  } finally {
+    setLoading(wrap, false);
+  }
+}
+
+function renderCitizenRatingsTable(rows) {
+  const wrap = document.getElementById('ratingsTable');
+  if (!wrap) return;
+  if (!rows.length) { wrap.innerHTML = '<p class="empty-state">No ratings yet.</p>'; return; }
+
+  wrap.innerHTML = `
+    <table class="data-table">
+      <thead>
+        <tr><th>Citizen</th><th>Project</th><th>Rating</th><th>Comment</th><th>Date</th></tr>
+      </thead>
+      <tbody>
+        ${rows.map(r => `
+          <tr>
+            <td>${escapeHtml(r.citizen_name)}</td>
+            <td>${escapeHtml(r.project_code)} — ${escapeHtml(r.project_name)}</td>
+            <td>${'★'.repeat(Number(r.rating))}${'☆'.repeat(5 - Number(r.rating))}</td>
+            <td style="max-width:280px;">${r.comment ? escapeHtml(r.comment) : '<span style="color:#94a3b8;">—</span>'}</td>
+            <td style="font-size:.75rem;color:#94a3b8;">${formatDate(r.created_at)}</td>
+          </tr>
+        `).join('')}
+      </tbody>
+    </table>
+  `;
+}
+
+/* ============================================================
    GIS MAP
    ============================================================ */
 const GIS_STATUS_COLORS = {
@@ -5284,6 +5592,8 @@ document.addEventListener('DOMContentLoaded', () => {
     <div id="page-ai-risk-insights" class="page-section" style="display:none;"></div>
     <div id="page-announcements" class="page-section" style="display:none;"></div>
     <div id="page-citizen-feedback" class="page-section" style="display:none;"></div>
+    <div id="page-project-gallery" class="page-section" style="display:none;"></div>
+    <div id="page-citizen-ratings" class="page-section" style="display:none;"></div>
     <div id="page-staff-requests" class="page-section" style="display:none;"></div>
     <div id="page-contractor-performance" class="page-section" style="display:none;"></div>
     <div id="page-engineer-performance" class="page-section" style="display:none;"></div>

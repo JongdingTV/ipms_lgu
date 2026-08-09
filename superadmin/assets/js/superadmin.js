@@ -486,10 +486,10 @@ async function saLoadPendingCitizens() {
           <div class="sa-row-main">
             <strong>${saEscape(citizen.first_name)} ${saEscape(citizen.last_name)}</strong>
             <span>${saEscape(citizen.id_type)} - ${saEscape(citizen.id_number)} - ${saEscape(citizen.barangay || 'No barangay on file')}</span>
+            <div style="margin-top:4px;">${saCitizenAiBadge(citizen)}</div>
           </div>
           <div>
-            <button class="btn-primary btn-compact" type="button" onclick="saOpenCitizenDecision(${citizen.id}, 'verified')">Verify</button>
-            <button class="btn-secondary btn-compact" type="button" onclick="saOpenCitizenDecision(${citizen.id}, 'rejected')">Reject</button>
+            <button class="btn-primary btn-compact" type="button" onclick="saOpenCitizenReview(${citizen.id})">Review</button>
           </div>
         </div>
       `).join('')
@@ -757,6 +757,69 @@ function saOpenResetPasswordConfirm(userId) {
       saToast(error.message, 'error');
     }
   });
+}
+
+function saCitizenAiBadge(citizen) {
+  if (citizen.ai_verification_passed === null || citizen.ai_verification_passed === undefined) {
+    return '<span class="badge" style="background:#e2e8f022;color:#64748b;">No AI check on file</span>';
+  }
+  return Number(citizen.ai_verification_passed) === 1
+    ? '<span class="badge" style="background:#22c55e22;color:#16a34a;">✓ AI check passed at signup</span>'
+    : '<span class="badge" style="background:#ef444422;color:#dc2626;">✗ AI check flagged at signup</span>';
+}
+
+// Shows the applicant's typed info next to the actual uploaded ID photo and
+// the registration-time AI findings — previously this queue's decision
+// modal never surfaced the photo at all, so a reviewer could click
+// Verify/Reject without ever having seen the document. Verify/Reject here
+// hand off to the existing saOpenCitizenDecision() confirmation modal.
+function saOpenCitizenReview(citizenId) {
+  const citizen = saPendingCitizensCache.find(item => Number(item.id) === Number(citizenId));
+  if (!citizen) {
+    saToast('Citizen record not found.', 'error');
+    return;
+  }
+
+  const fullAddress = [citizen.address, citizen.barangay, citizen.city, citizen.province]
+    .filter(Boolean).map(saEscape).join(', ');
+  // citizen-ids/.htaccess blocks direct access; citizen/api/id-photo.php is
+  // the controlled gateway (owner or super_admin/admin only) that serves it.
+  const photoUrl = citizen.id_photo_path ? (window.BASE_PATH || '') + 'citizen/api/id-photo.php?citizen_id=' + citizen.id : null;
+
+  saOpenModal('Review Citizen ID', `
+    <div style="display:flex;flex-direction:column;gap:14px;">
+      <div>${saCitizenAiBadge(citizen)}</div>
+
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">
+        <div><p class="modal-label">NAME (TYPED AT SIGNUP)</p><p class="modal-val">${saEscape(citizen.first_name)} ${saEscape(citizen.last_name)}</p></div>
+        <div><p class="modal-label">ID TYPE / NUMBER</p><p class="modal-val">${saEscape(citizen.id_type)} #${saEscape(citizen.id_number)}</p></div>
+        <div style="grid-column: span 2;"><p class="modal-label">ADDRESS (TYPED AT SIGNUP)</p><p class="modal-val" style="font-weight:400;">${fullAddress || '—'}</p></div>
+      </div>
+
+      ${photoUrl ? `
+      <div>
+        <p class="modal-label">UPLOADED ID PHOTO</p>
+        <a href="${photoUrl}" target="_blank" rel="noopener">
+          <img src="${photoUrl}" alt="Uploaded ID" style="max-width:100%;max-height:360px;border-radius:8px;border:1px solid var(--border, #e2e8f0);margin-top:6px;display:block;">
+        </a>
+      </div>` : '<p class="empty-state">No ID photo on file.</p>'}
+
+      <div>
+        <p class="modal-label">AI FINDINGS AT SIGNUP <small style="font-weight:400;color:#94a3b8;">— advisory only, confirm with your own judgment</small></p>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:6px;">
+          <div><p class="modal-label">NAME ON ID (AI-READ)</p><p class="modal-val">${citizen.ai_extracted_name ? saEscape(citizen.ai_extracted_name) : '—'}</p></div>
+          <div><p class="modal-label">ADDRESS ON ID (AI-READ)</p><p class="modal-val">${citizen.ai_extracted_address ? saEscape(citizen.ai_extracted_address) : '—'}</p></div>
+          <div style="grid-column: span 2;"><p class="modal-label">ID TYPE (AI GUESS)</p><p class="modal-val">${citizen.ai_id_type_guess ? saEscape(citizen.ai_id_type_guess) : '—'}</p></div>
+        </div>
+        ${citizen.ai_verification_notes ? `<p class="modal-val" style="font-weight:400;margin-top:6px;">${saEscape(citizen.ai_verification_notes)}</p>` : ''}
+      </div>
+
+      <div class="form-actions">
+        <button class="btn-secondary" type="button" onclick="saOpenCitizenDecision(${citizen.id}, 'rejected')">Reject</button>
+        <button class="btn-primary" type="button" onclick="saOpenCitizenDecision(${citizen.id}, 'verified')">Verify</button>
+      </div>
+    </div>
+  `);
 }
 
 function saOpenCitizenDecision(citizenId, decision) {
@@ -1582,6 +1645,7 @@ window.saRefresh = saRefresh;
 window.saOpenStatusConfirm = saOpenStatusConfirm;
 window.saOpenRoleForm = saOpenRoleForm;
 window.saOpenCitizenDecision = saOpenCitizenDecision;
+window.saOpenCitizenReview = saOpenCitizenReview;
 window.saOpenDocumentReview = saOpenDocumentReview;
 window.saUnlockLogin = saUnlockLogin;
 window.saToast = saToast;

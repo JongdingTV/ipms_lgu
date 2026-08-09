@@ -631,29 +631,51 @@ function engineerRenderMilestonePage() {
       </div>
     </div>
     <section class="engineer-layout">
-      <article class="engineer-form-card">
-        <h2>Milestone Update</h2>
-        <form id="engineerMilestoneForm">
-          <div class="form-group">
-            <label>Open Milestone</label>
-            <select class="form-input" name="milestone_ref" required>${engineerMilestoneOptions()}</select>
-          </div>
-          <div class="form-group" style="margin-top:12px;">
-            <label>Status</label>
-            <select class="form-input" name="completed">
-              <option value="1">Completed</option>
-              <option value="0">Reopened / Not Completed</option>
-            </select>
-          </div>
-          <div class="form-group" style="margin-top:12px;">
-            <label>Inspection Remarks</label>
-            <textarea class="form-input" name="remarks" rows="4" placeholder="Field validation notes"></textarea>
-          </div>
-          <div class="form-actions">
-            <button class="btn-primary" type="submit">Save Milestone Update</button>
-          </div>
-        </form>
-      </article>
+      <div class="engineer-stack">
+        <article class="engineer-form-card">
+          <h2>Add New Milestone</h2>
+          <form id="engineerAddMilestoneForm">
+            <div class="form-group">
+              <label>Project</label>
+              <select class="form-input" name="project_id" required>${engineerProjectOptions()}</select>
+            </div>
+            <div class="form-group" style="margin-top:12px;">
+              <label>Milestone Title</label>
+              <input class="form-input" type="text" name="title" maxlength="200" placeholder="e.g. Foundation works complete" required>
+            </div>
+            <div class="form-group" style="margin-top:12px;">
+              <label>Due Date</label>
+              <input class="form-input" type="date" name="due_date">
+            </div>
+            <div class="form-actions">
+              <button class="btn-primary" type="submit">Add Milestone</button>
+            </div>
+          </form>
+        </article>
+        <article class="engineer-form-card">
+          <h2>Milestone Update</h2>
+          <form id="engineerMilestoneForm">
+            <div class="form-group">
+              <label>Open Milestone</label>
+              <select class="form-input" name="milestone_ref" required>${engineerMilestoneOptions()}</select>
+            </div>
+            <div class="form-group" style="margin-top:12px;">
+              <label>Status</label>
+              <select class="form-input" name="completed">
+                <option value="1">Completed</option>
+                <option value="0">Reopened / Not Completed</option>
+              </select>
+            </div>
+            <div class="form-group" style="margin-top:12px;">
+              <label>Inspection Remarks</label>
+              <textarea class="form-input" name="remarks" rows="4" placeholder="Field validation notes"></textarea>
+            </div>
+            <div class="form-actions">
+              <button class="btn-primary" type="submit">Save Milestone Update</button>
+            </div>
+          </form>
+        </article>
+      </div>
       <article class="engineer-history-card">
         <h2>Assigned Milestones</h2>
         <div class="engineer-mini-list">
@@ -663,6 +685,7 @@ function engineerRenderMilestonePage() {
     </section>
   `;
 
+  document.getElementById('engineerAddMilestoneForm').addEventListener('submit', engineerSubmitAddMilestone);
   document.getElementById('engineerMilestoneForm').addEventListener('submit', engineerSubmitMilestone);
 }
 
@@ -1281,6 +1304,27 @@ function engineerShowPage(page, selectedProjectId = '') {
   if (page === 'status-tracker') engineerRenderStatusTracker(selectedProjectId);
   if (page === 'urban-planning-inspection') engineerRenderUrbanPlanningPage();
   if (page === 'road-inspection-history') engineerRenderRoadHistoryPage();
+}
+
+async function engineerSubmitAddMilestone(event) {
+  event.preventDefault();
+  const formEl = event.target;
+  engineerClearFieldErrors(formEl);
+  const form = new FormData(formEl);
+
+  try {
+    await engineerPostJson('add_milestone', {
+      project_id: form.get('project_id'),
+      title: form.get('title'),
+      due_date: form.get('due_date'),
+    });
+    engineerToast('Milestone added.');
+    await engineerRefreshData();
+    engineerShowPage('milestone-update');
+  } catch (error) {
+    engineerShowFieldErrors(formEl, error.fieldErrors);
+    engineerToast(error.message, 'error');
+  }
 }
 
 async function engineerSubmitMilestone(event) {
