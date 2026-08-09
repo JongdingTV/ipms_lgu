@@ -40,7 +40,12 @@
     <div class="user-section">
       <div class="user-info">
         <div class="user-name"><?= htmlspecialchars($_SESSION['full_name']) ?></div>
-        <div class="user-role"><?= htmlspecialchars(roleLabel($_SESSION['role'])) ?></div>
+        <div class="user-role">
+          <?= htmlspecialchars(roleLabel($_SESSION['role'])) ?>
+          <?php if (!empty($_SESSION['district'])): ?>
+            <span class="user-district-badge"><?= htmlspecialchars($_SESSION['district']) ?></span>
+          <?php endif; ?>
+        </div>
       </div>
       
       <div class="user-avatar-wrapper">
@@ -56,7 +61,12 @@
             </div>
             <div class="user-menu-info">
               <div class="user-menu-name"><?= htmlspecialchars($_SESSION['full_name']) ?></div>
-              <div class="user-menu-role"><?= htmlspecialchars(roleLabel($_SESSION['role'])) ?></div>
+              <div class="user-menu-role">
+                <?= htmlspecialchars(roleLabel($_SESSION['role'])) ?>
+                <?php if (!empty($_SESSION['district'])): ?>
+                  &middot; <?= htmlspecialchars($_SESSION['district']) ?>
+                <?php endif; ?>
+              </div>
               <div class="user-menu-email"><?= htmlspecialchars($_SESSION['email']) ?></div>
             </div>
           </div>

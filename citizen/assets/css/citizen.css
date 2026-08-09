@@ -1445,6 +1445,20 @@ body {
     display: block;
 }
 
+.slideshow-rating-badge {
+    position: absolute;
+    top: 16px;
+    right: 16px;
+    background: rgba(9, 15, 28, .72);
+    color: #facc15;
+    font-size: .82rem;
+    font-weight: 700;
+    padding: 5px 11px;
+    border-radius: 999px;
+    box-shadow: 0 2px 6px rgba(0, 0, 0, .25);
+    backdrop-filter: blur(2px);
+}
+
 .slideshow-caption {
     position: absolute;
     left: 0;

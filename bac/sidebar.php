@@ -18,6 +18,7 @@
       <a href="#" class="nav-item" data-page="bidding-announcements">
         <span class="nav-icon"><svg viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M2 5a2 2 0 012-2h8a2 2 0 012 2v1h1a3 3 0 013 3v4a3 3 0 01-3 3h-1v1a1 1 0 11-2 0V5H4v10h5a1 1 0 110 2H4a2 2 0 01-2-2V5zm12 3v6h1a1 1 0 001-1V9a1 1 0 00-1-1h-1z" clip-rule="evenodd"/></svg></span>
         <span class="nav-label">Bidding Announcements</span>
+        <span class="nav-badge" data-badge="bidding-announcements"></span>
       </a>
       <a href="#" class="nav-item" data-page="contractor-evaluation">
         <span class="nav-icon"><svg viewBox="0 0 20 20" fill="currentColor"><path d="M13 6a3 3 0 11-6 0 3 3 0 016 0z"/><path fill-rule="evenodd" d="M5 14a5 5 0 0110 0v1a2 2 0 01-2 2H7a2 2 0 01-2-2v-1zm11.293-6.707a1 1 0 011.414 1.414l-3.25 3.25a1 1 0 01-1.414 0l-1.25-1.25a1 1 0 111.414-1.414l.543.543 2.543-2.543z" clip-rule="evenodd"/></svg></span>

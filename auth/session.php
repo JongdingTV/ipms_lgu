@@ -52,12 +52,14 @@ function establishUserSession(array $user): array
         'email' => $user['email'],
         'full_name' => $user['full_name'],
         'role' => $user['role'],
+        'district' => $user['district'] ?? null,
     ];
     $_SESSION['user_id'] = (int) $user['id'];
     $_SESSION['username'] = $user['username'];
     $_SESSION['email'] = $user['email'];
     $_SESSION['full_name'] = $user['full_name'];
     $_SESSION['role'] = $user['role'];
+    $_SESSION['district'] = $user['district'] ?? null;
     $_SESSION['last_activity'] = time();
     $_SESSION['user_agent'] = $_SERVER['HTTP_USER_AGENT'] ?? '';
     $_SESSION['csrf_token'] = bin2hex(random_bytes(32));
@@ -320,7 +322,7 @@ function authenticateUser(string $identifier, string $password, ?string $selecte
 
     $pdo = getDB();
     $stmt = $pdo->prepare("
-        SELECT id, username, email, password_hash, full_name, role, status, last_login
+        SELECT id, username, email, password_hash, full_name, role, status, last_login, district
         FROM users
         WHERE username = ? OR email = ?
         LIMIT 1

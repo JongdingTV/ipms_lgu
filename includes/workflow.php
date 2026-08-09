@@ -115,6 +115,11 @@ function projectWorkflowEnsureProjectStatusSchema(PDO $db): void
         $db->exec("ALTER TABLE projects ADD COLUMN IF NOT EXISTS funding_source " . projectFundingSourceEnumSql() . " NULL AFTER category");
         $db->exec("ALTER TABLE projects ADD COLUMN IF NOT EXISTS implementing_office VARCHAR(150) NULL AFTER funding_source");
         $db->exec("ALTER TABLE projects ADD COLUMN IF NOT EXISTS physical_target VARCHAR(255) NULL AFTER implementing_office");
+
+        // Which QC congressional district a project falls in — auto-detected
+        // from its location text, see projectDetectDistrictFromLocation(). Used
+        // to scope what each district's engineer account can see/accept.
+        $db->exec("ALTER TABLE projects ADD COLUMN IF NOT EXISTS district VARCHAR(20) NULL AFTER location");
     } catch (Throwable $e) {
     }
 }
@@ -306,6 +311,11 @@ function usersEnsureLifecycleRoles(PDO $db): void
             $db->exec("ALTER TABLE users MODIFY COLUMN role ENUM('super_admin','admin','bac','engineer','contractor','citizen','hope') NOT NULL DEFAULT 'citizen'");
         }
 
+        // Which QC congressional district an engineer account belongs to —
+        // see engineer/api/portal.php and api/projects.php for how this scopes
+        // what an engineer can see/accept.
+        $db->exec("ALTER TABLE users ADD COLUMN IF NOT EXISTS district VARCHAR(20) NULL AFTER role");
+
         $seedHash = '$2y$10$2TKc4G0kzPoHoaxpuxtiLuxJexEHos62W5/98pjMxEXaAyrxZ8PWS';
         $seedAccounts = [
             'hope' => ['hope', 'hope@ipms.local', 'Head of Procuring Entity'],
@@ -321,8 +331,76 @@ function usersEnsureLifecycleRoles(PDO $db): void
                 ")->execute([$username, $email, $seedHash, $fullName, $role]);
             }
         }
+
+        // District 1 is the existing default 'engineer' demo account. Districts
+        // 2-6 are the real team engineer accounts (created via the staff
+        // self-service request flow — superadmin/api/accounts.php — and
+        // already present on the live site under these exact usernames), each
+        // assigned to one QC congressional district. The INSERT is a no-op on
+        // an environment (like production) where these already exist; the
+        // UPDATE only fills a still-empty district, so re-running this never
+        // clobbers a district someone reassigned by hand.
+        $db->prepare("UPDATE users SET district = 'District 1' WHERE role = 'engineer' AND username = 'engineer' AND district IS NULL")->execute();
+
+        $engineerHash = '$2y$10$UjewDRfHJqpLJhvkf4QAPOTeTPskeLM4ZE/cwZUutgLShtsh/telq'; // engineer123
+        // [username, email, proper full_name, district, raw name self-service registration
+        //  auto-generated (ucfirst of the local-part) — used only to safely correct that
+        //  raw name to a proper one without ever touching a name someone has since edited.
+        $teamEngineers = [
+            ['dhicerv_engineer', 'dhicerv+engineer@gmail.com', 'Dhice', 'District 2', 'Dhicerv'],
+            ['evebrasileno_engineer', 'evebrasileno+engineer@gmail.com', 'Eve Brasileno', 'District 3', 'Evebrasileno'],
+            ['stevennicole30_engineer', 'stevennicole30+engineer@gmail.com', 'Steven', 'District 4', 'Stevennicole30'],
+            ['jaysonmagrimbao_engineer', 'jaysonmagrimbao+engineer@gmail.com', 'Jayson Magrimbao', 'District 5', 'Jaysonmagrimbao'],
+            ['caviterawen5_engineer', 'caviterawen5+engineer@gmail.com', 'Rawen Cavite', 'District 6', 'Caviterawen5'],
+        ];
+        foreach ($teamEngineers as [$username, $email, $fullName, $district, $rawName]) {
+            $countStmt = $db->prepare("SELECT id FROM users WHERE username = ?");
+            $countStmt->execute([$username]);
+            $existingId = $countStmt->fetchColumn();
+            if ($existingId) {
+                $db->prepare("UPDATE users SET district = ? WHERE id = ? AND district IS NULL")->execute([$district, $existingId]);
+                $db->prepare("UPDATE users SET full_name = ? WHERE id = ? AND full_name = ?")->execute([$fullName, $existingId, $rawName]);
+            } else {
+                $db->prepare("
+                    INSERT INTO users (username, email, password_hash, full_name, role, status, district)
+                    VALUES (?, ?, ?, ?, 'engineer', 'active', ?)
+                ")->execute([$username, $email, $engineerHash, $fullName, $district]);
+            }
+        }
     } catch (Throwable $e) {
     }
+}
+
+/**
+ * Best-effort District N detection from a free-text project location.
+ * Project Registration's District/Barangay location picker (assets/js/
+ * script.js's setupProjectLocationPicker()) already writes "Barangay X,
+ * District N, Quezon City" into the location field, so this is exact for
+ * every project created through that picker; for older free-text locations
+ * it falls back to a barangay-name match against citizen/includes/
+ * qc-locations.php's district data.
+ */
+function projectDetectDistrictFromLocation(?string $location): ?string
+{
+    $location = trim((string) $location);
+    if ($location === '') {
+        return null;
+    }
+
+    if (preg_match('/District\s*([1-6])\b/i', $location, $m)) {
+        return 'District ' . $m[1];
+    }
+
+    require_once __DIR__ . '/../citizen/includes/qc-locations.php';
+    foreach (qcDistricts() as $district => $barangays) {
+        foreach ($barangays as $entry) {
+            if ($entry['name'] !== '' && mb_stripos($location, $entry['name']) !== false) {
+                return $district;
+            }
+        }
+    }
+
+    return null;
 }
 
 function projectWorkflowEnsureBacTables(PDO $db): void

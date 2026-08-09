@@ -61,6 +61,13 @@ $id     = isset($_GET['id']) ? (int) $_GET['id'] : null;
 $user   = currentUser();
 $isContractor = ($user['role'] ?? '') === 'contractor';
 $contractorScopeId = null;
+$isEngineer = ($user['role'] ?? '') === 'engineer';
+$engineerDistrict = null;
+if ($isEngineer) {
+    $engDistrictStmt = $db->prepare("SELECT district FROM users WHERE id = ?");
+    $engDistrictStmt->execute([(int) ($user['user_id'] ?? 0)]);
+    $engineerDistrict = $engDistrictStmt->fetchColumn() ?: null;
+}
 
 const PROJECT_DOC_MAX_SIZE = 10 * 1024 * 1024;
 const PROJECT_DOC_EXTENSIONS = ['pdf', 'doc', 'docx', 'xls', 'xlsx', 'png', 'jpg', 'jpeg'];
@@ -173,6 +180,10 @@ if ($method === 'GET') {
             $projectParams[] = $contractorScopeId;
             $projectWhere .= " AND p.status IN ('assigned','active','delayed','on_hold','completed')";
         }
+        if ($isEngineer && $engineerDistrict !== null) {
+            $projectWhere .= ' AND p.district = ?';
+            $projectParams[] = $engineerDistrict;
+        }
 
         $stmt = $db->prepare("
             SELECT p.*, c.name AS contractor_name, c.performance_score,
@@ -258,6 +269,11 @@ if ($method === 'GET') {
     // List with filters
     $where   = ['1=1'];
     $params  = [];
+
+    if ($isEngineer && $engineerDistrict !== null) {
+        $where[] = 'p.district = ?';
+        $params[] = $engineerDistrict;
+    }
 
     if (!empty($_GET['status'])) {
         $where[]  = 'p.status = ?';
@@ -404,7 +420,7 @@ if ($method === 'POST' && $action === 'engineering_review') {
         respond(['error' => 'A reason is required to return or reject a project.'], 422);
     }
 
-    $stmt = $db->prepare("SELECT id, name, status, created_by FROM projects WHERE id = ?");
+    $stmt = $db->prepare("SELECT id, name, status, created_by, district FROM projects WHERE id = ?");
     $stmt->execute([$projectId]);
     $project = $stmt->fetch();
     if (!$project) {
@@ -412,6 +428,9 @@ if ($method === 'POST' && $action === 'engineering_review') {
     }
     if ($project['status'] !== 'draft') {
         respond(['error' => 'This project is not awaiting engineering review.'], 422);
+    }
+    if ($engineerDistrict !== null && $project['district'] !== null && $project['district'] !== $engineerDistrict) {
+        respond(['error' => 'This project belongs to another district\'s engineer.'], 403);
     }
 
     $statusMap = ['endorse' => 'endorsed', 'return' => 'returned', 'reject' => 'cancelled'];
@@ -837,6 +856,7 @@ if ($method === 'POST') {
     // only) can move a project to 'approved', so a caller can no longer skip the
     // review step by passing an arbitrary initial status.
     $status = 'draft';
+    $district = projectDetectDistrictFromLocation($b['location']);
 
     $storedFiles = [];
     $newId = null;
@@ -845,16 +865,17 @@ if ($method === 'POST') {
     try {
         $stmt = $db->prepare("
             INSERT INTO projects
-                (project_code, name, description, location, contractor_id,
+                (project_code, name, description, location, district, contractor_id,
                  budget, start_date, end_date, progress, status, created_by, latitude, longitude,
                  category, funding_source, implementing_office, physical_target)
-            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
         ");
         $stmt->execute([
             $code,
             $b['name'],
             $b['description'],
             $b['location'],
+            $district,
             !empty($b['contractor_id']) ? (int) $b['contractor_id'] : null,
             (float) $b['budget'],
             $b['start_date'],
@@ -927,6 +948,12 @@ if ($method === 'PUT') {
 
             $fields[] = "$f = ?";
             $touchedFields[] = $f;
+            if ($f === 'location') {
+                $fields[] = 'district = ?';
+                $params[] = $b[$f] === '' ? null : $b[$f];
+                $params[] = projectDetectDistrictFromLocation($b[$f]);
+                continue;
+            }
             if ($f === 'contractor_id') {
                 $params[] = $b[$f] === '' || $b[$f] === null ? null : (int) $b[$f];
             } elseif ($f === 'progress') {

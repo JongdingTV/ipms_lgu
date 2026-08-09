@@ -49,6 +49,10 @@ function engineerPortalProject(PDO $db, int $projectId, int $engineerId): ?array
 
 function engineerPortalProjects(PDO $db, int $engineerId): array
 {
+    // The district filter here is defense-in-depth on top of the assignment
+    // table itself (engineerScopeSeedAssignments() and accept_project below
+    // only ever create same-district rows) — it stops a stale/manually
+    // created assignment from another district from leaking into this list.
     $stmt = $db->prepare("
         SELECT p.*, c.name AS contractor_name,
                COALESCE((SELECT SUM(amount) FROM expenses WHERE project_id = p.id), 0) AS total_spent,
@@ -59,11 +63,38 @@ function engineerPortalProjects(PDO $db, int $engineerId): array
         FROM engineer_project_assignments a
         INNER JOIN projects p ON p.id = a.project_id
         LEFT JOIN contractors c ON c.id = p.contractor_id
+        INNER JOIN users eu ON eu.id = a.engineer_id
         WHERE a.engineer_id = ?
           AND a.status = 'active'
+          AND (eu.district IS NULL OR p.district IS NULL OR p.district = eu.district)
         ORDER BY FIELD(p.status, 'delayed', 'active', 'assigned', 'awarded', 'approved', 'planning', 'on_hold', 'completed', 'cancelled'), p.updated_at DESC, p.id DESC
     ");
     $stmt->execute([$engineerId, $engineerId]);
+
+    return $stmt->fetchAll();
+}
+
+/** Projects in the engineer's own district with no active field-monitoring assignment yet — "Available Projects" to accept. */
+function engineerPortalAvailableProjects(PDO $db, int $engineerId): array
+{
+    $districtStmt = $db->prepare("SELECT district FROM users WHERE id = ?");
+    $districtStmt->execute([$engineerId]);
+    $district = $districtStmt->fetchColumn();
+    if (!$district) {
+        return [];
+    }
+
+    $stmt = $db->prepare("
+        SELECT p.*, c.name AS contractor_name
+        FROM projects p
+        LEFT JOIN contractors c ON c.id = p.contractor_id
+        LEFT JOIN engineer_project_assignments a ON a.project_id = p.id AND a.status = 'active'
+        WHERE p.district = ?
+          AND a.id IS NULL
+          AND p.status IN ('approved','planning','bidding','awarded','assigned','active','delayed','on_hold')
+        ORDER BY p.updated_at DESC, p.id DESC
+    ");
+    $stmt->execute([$district]);
 
     return $stmt->fetchAll();
 }
@@ -252,6 +283,10 @@ if ($method === 'GET') {
         respond(['data' => $rows]);
     }
 
+    if ($action === 'available_projects') {
+        respond(['data' => engineerPortalAvailableProjects($db, $engineerId)]);
+    }
+
     if ($action === 'project') {
         $projectId = (int) ($_GET['id'] ?? 0);
         if ($projectId <= 0) {
@@ -390,6 +425,46 @@ if ($method === 'GET') {
 }
 
 if ($method === 'POST') {
+    if ($action === 'accept_project') {
+        $validated = Validator::make(requestBody(), [
+            'project_id' => 'required|integer',
+        ])->stopOnFailure();
+        $projectId = (int) $validated['project_id'];
+
+        $districtStmt = $db->prepare("SELECT district FROM users WHERE id = ?");
+        $districtStmt->execute([$engineerId]);
+        $district = $districtStmt->fetchColumn();
+        if (!$district) {
+            respond(['error' => 'Your account has no district assigned yet. Ask a Super Admin to set one.'], 422);
+        }
+
+        $project = $db->prepare("SELECT id, name, district FROM projects WHERE id = ?");
+        $project->execute([$projectId]);
+        $project = $project->fetch();
+        if (!$project) {
+            respond(['error' => 'Project not found.'], 404);
+        }
+        if ($project['district'] !== $district) {
+            respond(['error' => 'This project belongs to another district.'], 403);
+        }
+
+        $existing = $db->prepare("SELECT id FROM engineer_project_assignments WHERE project_id = ? AND status = 'active'");
+        $existing->execute([$projectId]);
+        if ($existing->fetchColumn()) {
+            respond(['error' => 'This project has already been accepted by an engineer.'], 422);
+        }
+
+        $db->prepare("
+            INSERT INTO engineer_project_assignments (engineer_id, project_id, assigned_by, assignment_notes, status)
+            VALUES (?, ?, ?, 'Self-accepted from Available Projects', 'active')
+            ON DUPLICATE KEY UPDATE status = 'active', assigned_by = VALUES(assigned_by), assignment_notes = VALUES(assignment_notes)
+        ")->execute([$engineerId, $projectId, $engineerId]);
+
+        projectWorkflowLog($db, 'Project accepted by engineer', $projectId, $project['name'] . ' was accepted for field monitoring.', $engineerId);
+
+        respond(['success' => true]);
+    }
+
     if ($action === 'milestone') {
         $validated = Validator::make(requestBody(), [
             'project_id' => 'required|integer',

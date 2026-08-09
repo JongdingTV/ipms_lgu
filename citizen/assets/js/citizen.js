@@ -832,6 +832,7 @@ function renderProjectSlideshow() {
     track.innerHTML = projects.map(p => `
         <div class="slideshow-slide" onclick="openProjectDetail(${p.id})">
             <img src="${citizenUrl(escapeHtml(p.cover_photo))}" alt="${escapeHtml(p.cover_title || p.name)}" loading="lazy">
+            ${p.rating_count > 0 ? `<span class="slideshow-rating-badge">★ ${p.rating_average.toFixed(1)}</span>` : ''}
             <div class="slideshow-caption">
                 <span class="project-badge badge-${escapeHtml(p.status)}">${projectStatusLabel(p.status)}</span>
                 <h3>${escapeHtml(p.name)}</h3>

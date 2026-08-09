@@ -252,6 +252,13 @@ function computeBacBadges(PDO $db, array $lv): array
 {
     $b = [];
 
+    // Projects the Office of the Mayor/Admin has approved and BAC hasn't posted
+    // for bidding yet (bacListApprovedProjects() in bac/api/portal.php is the
+    // same underlying query — this is the "new incoming project to post" badge).
+    $stmt = $db->prepare("SELECT COUNT(*) FROM projects WHERE status = 'approved' AND updated_at > ?");
+    $stmt->execute([lv($lv, 'bidding-announcements')]);
+    $b['bidding-announcements'] = ['type' => 'red', 'count' => (int) $stmt->fetchColumn()];
+
     $stmt = $db->prepare("SELECT COUNT(*) FROM bac_bid_submissions WHERE status = 'submitted' AND created_at > ?");
     $stmt->execute([lv($lv, 'contractor-evaluation')]);
     $b['contractor-evaluation'] = ['type' => 'red', 'count' => (int) $stmt->fetchColumn()];
@@ -274,7 +281,7 @@ function computeBacBadges(PDO $db, array $lv): array
     $b['contractor-applications'] = ['type' => 'red', 'count' => (int) $stmt->fetchColumn()];
 
     $b['dashboard'] = ['type' => 'red', 'count' =>
-        $b['contractor-evaluation']['count'] + $b['award-recommendation']['count']
+        $b['bidding-announcements']['count'] + $b['contractor-evaluation']['count'] + $b['award-recommendation']['count']
         + $b['procurement-documents']['count'] + $b['contractor-applications']['count']];
 
     return $b;
@@ -287,15 +294,32 @@ function computeEngineerBadges(PDO $db, int $userId, array $lv): array
 {
     $b = [];
 
+    $districtStmt = $db->prepare("SELECT district FROM users WHERE id = ?");
+    $districtStmt->execute([$userId]);
+    $engineerDistrict = $districtStmt->fetchColumn() ?: null;
+
     $stmt = $db->prepare("SELECT COUNT(*) FROM engineer_project_assignments WHERE engineer_id = ? AND status = 'active' AND assigned_at > ?");
     $stmt->execute([$userId, lv($lv, 'assigned-projects')]);
     $b['assigned-projects'] = ['type' => 'red', 'count' => (int) $stmt->fetchColumn()];
 
-    // Any engineer can review any draft (no per-engineer ownership gate exists
-    // at the draft stage), so this is a shared, not per-engineer, queue.
-    $stmt = $db->prepare("SELECT COUNT(*) FROM projects WHERE status = 'draft' AND created_at > ?");
-    $stmt->execute([lv($lv, 'engineering-review')]);
+    // Scoped to the engineer's own district (see api/projects.php's GET list
+    // handler, which applies the same filter) — each district's engineer only
+    // reviews drafts registered for their own district.
+    $stmt = $db->prepare("SELECT COUNT(*) FROM projects WHERE status = 'draft' AND (district = ? OR ? IS NULL) AND created_at > ?");
+    $stmt->execute([$engineerDistrict, $engineerDistrict, lv($lv, 'engineering-review')]);
     $b['engineering-review'] = ['type' => 'red', 'count' => (int) $stmt->fetchColumn()];
+
+    // Same-district projects with no active field-monitoring assignment yet —
+    // see engineer/api/portal.php's engineerPortalAvailableProjects().
+    $stmt = $db->prepare("
+        SELECT COUNT(*) FROM projects p
+        LEFT JOIN engineer_project_assignments a ON a.project_id = p.id AND a.status = 'active'
+        WHERE p.district = ? AND a.id IS NULL
+          AND p.status IN ('approved','planning','bidding','awarded','assigned','active','delayed','on_hold')
+          AND p.updated_at > ?
+    ");
+    $stmt->execute([$engineerDistrict, lv($lv, 'available-projects')]);
+    $b['available-projects'] = ['type' => 'orange', 'count' => $engineerDistrict ? (int) $stmt->fetchColumn() : 0];
 
     // Overdue milestones on this engineer's assigned projects — live, not
     // view-tracked: milestones has no "became overdue" event, only a
@@ -335,7 +359,7 @@ function computeEngineerBadges(PDO $db, int $userId, array $lv): array
     $b['status-tracker'] = ['type' => 'orange', 'count' => (int) $stmt->fetchColumn()];
 
     $b['dashboard'] = ['type' => 'red', 'count' =>
-        $b['assigned-projects']['count'] + $b['engineering-review']['count']
+        $b['assigned-projects']['count'] + $b['engineering-review']['count'] + $b['available-projects']['count']
         + $b['inspection-review']['count'] + $b['payment-review']['count']];
 
     return $b;

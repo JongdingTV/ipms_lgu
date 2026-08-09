@@ -20,6 +20,11 @@
         <span class="nav-label">My Assigned Projects</span>
         <span class="nav-badge" data-badge="assigned-projects"></span>
       </a>
+      <a href="#" class="nav-item" data-page="available-projects">
+        <span class="nav-icon"><svg viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 10-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd"/></svg></span>
+        <span class="nav-label">Available Projects</span>
+        <span class="nav-badge" data-badge="available-projects"></span>
+      </a>
       <a href="#" class="nav-item" data-page="engineering-review">
         <span class="nav-icon"><svg viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M16.704 4.153a.75.75 0 01.143 1.052l-8 10.5a.75.75 0 01-1.127.075l-4.5-4.5a.75.75 0 011.06-1.06l3.894 3.893 7.48-9.817a.75.75 0 011.05-.143z" clip-rule="evenodd"/></svg></span>
         <span class="nav-label">Engineering Review</span>

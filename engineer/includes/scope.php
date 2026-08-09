@@ -133,15 +133,26 @@ if (!function_exists('engineerScopeSeedAssignments')) {
             return;
         }
 
+        // District-scoped — an engineer with no district set yet gets no
+        // auto-seed at all rather than falling back to every district's
+        // projects (that global fallback used to seed every brand-new
+        // engineer with the same first 5 projects regardless of district).
+        $districtStmt = $db->prepare("SELECT district FROM users WHERE id = ?");
+        $districtStmt->execute([$engineerId]);
+        $district = $districtStmt->fetchColumn();
+        if (!$district) {
+            return;
+        }
+
         $seed = $db->prepare("
             INSERT IGNORE INTO engineer_project_assignments (engineer_id, project_id, assignment_notes, status)
             SELECT ?, p.id, 'Initial field inspection assignment', 'active'
             FROM projects p
-            WHERE p.status IN ('delayed','active','assigned','awarded','approved','planning')
+            WHERE p.district = ? AND p.status IN ('delayed','active','assigned','awarded','approved','planning')
             ORDER BY FIELD(p.status, 'delayed', 'active', 'assigned', 'awarded', 'approved', 'planning'), p.id
             LIMIT 5
         ");
-        $seed->execute([$engineerId]);
+        $seed->execute([$engineerId, $district]);
     }
 }
 

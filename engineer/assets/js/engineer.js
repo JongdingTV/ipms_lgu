@@ -439,6 +439,59 @@ function engineerRenderAssignedProjects() {
   `;
 }
 
+async function engineerRenderAvailableProjects() {
+  const page = document.getElementById('page-available-projects');
+  page.innerHTML = `
+    <div class="page-header">
+      <div>
+        <h1 class="page-title">Available Projects</h1>
+        <p class="engineer-scope-note">Projects in your district with no field-monitoring engineer assigned yet. Accepting one adds it to your Assigned Projects.</p>
+      </div>
+    </div>
+    <div class="engineer-stack" id="availableProjectsList"><p class="empty-state">Loading...</p></div>
+  `;
+
+  try {
+    const result = await engineerGet('available_projects');
+    const rows = result.data || [];
+    document.getElementById('availableProjectsList').innerHTML = rows.length
+      ? rows.map(p => `
+        <article class="engineer-project-card">
+          <div class="engineer-project-card-head">
+            <div>
+              <span class="engineer-project-code">${engineerEscape(p.project_code)}</span>
+              <h3 class="engineer-project-title">${engineerEscape(p.name)}</h3>
+              <p class="engineer-project-location">${engineerEscape(p.location || 'No location set')}</p>
+            </div>
+            ${engineerBadge(p.status)}
+          </div>
+          <div class="engineer-project-meta">
+            <div class="engineer-meta-item"><span>Budget</span><strong>${engineerMoney(p.budget)}</strong></div>
+            <div class="engineer-meta-item"><span>Contractor</span><strong>${engineerEscape(p.contractor_name || '-')}</strong></div>
+          </div>
+          <div class="engineer-card-actions">
+            <button class="btn-secondary btn-compact" type="button" onclick="engineerOpenProjectPreview(${p.id})">View Details</button>
+            <button class="btn-primary btn-compact" type="button" onclick="engineerAcceptProject(${p.id})">Accept</button>
+          </div>
+        </article>
+      `).join('')
+      : '<p class="empty-state">No available projects in your district right now.</p>';
+  } catch (error) {
+    document.getElementById('availableProjectsList').innerHTML = '<p class="empty-state">Failed to load projects.</p>';
+  }
+}
+
+async function engineerAcceptProject(projectId) {
+  try {
+    await engineerPostJson('accept_project', { project_id: projectId });
+    engineerToast('Project accepted — added to My Assigned Projects.');
+    await engineerRefreshData();
+    engineerRenderAvailableProjects();
+  } catch (error) {
+    engineerToast(error.message || 'Unable to accept project', 'error');
+  }
+}
+
 async function engineerRenderEngineeringReviewPage() {
   const page = document.getElementById('page-engineering-review');
   page.innerHTML = `
@@ -1294,6 +1347,7 @@ function engineerShowPage(page, selectedProjectId = '') {
 
   if (page === 'dashboard') engineerRenderDashboard();
   if (page === 'assigned-projects') engineerRenderAssignedProjects();
+  if (page === 'available-projects') engineerRenderAvailableProjects();
   if (page === 'engineering-review') engineerRenderEngineeringReviewPage();
   if (page === 'milestone-update') engineerRenderMilestonePage();
   if (page === 'inspection-review') engineerRenderInspectionPage();

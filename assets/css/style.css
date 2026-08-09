@@ -268,6 +268,7 @@ button { cursor: pointer; font-family: var(--font); }
 .user-info { display: flex; flex-direction: column; align-items: flex-end; min-width: 0; }
 .user-name { font-size: .82rem; font-weight: 600; color: var(--text-primary); }
 .user-role { font-size: .72rem; color: var(--text-muted); text-transform: capitalize; }
+.user-district-badge { display: inline-block; margin-left: 4px; padding: 1px 8px; border-radius: 999px; background: #eff6ff; color: #2563eb; font-weight: 700; font-size: .68rem; text-transform: none; }
 
 .user-avatar-wrapper { position: relative; }
 .user-avatar { width: 40px; height: 40px; border-radius: 50%; background: linear-gradient(90deg, #60a5fa, #2563eb); color: white; border: none; cursor: pointer; font-weight: 700; font-size: .95rem; display: flex; align-items: center; justify-content: center; transition: all .2s; }
@@ -294,6 +295,7 @@ button { cursor: pointer; font-family: var(--font); }
 :root[data-theme="dark"] .user-menu-header { background: rgba(148,163,184,.08); }
 :root[data-theme="dark"] .user-menu-item:hover { background: rgba(148,163,184,.12); }
 :root[data-theme="dark"] .user-menu-logout:hover { background: rgba(239,68,68,.14); }
+:root[data-theme="dark"] .user-district-badge { background: rgba(59,130,246,.18); color: #60a5fa; }
 .sidebar-toggle {
   background: none; border: none; color: var(--text-muted);
   width: 32px; height: 32px; display: none;
