@@ -103,7 +103,7 @@
     bac: 'BAC',
     engineer: 'Engineer',
     contractor: 'Contractor',
-    hope: 'HOPE',
+    hope: 'City Mayor',
     citizen: 'Citizen',
   };
 

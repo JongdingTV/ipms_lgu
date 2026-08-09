@@ -230,7 +230,7 @@ function calendarFetchHopeReviewEvents(PDO $db, string $start, string $end): arr
         $events[] = [
             'id' => 'hope_review-proj' . $row['id'],
             'type' => 'hope_review',
-            'title' => 'HOPE Decision: ' . $row['name'],
+            'title' => 'City Mayor Decision: ' . $row['name'],
             'date' => substr($approvedAt, 0, 10),
             'time' => substr($approvedAt, 11, 5),
             'project_id' => (int) $row['id'],
@@ -337,7 +337,7 @@ function calendarFetchBacActivityEvents(PDO $db, string $start, string $end): ar
             'time' => substr($createdAt, 11, 5),
             'project_id' => (int) $row['project_id'],
             'project_name' => $row['project_name'],
-            'status_label' => 'Sent to HOPE',
+            'status_label' => 'Sent to City Mayor',
             'is_flagged' => false,
         ];
     }
@@ -572,7 +572,7 @@ function calendarDetailHopeReview(PDO $db, string $idParam): ?array
         return [
             'id' => 'hope_review-proj' . $row['id'],
             'type' => 'hope_review',
-            'title' => 'HOPE Decision: ' . $row['name'],
+            'title' => 'City Mayor Decision: ' . $row['name'],
             'date' => substr($approvedAt, 0, 10),
             'time' => substr($approvedAt, 11, 5),
             'project_id' => (int) $row['id'],
@@ -711,7 +711,7 @@ function calendarDetailBacActivity(PDO $db, string $idParam): ?array
             'time' => substr($createdAt, 11, 5),
             'project_id' => (int) $row['project_id'],
             'project_name' => $row['project_name'],
-            'status_label' => 'Sent to HOPE',
+            'status_label' => 'Sent to City Mayor',
             'is_flagged' => false,
             'subtype' => 'award_recommended',
             'reference_no' => null,

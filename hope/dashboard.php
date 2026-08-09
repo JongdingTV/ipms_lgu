@@ -15,9 +15,9 @@ require_once __DIR__ . '/sidebar.php';
     <section id="page-dashboard" class="page-section">
       <div class="hope-hero">
         <div class="hope-hero-copy">
-          <span class="hope-eyebrow">Head of the Procuring Entity</span>
-          <h1 class="page-title">HOPE Dashboard</h1>
-          <p class="hope-scope-note">Review and decide on infrastructure projects registered by Admin, per RA 12009's assignment of project-approval authority to the Head of the Procuring Entity.</p>
+          <span class="hope-eyebrow">Office of the City Mayor</span>
+          <h1 class="page-title">City Mayor Dashboard</h1>
+          <p class="hope-scope-note">Hon. Joy Belmonte — Review and decide on infrastructure projects registered by Admin, per RA 12009's assignment of project-approval authority to the City Mayor.</p>
         </div>
         <img class="hope-hero-mark" src="<?= htmlspecialchars(appUrl('/assets/img/ipms-icon2.png')) ?>" alt="<?= htmlspecialchars(APP_NAME) ?>">
       </div>
@@ -204,7 +204,7 @@ require_once __DIR__ . '/sidebar.php';
   </div>
 </div>
 
-<?php $notifPanelTitle = 'HOPE Updates'; include __DIR__ . '/../includes/notifications-panel.php'; ?>
+<?php $notifPanelTitle = 'City Mayor Updates'; include __DIR__ . '/../includes/notifications-panel.php'; ?>
 
 <script src="<?= htmlspecialchars(assetUrl('/assets/js/notifications.js')) ?>"></script>
 <script>window.SIDEBAR_BADGES_PORTAL = 'hope';</script>

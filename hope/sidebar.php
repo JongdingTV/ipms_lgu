@@ -5,7 +5,7 @@
       </div>
       <div class="logo-text">
         <span class="logo-title">LGU Infrastructure</span>
-        <span class="logo-sub">HOPE Portal</span>
+        <span class="logo-sub">City Mayor Portal</span>
       </div>
     </div>
 

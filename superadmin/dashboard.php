@@ -196,7 +196,7 @@ require_once __DIR__ . '/sidebar.php';
             <option value="admin">Admin</option>
             <option value="bac">BAC</option>
             <option value="engineer">Engineer</option>
-            <option value="hope">HOPE</option>
+            <option value="hope">City Mayor</option>
             <option value="contractor">Contractor</option>
             <option value="citizen">Citizen</option>
           </select>

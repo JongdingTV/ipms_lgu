@@ -445,7 +445,7 @@ async function engineerRenderEngineeringReviewPage() {
     <div class="page-header">
       <div>
         <h1 class="page-title">Engineering Review</h1>
-        <p class="engineer-scope-note">Newly registered projects awaiting a technical feasibility endorsement, before Budget/HOPE review.</p>
+        <p class="engineer-scope-note">Newly registered projects awaiting a technical feasibility endorsement, before Budget/City Mayor review.</p>
       </div>
     </div>
     <div class="engineer-stack" id="engineeringReviewList"><p class="empty-state">Loading...</p></div>

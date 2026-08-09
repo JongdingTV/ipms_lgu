@@ -35,7 +35,7 @@ $portalRoles = [
         'description' => 'Delivery partner',
     ],
     'hope' => [
-        'label' => 'HOPE',
+        'label' => 'City Mayor',
         'description' => 'Project approval authority',
     ],
 ];

@@ -662,7 +662,7 @@ if ($method === 'POST' && $action === 'request_deletion') {
     $existing = $db->prepare("SELECT id FROM project_deletion_requests WHERE project_id = ? AND status = 'pending'");
     $existing->execute([$id]);
     if ($existing->fetchColumn()) {
-        respond(['error' => 'A deletion request for this project is already pending HOPE review.'], 409);
+        respond(['error' => 'A deletion request for this project is already pending City Mayor review.'], 409);
     }
 
     $db->prepare("
@@ -677,7 +677,7 @@ if ($method === 'POST' && $action === 'request_deletion') {
         notifyUser((int) $hopeUserId, 'info', 'Project deletion requested', $project['name'] . ' (' . $project['project_code'] . ') has a pending deletion request awaiting your review.');
     }
 
-    respond(['success' => true, 'message' => 'Deletion request submitted for HOPE review.']);
+    respond(['success' => true, 'message' => 'Deletion request submitted for City Mayor review.']);
 }
 
 // ── POST action=request_edit (Admin/super_admin — submits a reasoned set of
@@ -707,7 +707,7 @@ if ($method === 'POST' && $action === 'request_edit') {
     $existing = $db->prepare("SELECT id FROM project_edit_requests WHERE project_id = ? AND status = 'pending'");
     $existing->execute([$id]);
     if ($existing->fetchColumn()) {
-        respond(['error' => 'An edit request for this project is already pending HOPE review.'], 409);
+        respond(['error' => 'An edit request for this project is already pending City Mayor review.'], 409);
     }
 
     // Same plain-field whitelist as the PUT handler below, minus
@@ -783,7 +783,7 @@ if ($method === 'POST' && $action === 'request_edit') {
         notifyUser((int) $hopeUserId, 'info', 'Project edit requested', $project['name'] . ' (' . $project['project_code'] . ') has a pending edit request awaiting your review.');
     }
 
-    respond(['success' => true, 'message' => 'Edit request submitted for HOPE review.']);
+    respond(['success' => true, 'message' => 'Edit request submitted for City Mayor review.']);
 }
 
 // ── POST (create) ──────────────────────────────────────────
@@ -1075,7 +1075,7 @@ if ($method === 'PUT') {
 
 // ── DELETE ─────────────────────────────────────────────────
 if ($method === 'DELETE') {
-    respond(['error' => 'Direct project deletion is disabled. Submit a deletion request (action=request_deletion) for HOPE review instead.'], 410);
+    respond(['error' => 'Direct project deletion is disabled. Submit a deletion request (action=request_deletion) for City Mayor review instead.'], 410);
 }
 
 respond(['error' => 'Method not allowed'], 405);

@@ -152,7 +152,7 @@ const ROLE_LABELS = [
     'engineer' => 'Engineer',
     'contractor' => 'Contractor',
     'citizen' => 'Citizen / Public User',
-    'hope' => 'HOPE (Head of Procuring Entity)',
+    'hope' => 'City Mayor',
 ];
 
 const ROLE_DASHBOARD_PATHS = [

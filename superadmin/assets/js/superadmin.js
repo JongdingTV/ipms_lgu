@@ -8,7 +8,7 @@ const SA_ROLE_LABELS = {
   admin: 'LGU Admin / Engineering Head',
   bac: 'BAC (Bids & Awards Committee)',
   engineer: 'Engineer',
-  hope: 'HOPE',
+  hope: 'City Mayor',
   contractor: 'Contractor',
   citizen: 'Citizen',
 };

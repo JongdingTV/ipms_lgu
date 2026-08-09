@@ -120,7 +120,7 @@ async function hopeRefresh(page = hopeCurrentPage) {
   try {
     await hopeRenderers[page]?.();
   } catch (error) {
-    hopeToast(error.message || 'Failed to load HOPE data.', 'error');
+    hopeToast(error.message || 'Failed to load data.', 'error');
   }
 }
 

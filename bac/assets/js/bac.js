@@ -621,7 +621,7 @@ async function bacRenderRecommendation() {
     <div class="page-header">
       <div>
         <h2 class="page-title">Award Recommendation</h2>
-        <p class="bac-scope-note">Recommended awardees are sent to HOPE for the official contract award decision.</p>
+        <p class="bac-scope-note">Recommended awardees are sent to the City Mayor for the official contract award decision.</p>
       </div>
       <div class="bac-action-strip">
         <button class="btn-secondary" type="button" onclick="bacOpenResolutionPacket()">Resolution Packet</button>
@@ -1351,7 +1351,7 @@ function bacOpenRecommendationForm(bidId) {
       ${bacDocSectionHtml('Attach award documents (Abstract of Bids, Notice of Award, Board Resolution) — optional, can be added later too')}
       <div class="form-actions">
         <button class="btn-secondary" type="button" onclick="bacCloseModal()">Cancel</button>
-        <button class="btn-primary" type="submit">Send to HOPE</button>
+        <button class="btn-primary" type="submit">Send to City Mayor</button>
       </div>
     </form>
   `);
@@ -1379,7 +1379,7 @@ function bacOpenRecommendationForm(bidId) {
       }
 
       bacCloseModal();
-      bacToast('Award recommendation sent to HOPE for approval.');
+      bacToast('Award recommendation sent to the City Mayor for approval.');
       await bacRefresh('award-recommendation');
     } catch (error) {
       bacShowFieldErrors(form, error.fieldErrors);

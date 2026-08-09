@@ -1143,7 +1143,7 @@ function renderProjectsTable(rows) {
             <td><span class="proj-id">${escapeHtml(p.project_code)}</span></td>
             <td>
               <strong>${escapeHtml(p.name)}</strong><br><small style="color:#94a3b8">${escapeHtml(p.location||'')}</small>
-              ${p.has_pending_edit_request ? '<br><span class="badge badge-highprio" style="margin-top:4px;display:inline-block;">Edit Pending HOPE Review</span>' : ''}
+              ${p.has_pending_edit_request ? '<br><span class="badge badge-highprio" style="margin-top:4px;display:inline-block;">Edit Pending City Mayor Review</span>' : ''}
             </td>
             <td>${escapeHtml(p.location || '—')}</td>
             <td>${p.contractor_name || '—'}</td>
@@ -1162,8 +1162,8 @@ function renderProjectsTable(rows) {
             <td>
               <div class="action-btns">
                 <button class="btn-icon" title="View" onclick="openProjectModal(${p.id})"><svg viewBox="0 0 20 20" fill="currentColor" width="14" height="14"><path d="M10 12.5a2.5 2.5 0 100-5 2.5 2.5 0 000 5z"/><path fill-rule="evenodd" d="M.664 10.59a1.651 1.651 0 010-1.186A10.004 10.004 0 0110 3c4.257 0 7.893 2.66 9.336 6.41.147.381.146.804 0 1.186A10.004 10.004 0 0110 17c-4.257 0-7.893-2.66-9.336-6.41zM14 10a4 4 0 11-8 0 4 4 0 018 0z" clip-rule="evenodd"/></svg></button>
-                <button class="btn-icon" title="${p.has_pending_edit_request ? 'An edit request for this project is already pending HOPE review' : 'Edit (requires HOPE approval)'}" ${p.has_pending_edit_request ? 'disabled' : ''} onclick="showProjectForm(${p.id})"><svg viewBox="0 0 20 20" fill="currentColor" width="14" height="14"><path d="M13.586 3.586a2 2 0 112.828 2.828l-.793.793-2.828-2.828.793-.793z"/><path d="M11.379 5.793L3 14.172V17h2.828l8.38-8.379-2.83-2.828z"/></svg></button>
-                <button class="btn-icon btn-danger" title="Request Deletion (requires HOPE approval)" onclick="deleteProject(${p.id})"><svg viewBox="0 0 20 20" fill="currentColor" width="14" height="14"><path fill-rule="evenodd" d="M9 2a1 1 0 00-.894.553L7.382 4H4a1 1 0 000 2v10a2 2 0 002 2h8a2 2 0 002-2V6a1 1 0 100-2h-3.382l-.724-1.447A1 1 0 0011 2H9zM7 8a1 1 0 012 0v6a1 1 0 11-2 0V8zm5-1a1 1 0 00-1 1v6a1 1 0 102 0V8a1 1 0 00-1-1z" clip-rule="evenodd"/></svg></button>
+                <button class="btn-icon" title="${p.has_pending_edit_request ? 'An edit request for this project is already pending City Mayor review' : 'Edit (requires City Mayor approval)'}" ${p.has_pending_edit_request ? 'disabled' : ''} onclick="showProjectForm(${p.id})"><svg viewBox="0 0 20 20" fill="currentColor" width="14" height="14"><path d="M13.586 3.586a2 2 0 112.828 2.828l-.793.793-2.828-2.828.793-.793z"/><path d="M11.379 5.793L3 14.172V17h2.828l8.38-8.379-2.83-2.828z"/></svg></button>
+                <button class="btn-icon btn-danger" title="Request Deletion (requires City Mayor approval)" onclick="deleteProject(${p.id})"><svg viewBox="0 0 20 20" fill="currentColor" width="14" height="14"><path fill-rule="evenodd" d="M9 2a1 1 0 00-.894.553L7.382 4H4a1 1 0 000 2v10a2 2 0 002 2h8a2 2 0 002-2V6a1 1 0 100-2h-3.382l-.724-1.447A1 1 0 0011 2H9zM7 8a1 1 0 012 0v6a1 1 0 11-2 0V8zm5-1a1 1 0 00-1 1v6a1 1 0 102 0V8a1 1 0 00-1-1z" clip-rule="evenodd"/></svg></button>
               </div>
             </td>
           </tr>`;
@@ -1183,7 +1183,7 @@ async function showProjectForm(id = null) {
   const title = id ? `Edit Project #${id}` : 'New Project';
   openModal(title, `
     <form id="projectForm" onsubmit="submitProjectForm(event, ${id})">
-      ${id ? '<p class="empty-state" style="margin-bottom:10px;">Editing a registered project now requires HOPE\'s approval. Your proposed changes are only applied once HOPE reviews and approves this request.</p>' : ''}
+      ${id ? '<p class="empty-state" style="margin-bottom:10px;">Editing a registered project now requires the City Mayor\'s approval. Your proposed changes are only applied once the City Mayor reviews and approves this request.</p>' : ''}
       <div class="form-grid">
         <div class="form-group" style="grid-column: span 2;">
           <label>Project Name *</label>
@@ -1281,7 +1281,7 @@ async function showProjectForm(id = null) {
       ${id ? `
         <div class="form-group" style="margin-top:8px;">
           <label>Reason for This Edit *</label>
-          <textarea name="reason" class="form-input" rows="2" required placeholder="Explain why this change is needed — HOPE will review this before it takes effect."></textarea>
+          <textarea name="reason" class="form-input" rows="2" required placeholder="Explain why this change is needed — the City Mayor will review this before it takes effect."></textarea>
         </div>
       ` : ''}
       <div class="form-actions">
@@ -2018,7 +2018,7 @@ async function submitProjectForm(e, id) {
       res = await postForm(API.projects, new FormData(e.target));
     }
     if (res.error) { toast(res.error, 'error'); return; }
-    toast(id ? 'Edit request submitted — awaiting HOPE review.' : 'Project registered — awaiting Engineering Review.');
+    toast(id ? 'Edit request submitted — awaiting City Mayor review.' : 'Project registered — awaiting Engineering Review.');
     closeModal();
     fetchProjects();
   } catch { toast('Something went wrong', 'error'); }
@@ -2027,7 +2027,7 @@ async function submitProjectForm(e, id) {
 function deleteProject(id) {
   openModal('Request Project Deletion', `
     <form id="deleteProjectForm">
-      <p class="empty-state" style="margin-bottom:10px;">Deleting a project now requires HOPE's approval. Submit a reason below — the project (and its related expenses/milestones) is only removed once HOPE approves the request.</p>
+      <p class="empty-state" style="margin-bottom:10px;">Deleting a project now requires the City Mayor's approval. Submit a reason below — the project (and its related expenses/milestones) is only removed once the City Mayor approves the request.</p>
       <div class="form-group">
         <label>Reason for Deletion *</label>
         <textarea name="reason" class="form-input" rows="4" required placeholder="Explain why this project should be permanently deleted"></textarea>
@@ -2050,7 +2050,7 @@ function deleteProject(id) {
       });
       const result = await res.json();
       if (!res.ok || result.error) { toast(result.error || 'Failed to submit deletion request', 'error'); return; }
-      toast('Deletion request submitted for HOPE review.');
+      toast('Deletion request submitted for City Mayor review.');
       closeModal();
       fetchProjects();
     } catch {
@@ -2078,7 +2078,7 @@ async function loadProjectApprovalPage() {
       <select class="filter-select" onchange="approvalState.status=this.value;approvalState.page=1;fetchApprovalProjects()">
         <option value="">All Projects</option>
         <option value="draft">Draft / Awaiting Engineering Review</option>
-        <option value="endorsed">Endorsed / Awaiting HOPE Review</option>
+        <option value="endorsed">Endorsed / Awaiting City Mayor Review</option>
         <option value="returned">Returned for Revision</option>
         <option value="approved">Approved</option>
         <option value="bidding">In BAC Bidding</option>
@@ -2144,7 +2144,7 @@ function renderApprovalTable(rows) {
             <td>
               <div class="inline-actions">
                 ${p.status === 'draft' ? '<small>Awaiting Engineering Review</small>' : ''}
-                ${p.status === 'endorsed' ? '<small>Awaiting HOPE review</small>' : ''}
+                ${p.status === 'endorsed' ? '<small>Awaiting City Mayor review</small>' : ''}
                 ${p.status === 'assigned' ? '<small>Awaiting Notice to Proceed</small>' : ''}
                 ${p.status === 'completion_inspection' ? '<small>Awaiting completion inspection</small>' : ''}
                 ${p.status === 'completed' ? `<button class="btn-primary btn-compact" onclick="openTurnoverModal(${p.id}, '${escapeHtml(p.name)}', '${escapeHtml(p.project_code)}')">Record Turnover</button>` : ''}
@@ -2895,7 +2895,7 @@ const CAL_TYPE_LABELS = {
   payment: 'Payment Due Dates',
   deadline: 'Project Deadlines',
   meeting: 'Meetings',
-  hope_review: 'HOPE Reviews',
+  hope_review: 'City Mayor Reviews',
   bac_activity: 'BAC Activities',
 };
 const CAL_MONTH_NAMES = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];

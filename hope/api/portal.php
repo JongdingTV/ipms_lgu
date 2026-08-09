@@ -496,7 +496,7 @@ if ($action === 'decide_award') {
             (int) ($rec['contractor_user_id'] ?: 0),
             'info',
             'Bid awarded',
-            'Your bid for ' . $rec['project_name'] . ' has been approved by HOPE.'
+            'Your bid for ' . $rec['project_name'] . ' has been approved by the City Mayor.'
         );
     } else {
         $newBidStatus = $decision === 'return' ? 'for_review' : 'rejected';
