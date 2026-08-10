@@ -1,0 +1,11 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(/c/xampp/php/php.exe \"C:\\\\Users\\\\Jayson\\\\AppData\\\\Local\\\\Temp\\\\claude\\\\c--xampp-htdocs-ipms-lgu\\\\6a44bb88-8a7b-4f9e-91c8-cc6cdd177fab\\\\scratchpad\\\\verify_set_status.php\")",
+      "Bash(/c/xampp/php/php.exe \"C:\\\\Users\\\\Jayson\\\\AppData\\\\Local\\\\Temp\\\\claude\\\\c--xampp-htdocs-ipms-lgu\\\\6a44bb88-8a7b-4f9e-91c8-cc6cdd177fab\\\\scratchpad\\\\verify_contractor_engineer.php\")",
+      "Bash(/c/xampp/php/php.exe -r ' *)",
+      "Bash(/c/xampp/php/php.exe -l \"c:/xampp/htdocs/ipms.lgu/engineer/api/portal.php\")",
+      "Bash(/c/xampp/php/php.exe -l \"c:/xampp/htdocs/ipms.lgu/engineer/dashboard.php\")"
+    ]
+  }
+}

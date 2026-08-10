@@ -18,6 +18,7 @@ if ($engineerId === null) {
 }
 
 engineerScopeEnsureTables($db);
+engineerInspectionEnsureSchema($db);
 projectWorkflowEnsureProjectStatusSchema($db);
 projectWorkflowEnsureRoleConnectionTables($db);
 engineerScopeSeedAssignments($db, $engineerId);
@@ -158,6 +159,17 @@ function engineerPortalProjectExtras(PDO $db, array $project, int $engineerId): 
 
 const ENGINEER_PHOTO_MAX_SIZE = 8 * 1024 * 1024;
 const ENGINEER_PHOTO_EXTENSIONS = ['png', 'jpg', 'jpeg', 'webp'];
+
+/** Links progress photos taken during a field inspection back to that inspection record (mobile field-inspection feature). */
+function engineerInspectionEnsureSchema(PDO $db): void
+{
+    $db->exec("ALTER TABLE engineer_progress_photos ADD COLUMN IF NOT EXISTS inspection_id INT NULL AFTER engineer_id");
+    $db->exec("
+        ALTER TABLE engineer_progress_photos
+        ADD CONSTRAINT fk_engineer_photos_inspection FOREIGN KEY IF NOT EXISTS (inspection_id)
+        REFERENCES inspections(id) ON DELETE SET NULL
+    ");
+}
 
 /** Same dynamic-row convention used by superadmin/bac/contractor: photos[N][title]/[caption] + photo_files[N]. */
 function engineerCollectPhotoRows(array $textRows, array $filesField): array
@@ -712,7 +724,11 @@ if ($method === 'POST') {
     }
 
     if ($action === 'inspection') {
-        $validated = Validator::make(requestBody(), [
+        // multipart/form-data, not JSON — mobile field inspections optionally
+        // attach photos (see engineerCollectPhotoRows()/FileUpload below),
+        // and files can't travel in a JSON body. Validator::make() takes any
+        // array, so $_POST works exactly like requestBody() did before.
+        $validated = Validator::make($_POST, [
             'progress_report_id' => 'required|integer',
             'actual_progress_percent' => 'required|integer|min:0|max:100',
             'recommendation' => 'nullable|in:approved,needs_correction,for_reinspection',
@@ -742,6 +758,18 @@ if ($method === 'POST') {
             respond(['error' => 'Progress report not found.'], 404);
         }
 
+        // Photos are optional — an inspection can still be saved with findings
+        // only, same as before this feature. Validate before opening the
+        // transaction so a bad photo never leaves an orphaned inspection row.
+        $photoRows = engineerCollectPhotoRows($_POST['photos'] ?? [], $_FILES['photo_files'] ?? []);
+        foreach ($photoRows as $i => $row) {
+            if ($row['error'] !== null) {
+                respond(['error' => 'Photo row ' . ($i + 1) . ': ' . $row['error']], 422);
+            }
+        }
+
+        $storedFiles = [];
+
         $db->beginTransaction();
         try {
             $stmt = $db->prepare("
@@ -769,13 +797,45 @@ if ($method === 'POST') {
                     ->execute([$actualProgress, (int) $reportRow['project_id']]);
             }
 
+            if ($photoRows !== []) {
+                $photoStmt = $db->prepare("
+                    INSERT INTO engineer_progress_photos
+                        (project_id, engineer_id, inspection_id, title, caption, file_path, original_name, file_size, mime_type)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ");
+                foreach ($photoRows as $row) {
+                    $stored = FileUpload::store($row['file'], 'engineer-progress', [
+                        'max_size' => ENGINEER_PHOTO_MAX_SIZE,
+                        'extensions' => ENGINEER_PHOTO_EXTENSIONS,
+                        'sniff_pdf' => false,
+                    ]);
+                    $storedFiles[] = $stored['stored_path'];
+
+                    $photoStmt->execute([
+                        (int) $reportRow['project_id'],
+                        $engineerId,
+                        $newInspectionId,
+                        $row['title'],
+                        $row['caption'] !== '' ? $row['caption'] : null,
+                        $stored['stored_path'],
+                        $stored['original_name'],
+                        $stored['file_size'],
+                        $stored['mime_type'],
+                    ]);
+                }
+            }
+
             $db->commit();
         } catch (Throwable $e) {
             $db->rollBack();
+            engineerCleanupFiles($storedFiles);
             respond(['error' => 'Unable to save inspection.'], 500);
         }
 
         $inspectionDetails = 'Site inspection recorded — ' . str_replace('_', ' ', $recommendation) . '.';
+        if ($photoRows !== []) {
+            $inspectionDetails .= ' (' . count($photoRows) . ' photo(s) attached.)';
+        }
         projectWorkflowLog($db, 'Inspection recorded', (int) $reportRow['project_id'], $inspectionDetails, $engineerId);
         logActivity($engineerId, 'inspection_submitted', $inspectionDetails, 'Inspections', $newInspectionId);
 

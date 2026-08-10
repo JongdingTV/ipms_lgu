@@ -1,0 +1,108 @@
+/* ============================================================
+   assets/css/project-map.css — the ONE pin/popup/district-tint design
+   shared by every project map in the app (Citizen QC map, Admin GIS Map +
+   Dashboard panel, Admin project-location picker, Engineer's map viewer,
+   transparency.php). Paired with assets/js/project-map.js.
+
+   Visual design approved via prototype before this was wired in — see
+   project plan. Explicitly NOT used by the CIMMS maintenance-report picker
+   (citizen.js's cimms* code keeps its own separate styling untouched).
+   ============================================================ */
+
+/* ---- Pin marker (Leaflet divIcon content) ---- */
+.proj-map-pin { position: relative; width: 34px; height: 44px; }
+.proj-map-pin .pin-pulse {
+    position: absolute;
+    top: 6px; left: 6px;
+    width: 22px; height: 22px;
+    border-radius: 50%;
+    opacity: .55;
+    animation: projMapPinPulse 2s ease-out infinite;
+}
+.proj-map-pin .pin-body {
+    position: absolute;
+    top: 0; left: 0;
+    width: 34px; height: 34px;
+    border-radius: 50% 50% 50% 0;
+    transform: rotate(-45deg);
+    border: 3px solid #fff;
+    box-shadow: 0 3px 10px rgba(15, 23, 42, .4);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+.proj-map-pin .pin-icon {
+    transform: rotate(45deg);
+    width: 15px;
+    height: 15px;
+    color: #fff;
+}
+.proj-map-pin .pin-icon svg { width: 100%; height: 100%; display: block; }
+@keyframes projMapPinPulse {
+    0%   { transform: scale(.6); opacity: .55; }
+    70%  { transform: scale(2); opacity: 0; }
+    100% { transform: scale(2); opacity: 0; }
+}
+@media (prefers-reduced-motion: reduce) {
+    .proj-map-pin .pin-pulse { animation: none; }
+}
+
+/* ---- Popup card (inserted into Leaflet's marker.bindPopup) ---- */
+/* Leaflet's own default CSS always gives .leaflet-popup-content-wrapper a
+   white background (light OR dark site theme — never overridden here or
+   anywhere else in the app, see the comment near the bottom of this file),
+   so every line of text in this popup needs its OWN explicit dark color —
+   it must never fall back to inheriting body's color:var(--text-primary),
+   which turns near-white in dark mode and would vanish against this
+   always-white card. color set here is the base for any unclassed span
+   (e.g. the "% complete" text); pmp-budget/pmp-meta/pmp-name below still
+   set their own explicit shades on top of it. */
+.proj-map-popup { min-width: 210px; font-family: inherit; color: #475569; }
+.pmp-photo {
+    position: relative;
+    height: 76px;
+    margin: -12px -14px 8px;
+    border-radius: 12px 12px 0 0;
+    background: linear-gradient(135deg, #eef3ff, #dbe4ef);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    overflow: hidden;
+}
+.pmp-photo img { width: 100%; height: 100%; object-fit: cover; }
+.pmp-photo svg { width: 26px; height: 26px; color: #94a3b8; }
+.pmp-status {
+    position: absolute;
+    top: 8px; left: 8px;
+    padding: 2px 9px;
+    border-radius: 999px;
+    font-size: .64rem;
+    font-weight: 700;
+    color: #fff;
+    text-transform: uppercase;
+    letter-spacing: .03em;
+}
+.pmp-name { display: block; font-size: .88rem; font-weight: 700; color: #0f172a; margin-bottom: 2px; }
+.pmp-meta { font-size: .74rem; color: #64748b; margin-bottom: 6px; }
+.pmp-progress {
+    height: 6px;
+    border-radius: 999px;
+    background: #e2e8f0;
+    overflow: hidden;
+    margin-bottom: 6px;
+}
+.pmp-progress span { display: block; height: 100%; border-radius: 999px; }
+.pmp-row { display: flex; align-items: center; justify-content: space-between; font-size: .74rem; }
+.pmp-budget { font-weight: 600; color: #0f172a; font-variant-numeric: tabular-nums; }
+.pmp-stars { display: flex; align-items: center; gap: 2px; color: #f59e0b; margin-top: 6px; }
+.pmp-stars svg { width: 11px; height: 11px; }
+.pmp-stars small { color: #64748b; margin-left: 3px; font-weight: 600; }
+
+/* Leaflet's stock popup/tooltip chrome is bare by default (sharp corners, a
+   stray pointer line) — restyle once here so every portal's map gets the
+   same polished look, not just the citizen pages that already had this. */
+.leaflet-popup-content-wrapper { border-radius: 12px; box-shadow: 0 10px 30px rgba(15, 23, 42, .2); font-family: inherit; }
+.leaflet-popup-content { margin: 12px 14px; line-height: 1.4; }
+.leaflet-popup-tip { box-shadow: 0 3px 8px rgba(15, 23, 42, .15); }
+.leaflet-popup-close-button { color: #94a3b8 !important; font-size: 18px !important; padding: 6px 8px 0 0 !important; }
+.leaflet-popup-close-button:hover { color: #1e293b !important; }

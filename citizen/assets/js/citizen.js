@@ -298,15 +298,9 @@ let qcSelectedGeo = null;   // geojson name of the selected barangay
 let qcPinMarker = null;     // draggable marker for the exact spot
 let qcProjectMarkers = [];  // ongoing-project pins, separate layer from the barangay polygons
 
-// Same palette the staff GIS map uses (assets/js/script.js) so a status
-// colors the same way everywhere in the app.
-const QC_PROJECT_STATUS_COLORS = {
-    completed: '#22c55e',
-    delayed: '#ef4444',
-    cancelled: '#94a3b8',
-    turnover: '#16a34a',
-};
-const QC_PROJECT_DEFAULT_COLOR = '#3b82f6'; // active, assigned, bidding, etc. — still in progress
+// Pin icon/color/popup design lives in assets/js/project-map.js (window.ProjectMap)
+// — shared by every project map in the app, so a status looks the same
+// everywhere. See loadQcProjectPins() below for where it's used.
 
 // The geojson uses official PSA spellings; entry.geo carries that spelling
 // when it differs from the display name (see citizen/includes/qc-locations.php).
@@ -644,37 +638,13 @@ function addQcLegend() {
 
 // Ongoing-project pins — separate Leaflet layer from the barangay polygons,
 // so a citizen can see exactly where active infrastructure work is happening
-// while picking their own feedback location. Reuses the same coordinate
-// source and status-color scheme as the staff GIS map (assets/js/script.js
-// renderGisMap()); "View Details" reuses the existing citizen project-detail
-// modal (openProjectDetail) rather than duplicating it.
-// One glance should say "something is happening here" — a plain dot doesn't
-// invite a click. Varying the icon by status also means a citizen can tell
-// delayed/completed/active apart without opening anything.
-const QC_PROJECT_STATUS_ICONS = {
-    completed: '✅',
-    turnover: '✅',
-    delayed: '⚠️',
-    cancelled: '✖️',
-};
-const QC_PROJECT_DEFAULT_ICON = '🚧'; // active, assigned, bidding, on_hold, etc.
-
-function qcProjectPinIcon(color, icon) {
-    return L.divIcon({
-        className: 'qc-project-pin',
-        html:
-            '<span class="pin-pulse" style="background:' + color + '"></span>' +
-            '<span class="pin-body" style="background:' + color + '">' +
-                '<span class="pin-icon">' + icon + '</span>' +
-            '</span>',
-        iconSize: [34, 44],
-        iconAnchor: [17, 40],
-        popupAnchor: [0, -38],
-    });
-}
-
+// while picking their own feedback location. Icon/popup design comes from
+// the shared window.ProjectMap (assets/js/project-map.js) so it matches
+// every other project map in the app; hovering previews the project
+// (photo + rating when it has one), clicking opens the existing citizen
+// project-detail modal (openProjectDetail) rather than duplicating it.
 function loadQcProjectPins() {
-    if (!qcMap) return;
+    if (!qcMap || !window.ProjectMap) return;
     fetch(citizenUrl('citizen/api/projects.php'))
         .then(res => res.json())
         .then(data => {
@@ -691,23 +661,17 @@ function loadQcProjectPins() {
                 // out-of-city coordinates rather than plot a wrong pin.
                 if (lat < 14.55 || lat > 14.82 || lng < 120.96 || lng > 121.16) return;
 
-                const color = QC_PROJECT_STATUS_COLORS[p.status] || QC_PROJECT_DEFAULT_COLOR;
-                const icon = QC_PROJECT_STATUS_ICONS[p.status] || QC_PROJECT_DEFAULT_ICON;
                 const marker = L.marker([lat, lng], {
-                    icon: qcProjectPinIcon(color, icon),
+                    icon: window.ProjectMap.pinIcon(p.status),
                 }).addTo(qcMap);
 
-                const progress = Number(p.progress) || 0;
-                marker.bindPopup(
-                    '<div class="qc-project-popup">' +
-                        '<span class="qc-pp-status" style="background:' + color + '">' + escapeHtml(projectStatusLabel(p.status)) + '</span>' +
-                        '<strong class="qc-pp-name">' + escapeHtml(p.name) + '</strong>' +
-                        '<div class="qc-pp-meta">' + escapeHtml(p.project_code || '') + (p.location ? ' — ' + escapeHtml(p.location) : '') + '</div>' +
-                        '<div class="qc-pp-progress"><span style="width:' + Math.min(100, Math.max(0, progress)) + '%;background:' + color + '"></span></div>' +
-                        '<div class="qc-pp-meta">' + formatCurrency(p.budget) + ' · ' + progress + '% complete</div>' +
-                        '<button class="qc-pp-btn" onclick="openProjectDetail(' + Number(p.id) + ')">View Details</button>' +
-                    '</div>'
-                );
+                marker.bindPopup(window.ProjectMap.popupHtml({
+                    ...p,
+                    status_label: projectStatusLabel(p.status),
+                    budget_label: formatCurrency(p.budget),
+                }, citizenUrl('')));
+                window.ProjectMap.bindPin(marker, p, openProjectDetail);
+
                 qcProjectMarkers.push(marker);
             });
         })

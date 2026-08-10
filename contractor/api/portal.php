@@ -6,6 +6,7 @@ require_once __DIR__ . '/../../includes/workflow.php';
 require_once __DIR__ . '/../../includes/ContractorScoring.php';
 require_once __DIR__ . '/../../includes/Validator.php';
 require_once __DIR__ . '/../../includes/Pagination.php';
+require_once __DIR__ . '/../../includes/engineer-status.php';
 
 apiHeaders();
 requireAnyRole(['contractor']);
@@ -15,6 +16,7 @@ $db = getDB();
 projectWorkflowEnsureProjectStatusSchema($db);
 projectWorkflowEnsureRoleConnectionTables($db);
 contractorsEnsureApplicationSchema($db);
+engineerStatusEnsureSchema($db);
 $contractorId = contractorScopeCurrentId($db);
 if ($contractorId === null) {
     respond(['error' => 'No contractor profile is linked to this account.'], 403);
@@ -173,6 +175,31 @@ function contractorPortalProjectExtras(PDO $db, array $project, int $contractorI
     ");
     $payments->execute([$projectId, $contractorId]);
     $project['payment_requests'] = $payments->fetchAll();
+
+    // Scoped-down engineer status (spec §12): name + presence + work status +
+    // current activity only — no other engineers, no other projects, no
+    // precise location beyond what's already shown on this same project.
+    $project['assigned_engineer'] = null;
+    $engineerStmt = $db->prepare("
+        SELECT engineer_id FROM engineer_project_assignments
+        WHERE project_id = ? AND status = 'active'
+        ORDER BY assigned_at DESC LIMIT 1
+    ");
+    $engineerStmt->execute([$projectId]);
+    $engineerId = $engineerStmt->fetchColumn();
+    if ($engineerId) {
+        $engineer = engineerStatusFetchOne($db, (int) $engineerId);
+        if ($engineer) {
+            $project['assigned_engineer'] = [
+                'name' => $engineer['name'],
+                // Contractors don't need the online/away nuance — just whether
+                // the engineer is reachable right now.
+                'presence' => $engineer['presence'] === 'online' ? 'online' : 'offline',
+                'work_status' => $engineer['work_status'],
+                'activity' => $engineer['activity'],
+            ];
+        }
+    }
 
     return $project;
 }

@@ -661,32 +661,36 @@ async function renderDashboardGisMap(projects) {
 
     try {
       const geojson = await loadQcBoundaryGeoJson();
-      L.geoJSON(geojson, {
-        style: { color: '#2563eb', weight: 1.5, fill: false },
-        interactive: false,
-      }).addTo(dashboardGisMapInstance);
+      // Same light per-district fill as every other project map now uses.
+      window.ProjectMap.districtLayer(dashboardGisMapInstance, geojson, { light: true });
     } catch { /* decorative outline only */ }
   }
 
   dashboardGisMarkers.forEach(m => dashboardGisMapInstance.removeLayer(m));
   dashboardGisMarkers = [];
 
+  const DASHBOARD_HEALTH_ICONS = { healthy: window.ProjectMap.ICONS.check, warning: window.ProjectMap.ICONS.warn, critical: window.ProjectMap.ICONS.x };
+
   withCoords.forEach(p => {
+    // This panel colors by health score, not workflow status (a different
+    // axis — see the comment above DASHBOARD_HEALTH_COLORS) — same pin
+    // shape as everywhere else, its own color/icon.
     const color = DASHBOARD_HEALTH_COLORS[p.health] || DASHBOARD_HEALTH_COLORS.healthy;
-    const marker = L.circleMarker([Number(p.latitude), Number(p.longitude)], {
-      radius: 9,
-      color: '#fff',
-      weight: 2,
-      fillColor: color,
-      fillOpacity: 0.9,
+    const icon = DASHBOARD_HEALTH_ICONS[p.health] || DASHBOARD_HEALTH_ICONS.healthy;
+    const marker = L.marker([Number(p.latitude), Number(p.longitude)], {
+      icon: window.ProjectMap.pinIcon(null, { color, icon }),
     }).addTo(dashboardGisMapInstance);
 
-    marker.bindPopup(`
-      <strong>${escapeHtml(p.name)}</strong><br>
-      <small>${escapeHtml(p.project_code)} · ${escapeHtml(formatStatus(p.status))} · ${p.progress}%</small><br>
-      <small>${healthBadge(p.health_score, p.health)}${p.contractor_name ? ' · ' + escapeHtml(p.contractor_name) : ''}</small><br>
-      <button style="margin-top:6px;padding:4px 10px;border:none;border-radius:6px;background:#2563eb;color:#fff;cursor:pointer;" onclick="openProjectModal(${p.id})">View Details</button>
-    `);
+    // status_label/budget_label are rendered as escaped plain text by
+    // popupHtml (not HTML), so healthBadge()'s markup can't go there —
+    // the pin's own color/icon is already the health signal at a glance.
+    marker.bindPopup(window.ProjectMap.popupHtml({
+      ...p,
+      status_label: formatStatus(p.status),
+      budget_label: p.contractor_name || '',
+    }, window.BASE_PATH || ''));
+    window.ProjectMap.bindPin(marker, p, openProjectModal);
+
     dashboardGisMarkers.push(marker);
   });
 
@@ -1359,8 +1363,13 @@ async function setupProjectLocationPicker(existingProject) {
     }).addTo(projectQcMap);
 
     const barangayIndex = projectBarangayIndex();
+    // Light per-district fill — same shared design as every other project
+    // map (assets/js/project-map.js) — in place of the old flat gray fill.
+    // districtStyle() is used directly (not districtLayer()) so this
+    // geoJSON's own onEachFeature click-to-select-barangay wiring below
+    // stays exactly as it was.
     projectQcGeoLayer = L.geoJSON(geojson, {
-      style: { color: '#fff', weight: 1, fillColor: '#94a3b8', fillOpacity: 0.35 },
+      style: (feature) => window.ProjectMap.districtStyle(feature, { light: true }),
       onEachFeature: (feature, layer) => {
         const geoName = feature.properties.adm4_en;
         const info = barangayIndex[geoName];
@@ -1445,7 +1454,11 @@ function focusProjectBarangayOnMap(district, barangayName, zoom = true) {
 function placeProjectPin(latlng) {
   if (!projectQcMap) return;
   if (!projectQcPinMarker) {
-    projectQcPinMarker = L.marker(latlng, { draggable: true, title: 'Exact spot (drag to adjust)' }).addTo(projectQcMap);
+    projectQcPinMarker = L.marker(latlng, {
+      draggable: true,
+      title: 'Exact spot (drag to adjust)',
+      icon: window.ProjectMap.pinIcon(null, { neutral: true }),
+    }).addTo(projectQcMap);
     projectQcPinMarker.on('dragend', () => setProjectPinInputs(projectQcPinMarker.getLatLng()));
   } else {
     projectQcPinMarker.setLatLng(latlng);
@@ -4472,10 +4485,10 @@ async function renderGisMap(projects) {
 
     try {
       const geojson = await loadQcBoundaryGeoJson();
-      L.geoJSON(geojson, {
-        style: { color: '#2563eb', weight: 1.5, fill: false },
-        interactive: false, // outline only — clicks/hover should pass through to project markers underneath
-      }).addTo(gisMapInstance);
+      // Light per-district fill — same treatment as the citizen QC map
+      // (window.ProjectMap, assets/js/project-map.js), so districts read
+      // consistently everywhere instead of this page's old plain outline.
+      window.ProjectMap.districtLayer(gisMapInstance, geojson, { light: true });
     } catch {
       // Purely decorative — the maxBounds restriction above already keeps the map QC-only either way.
     }
@@ -4493,21 +4506,17 @@ async function renderGisMap(projects) {
     // force the map to zoom out past the city to fit an obviously bad point.
     if (!isWithinQc(lat, lng)) { skippedOutOfBounds++; return; }
 
-    const color = GIS_STATUS_COLORS[p.status] || GIS_DEFAULT_COLOR;
-    const marker = L.circleMarker([lat, lng], {
-      radius: 9,
-      color: '#fff',
-      weight: 2,
-      fillColor: color,
-      fillOpacity: 0.9,
+    const marker = L.marker([lat, lng], {
+      icon: window.ProjectMap.pinIcon(p.status),
     }).addTo(gisMapInstance);
 
-    marker.bindPopup(`
-      <strong>${escapeHtml(p.name)}</strong><br>
-      <small>${escapeHtml(p.project_code)} — ${escapeHtml(p.location || '')}</small><br>
-      <small>${formatMoney(p.budget)} · ${formatStatus(p.status)}</small><br>
-      <button style="margin-top:6px;padding:4px 10px;border:none;border-radius:6px;background:#2563eb;color:#fff;cursor:pointer;" onclick="openProjectModal(${p.id})">View Details</button>
-    `);
+    marker.bindPopup(window.ProjectMap.popupHtml({
+      ...p,
+      status_label: formatStatus(p.status),
+      budget_label: formatMoney(p.budget),
+    }, window.BASE_PATH || ''));
+    window.ProjectMap.bindPin(marker, p, openProjectModal);
+
     gisMarkers.push(marker);
   });
 

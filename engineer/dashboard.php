@@ -168,6 +168,18 @@ require_once __DIR__ . '/sidebar.php';
 <script src="<?= htmlspecialchars(assetUrl('/assets/js/pagination.js')) ?>"></script>
 <script src="<?= htmlspecialchars(assetUrl('/assets/js/sidebar-toggle.js')) ?>"></script>
 <script src="<?= htmlspecialchars(assetUrl('/assets/js/project-timeline.js')) ?>"></script>
+
+<!-- Leaflet: read-only project/site location maps (View Map on a project,
+     Urban Planning road-inspection points). Same CDN-vendoring pattern as
+     includes/footer.php's admin-only include. -->
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin="">
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
+
+<!-- Shared pin/popup/district-tint design for every project map — see
+     assets/js/project-map.js. Loaded after Leaflet itself. -->
+<link rel="stylesheet" href="<?= htmlspecialchars(assetUrl('/assets/css/project-map.css')) ?>">
+<script src="<?= htmlspecialchars(assetUrl('/assets/js/project-map.js')) ?>"></script>
+
 <script src="<?= htmlspecialchars(assetUrl('/engineer/assets/js/engineer.js')) ?>"></script>
 </body>
 </html>

@@ -1448,6 +1448,32 @@ async function contractorSubmitPaymentRequest(event) {
   }
 }
 
+const CONTRACTOR_ENGINEER_WORK_LABELS = {
+  available: 'Available for Project Coordination',
+  on_site: 'On Site',
+  on_inspection: 'Currently conducting inspection',
+  field_assignment: 'On a Field Assignment',
+  busy: 'Busy',
+  off_duty: 'Off Duty',
+};
+
+function contractorAssignedEngineerHtml(engineer) {
+  if (!engineer) return '';
+  const dot = engineer.presence === 'online' ? '#22c55e' : '#94a3b8';
+  const workLabel = CONTRACTOR_ENGINEER_WORK_LABELS[engineer.work_status] || engineer.work_status;
+  return `
+    <h4 style="margin: 12px 0 8px; color:#1e293b;">Assigned Engineer</h4>
+    <div class="contractor-mini-list">
+      <div class="contractor-mini-row">
+        <span><i style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${dot};margin-right:6px;"></i>${contractorEscape(engineer.name)}</span>
+        <strong>${engineer.presence === 'online' ? 'Online' : 'Offline'}</strong>
+      </div>
+      <div class="contractor-mini-row">
+        <span>${contractorEscape(workLabel)}${engineer.activity ? ' &middot; ' + contractorEscape(engineer.activity) : ''}</span>
+      </div>
+    </div>`;
+}
+
 async function contractorOpenProject(projectId) {
   try {
     const response = await contractorGet('project', { id: projectId });
@@ -1461,6 +1487,7 @@ async function contractorOpenProject(projectId) {
         <div class="contractor-detail-box"><span>Contract Value</span><strong>${contractorFullMoney(project.budget)}</strong></div>
         <div class="contractor-detail-box"><span>Released</span><strong>${contractorFullMoney(project.total_spent)}</strong></div>
       </div>
+      ${contractorAssignedEngineerHtml(project.assigned_engineer)}
       <h4 style="margin: 12px 0 8px; color:#1e293b;">Milestones</h4>
       <div class="contractor-mini-list">
         ${project.milestones.length ? project.milestones.map(milestone => `

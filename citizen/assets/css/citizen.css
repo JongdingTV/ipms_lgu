@@ -1121,10 +1121,18 @@ body {
     transition: border-color .2s, box-shadow .2s, transform .2s;
 }
 
-.announcement-card:hover {
+/* .row-click is also on this element (for the shared card-click cursor/
+   title), and its :hover sets a near-transparent background meant for bare
+   <tr>s that have no background of their own. Same specificity + later in
+   the file means it would otherwise clobber the card's opaque --card-bg on
+   hover, making the whole card go see-through. Re-declare background here
+   with the extra .row-click in the selector so this wins instead. */
+.announcement-card:hover,
+.announcement-card.row-click:hover {
     border-color: var(--primary, #2563eb);
     box-shadow: 0 8px 24px rgba(37, 99, 235, .15);
     transform: translateY(-4px);
+    background: var(--card-bg, #ffffff);
 }
 
 .announcement-card-poster {
@@ -3054,8 +3062,14 @@ path.leaflet-interactive {
     box-shadow: var(--card-shadow, 0 14px 34px rgba(15,23,42,.07));
 }
 
-.tracker-card:hover {
+/* Same fix as .announcement-card:hover above — .row-click is also on this
+   element, and its :hover background (meant for bare <tr>s) would otherwise
+   win on specificity+order and replace this card's opaque background,
+   making it look transparent on hover. */
+.tracker-card:hover,
+.tracker-card.row-click:hover {
     border-color: var(--primary, #2563eb);
+    background: var(--card-bg, #ffffff);
 }
 
 .tracker-photo {

@@ -271,7 +271,20 @@ button { cursor: pointer; font-family: var(--font); }
 .user-district-badge { display: inline-block; margin-left: 4px; padding: 1px 8px; border-radius: 999px; background: #eff6ff; color: #2563eb; font-weight: 700; font-size: .68rem; text-transform: none; }
 
 .user-avatar-wrapper { position: relative; }
-.user-avatar { width: 40px; height: 40px; border-radius: 50%; background: linear-gradient(90deg, #60a5fa, #2563eb); color: white; border: none; cursor: pointer; font-weight: 700; font-size: .95rem; display: flex; align-items: center; justify-content: center; transition: all .2s; }
+/* Engineers only: the ring color reflects "My Field Status" (see
+   engineerStatusRenderBadge() in engineer.js, which sets --status-ring-color
+   inline) — visible at a glance without opening the user-menu dropdown.
+   A transparent 3px border by default keeps the avatar's box size identical
+   whether or not a status ring is present, so nothing shifts when it's set. */
+.user-avatar {
+  width: 40px; height: 40px; border-radius: 50%;
+  background: linear-gradient(90deg, #60a5fa, #2563eb); color: white;
+  border: 3px solid transparent; box-sizing: border-box;
+  border-color: var(--status-ring-color, transparent);
+  cursor: pointer; font-weight: 700; font-size: .95rem;
+  display: flex; align-items: center; justify-content: center;
+  transition: border-color .25s ease, transform .2s, box-shadow .2s;
+}
 .user-avatar:hover { transform: scale(1.08); box-shadow: 0 4px 12px rgba(37,99,235,.3); }
 
 .user-menu { position: absolute; top: calc(100% + 8px); right: 0; background: var(--card-bg); border-radius: 12px; box-shadow: 0 10px 40px rgba(0,0,0,.15); min-width: 280px; opacity: 0; visibility: hidden; transform: translateY(-8px); transition: all .2s; z-index: 1000; overflow: hidden; }
@@ -1385,6 +1398,12 @@ input.search-pill {
   .gsearch-trigger span { display: none; }
   .kpi-grid { grid-template-columns: 1fr; }
   .content { padding: 12px; }
+  /* Easier thumb-tapping on a phone-width field form (e.g. engineer
+     Inspection Review) — the buttons stay right-aligned/inline above this
+     breakpoint via .form-actions' flex row. */
+  .form-actions { flex-direction: column; }
+  .form-actions .btn-primary,
+  .form-actions .btn-secondary { width: 100%; }
 }
 ::-webkit-scrollbar { width: 6px; }
 ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 3px; }

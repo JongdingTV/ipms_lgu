@@ -47,8 +47,11 @@
           <?php endif; ?>
         </div>
       </div>
-      
+
       <div class="user-avatar-wrapper">
+        <!-- Engineers only: engineerStatusRenderBadge() (engineer.js) colors this
+             avatar's ring to match "My Field Status" (the user-menu control below)
+             so it's visible without opening that dropdown. -->
         <button class="user-avatar" id="userMenuBtn" title="User menu">
           <?= strtoupper(substr($_SESSION['full_name'], 0, 1)) ?>
         </button>
@@ -83,6 +86,24 @@
             </svg>
             <span>Change Password</span>
           </a>
+          <?php if (($_SESSION['role'] ?? '') === 'engineer'): // reported to the Admin/Head Office Engineer Live Status widget, see api/engineer-status.php ?>
+          <div class="user-menu-divider"></div>
+          <div class="user-menu-status" id="engMyStatus">
+            <div class="user-menu-status-label">My Field Status</div>
+            <select id="engMyStatusSelect" class="user-menu-status-select">
+              <option value="available">&#128994; Available</option>
+              <option value="on_site">&#128309; On Site</option>
+              <option value="on_inspection">&#128992; On Inspection</option>
+              <option value="field_assignment">&#128995; Field Assignment</option>
+              <option value="busy">&#128993; Busy</option>
+              <option value="off_duty">&#9899; Off Duty</option>
+            </select>
+            <div id="engMyStatusProjectWrap" class="user-menu-status-project" style="display:none;">
+              <select id="engMyStatusProject" class="user-menu-status-select"></select>
+              <input type="text" id="engMyStatusActivity" class="user-menu-status-input" placeholder="Activity (e.g. Site Monitoring)" maxlength="150">
+            </div>
+          </div>
+          <?php endif; ?>
           <?php if (($_SESSION['role'] ?? '') !== 'citizen'): // citizens log out via the sidebar footer ?>
           <div class="user-menu-divider"></div>
           <a href="<?= $BASE_PATH ?>auth/logout.php" class="user-menu-item user-menu-logout">
@@ -97,6 +118,17 @@
     </div>
   </div>
 </header>
+
+<?php if (in_array($_SESSION['role'] ?? '', ['admin', 'hope', 'super_admin'], true)): // floating Engineer Live Status widget — see api/engineer-status.php ?>
+<link rel="stylesheet" href="<?= htmlspecialchars(assetUrl('/assets/css/engineer-status-widget.css')) ?>">
+<script>window.ENGINEER_STATUS_ENDPOINT = <?= json_encode(appUrl('/api/engineer-status.php')) ?>;</script>
+<script src="<?= htmlspecialchars(assetUrl('/assets/js/engineer-status-widget.js')) ?>"></script>
+<?php endif; ?>
+
+<?php if (($_SESSION['role'] ?? '') === 'engineer'): // presence heartbeat for the widget above — see assets/js/engineer.js for the "My Field Status" control itself ?>
+<script>window.ENGINEER_STATUS_ENDPOINT = <?= json_encode(appUrl('/api/engineer-status.php')) ?>;</script>
+<script src="<?= htmlspecialchars(assetUrl('/assets/js/engineer-heartbeat.js')) ?>"></script>
+<?php endif; ?>
 
 <?php if (($_SESSION['role'] ?? '') !== 'citizen'): // citizen pages ship their own copies of these modals (citizen/dashboard.php) ?>
 <!-- Logout confirmation (see assets/js/session-guard.js) -->

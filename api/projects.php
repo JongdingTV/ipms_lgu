@@ -57,6 +57,8 @@ documentsEnsureVersioningSchema($db);
 projectDeletionEnsureSchema($db);
 projectEditEnsureSchema($db);
 projectRoadGeometryEnsureSchema($db);
+projectRatingsEnsureSchema($db);
+projectGalleryEnsureSchema($db);
 $id     = isset($_GET['id']) ? (int) $_GET['id'] : null;
 $user   = currentUser();
 $isContractor = ($user['role'] ?? '') === 'contractor';
@@ -322,15 +324,39 @@ if ($method === 'GET') {
     $total->execute($params);
     $totalRows = (int) $total->fetchColumn();
 
+    // Photo + rating are only ever consumed by the GIS Map/Dashboard map pins
+    // (the only callers that pass has_coordinates=1) — kept out of the
+    // regular paginated project list/table's query so its much larger,
+    // unfiltered row count doesn't pay for joins it never uses.
+    $mapExtraSelect = '';
+    $mapExtraJoin = '';
+    if (!empty($_GET['has_coordinates'])) {
+        $mapExtraSelect = ",
+               COALESCE(
+                   (SELECT file_path FROM project_gallery_photos WHERE project_id = p.id AND is_cover = 1 LIMIT 1),
+                   (SELECT file_path FROM engineer_progress_photos WHERE project_id = p.id ORDER BY created_at DESC LIMIT 1)
+               ) AS cover_photo,
+               pr.rating_count, pr.rating_average
+        ";
+        $mapExtraJoin = "
+            LEFT JOIN (
+                SELECT project_id, COUNT(*) AS rating_count, ROUND(AVG(rating), 1) AS rating_average
+                FROM project_ratings WHERE status = 'approved' GROUP BY project_id
+            ) pr ON pr.project_id = p.id
+        ";
+    }
+
     $stmt = $db->prepare("
         SELECT p.*, c.name AS contractor_name,
                COALESCE(SUM(e.amount),0) AS total_spent,
                (SELECT a.engineer_id FROM engineer_project_assignments a WHERE a.project_id = p.id AND a.status = 'active' ORDER BY a.assigned_at DESC LIMIT 1) AS assigned_engineer_id,
                (SELECT u.full_name FROM engineer_project_assignments a INNER JOIN users u ON u.id = a.engineer_id WHERE a.project_id = p.id AND a.status = 'active' ORDER BY a.assigned_at DESC LIMIT 1) AS assigned_engineer_name,
                (SELECT COUNT(*) FROM project_edit_requests r WHERE r.project_id = p.id AND r.status = 'pending') AS has_pending_edit_request
+               $mapExtraSelect
         FROM projects p
         LEFT JOIN contractors c ON c.id = p.contractor_id
         LEFT JOIN expenses e    ON e.project_id = p.id
+        $mapExtraJoin
         WHERE $whereSQL
         GROUP BY p.id
         ORDER BY p.updated_at DESC

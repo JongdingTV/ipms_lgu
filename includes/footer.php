@@ -35,6 +35,11 @@
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin="">
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
 
+  <!-- Shared pin/popup/district-tint design for every project map — see
+       assets/js/project-map.js. Loaded after Leaflet itself. -->
+  <link rel="stylesheet" href="<?= htmlspecialchars(assetUrl('/assets/css/project-map.css')) ?>">
+  <script src="<?= htmlspecialchars(assetUrl('/assets/js/project-map.js')) ?>"></script>
+
   <!-- QR code generation (Project QR Transparency feature) — client-side
        only, same CDN-vendoring pattern as Leaflet above. -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js" crossorigin="anonymous"></script>

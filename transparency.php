@@ -132,6 +132,10 @@ function transparencyStatusLabel(string $status): string
 <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;600;700;800&display=swap" rel="stylesheet">
 <?php if ($project && $project['latitude'] !== null && $project['longitude'] !== null): ?>
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin="">
+<!-- Shared pin design (assets/js/project-map.js's .proj-map-pin classes) —
+     just the CSS here; the marker itself is hand-built below to match it,
+     since this single-marker public page doesn't need the whole JS module. -->
+<link rel="stylesheet" href="<?= htmlspecialchars(appUrl('/assets/css/project-map.css')) ?>">
 <?php endif; ?>
 <style>
   :root {
@@ -288,12 +292,31 @@ function transparencyStatusLabel(string $status): string
     <p class="t-footer">This page is generated automatically from the Quezon City Infrastructure Project Management System and updates as the project progresses.</p>
   </div>
 
-  <?php if ($project && $project['latitude'] !== null && $project['longitude'] !== null): ?>
+  <?php if ($project && $project['latitude'] !== null && $project['longitude'] !== null):
+    // Same status→{color,icon} pairing as window.ProjectMap.STATUS
+    // (assets/js/project-map.js) — duplicated here in PHP since this
+    // single-marker public page doesn't load the shared JS module.
+    $tPinIcons = [
+        'completed' => ['#22c55e', '<path d="M5 12.5l4.5 4.5L19 7"/>'],
+        'turnover' => ['#16a34a', '<path d="M5 12.5l4.5 4.5L19 7"/>'],
+        'delayed' => ['#ef4444', '<path d="M12 4l9 16H3l9-16z"/><path d="M12 10v4"/>'],
+        'cancelled' => ['#94a3b8', '<path d="M6 6l12 12M18 6L6 18"/>'],
+    ];
+    [$tPinColor, $tPinPath] = $tPinIcons[$project['status']] ?? ['#3b82f6', '<path d="M12 3l5 15H7l5-15z"/><path d="M5 21h14"/><path d="M9 13h6"/>'];
+  ?>
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
   <script>
     var map = L.map('tMap', { scrollWheelZoom: false }).setView([<?= (float) $project['latitude'] ?>, <?= (float) $project['longitude'] ?>], 16);
     L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { attribution: '&copy; OpenStreetMap contributors', maxZoom: 19 }).addTo(map);
-    L.marker([<?= (float) $project['latitude'] ?>, <?= (float) $project['longitude'] ?>]).addTo(map);
+    var tPinIcon = L.divIcon({
+      className: 'proj-map-pin',
+      html: '<span class="pin-pulse" style="background:<?= $tPinColor ?>"></span>' +
+        '<span class="pin-body" style="background:<?= $tPinColor ?>"><span class="pin-icon">' +
+        '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><?= $tPinPath ?></svg>' +
+        '</span></span>',
+      iconSize: [34, 44], iconAnchor: [17, 40],
+    });
+    L.marker([<?= (float) $project['latitude'] ?>, <?= (float) $project['longitude'] ?>], { icon: tPinIcon }).addTo(map);
   </script>
   <?php endif; ?>
 </body>

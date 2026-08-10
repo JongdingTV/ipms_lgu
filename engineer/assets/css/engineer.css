@@ -299,3 +299,36 @@
 :root[data-theme="dark"] .engineer-detail-box {
   background: rgba(148, 163, 184, .08);
 }
+
+/* "My Field Status" — topbar user-menu control (markup in includes/topbar.php,
+   engineer role only) that reports work status to the Admin/Head Office
+   Engineer Live Status widget. See engineerStatusInit() in engineer.js. */
+.user-menu-status {
+  padding: 4px 20px 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.user-menu-status-label {
+  font-size: .72rem;
+  font-weight: 700;
+  letter-spacing: .04em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+.user-menu-status-select,
+.user-menu-status-input {
+  width: 100%;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 7px 10px;
+  font-size: .82rem;
+  font-family: inherit;
+  background: var(--card-bg, #fff);
+  color: var(--text-primary, #1e293b);
+}
+.user-menu-status-project {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}

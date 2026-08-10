@@ -7,6 +7,10 @@ $extraStylesheets = [
     'assets/css/project-timeline.css',
     'citizen/assets/css/citizen.css?v=' . filemtime(__DIR__ . '/assets/css/citizen.css'),
     'assets/css/chatbot-widget.css?v=' . filemtime(dirname(__DIR__) . '/assets/css/chatbot-widget.css'),
+    // Shared pin/popup/district-tint design, see assets/js/project-map.js —
+    // Leaflet itself is lazy-loaded by citizen.js's loadLeafletOnce(), but
+    // this stylesheet has no Leaflet dependency so it can load statically.
+    'assets/css/project-map.css',
 ];
 
 require_once __DIR__ . '/includes/qc-locations.php';
@@ -1239,6 +1243,7 @@ $statusChip = [
 <script src="<?= htmlspecialchars(assetUrl('/assets/js/project-timeline.js')) ?>"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js" crossorigin="anonymous"></script>
 <script src="<?= htmlspecialchars(assetUrl('/assets/js/qrcode-widget.js')) ?>"></script>
+<script src="<?= htmlspecialchars(assetUrl('/assets/js/project-map.js')) ?>"></script>
 <script src="<?= htmlspecialchars(assetUrl('/citizen/assets/js/citizen.js')) ?>"></script>
 <script>
   window.CHATBOT_ENDPOINT = <?= json_encode(appUrl('/api/chatbot.php')) ?>;

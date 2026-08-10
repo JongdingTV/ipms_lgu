@@ -149,11 +149,14 @@ function engineerShowFieldErrors(form, fieldErrors) {
 /* ---- Dynamic photo rows (repeatable fields) ---------------------------- */
 
 function engineerPhotoRowHtml(index) {
+  // accept="image/*" capture="environment" — on a phone this opens the
+  // camera directly instead of a generic file browser (server still
+  // enforces the strict png/jpg/jpeg/webp allowlist in ENGINEER_PHOTO_EXTENSIONS).
   return `
     <div class="doc-row" data-doc-index="${index}">
       <input class="form-input" type="text" name="photos[${index}][title]" placeholder="Photo title">
       <input class="form-input" type="text" name="photos[${index}][caption]" placeholder="Caption (optional)">
-      <input class="form-input" type="file" name="photo_files[${index}]" accept=".png,.jpg,.jpeg,.webp">
+      <input class="form-input" type="file" name="photo_files[${index}]" accept="image/*" capture="environment">
       <button type="button" class="doc-row-remove" aria-label="Remove photo row">&times;</button>
     </div>
   `;
@@ -802,7 +805,7 @@ function engineerRenderInspectionPage() {
     <section class="engineer-layout">
       <article class="engineer-form-card">
         <h2>New Inspection</h2>
-        <form id="engineerInspectionForm">
+        <form id="engineerInspectionForm" enctype="multipart/form-data">
           <div class="form-group">
             <label>Contractor Report</label>
             <select class="form-input" name="progress_report_id" required>${engineerInspectionOptions()}</select>
@@ -829,6 +832,11 @@ function engineerRenderInspectionPage() {
             <label>Findings</label>
             <textarea class="form-input" name="findings" rows="4" required placeholder="Inspection findings and validation notes"></textarea>
           </div>
+          <div class="doc-section" style="margin-top:12px;">
+            <label>Site Photos (optional)</label>
+            <div class="doc-rows" id="engineerInspectionPhotoRows">${engineerPhotoRowHtml(0)}</div>
+            <button type="button" class="doc-add-btn" id="engineerInspectionPhotoAddBtn">+ Add another photo</button>
+          </div>
           <div class="form-actions">
             <button class="btn-primary" type="submit">Save Inspection</button>
           </div>
@@ -842,6 +850,7 @@ function engineerRenderInspectionPage() {
     </section>
   `;
 
+  engineerWirePhotoRows(document.getElementById('engineerInspectionPhotoRows'), document.getElementById('engineerInspectionPhotoAddBtn'));
   document.getElementById('engineerInspectionForm').addEventListener('submit', engineerSubmitInspection);
   engineerLoadInspectionsList();
 }
@@ -1293,6 +1302,9 @@ async function engineerOpenProject(projectId) {
         <div class="engineer-detail-box"><span>Budget</span><strong>${engineerMoney(project.budget)}</strong></div>
         <div class="engineer-detail-box"><span>Spent</span><strong>${engineerMoney(project.total_spent)}</strong></div>
       </div>
+      ${project.latitude && project.longitude
+        ? `<button type="button" class="btn-secondary" style="margin-top:10px;" onclick="engineerUpShowMap(${project.latitude}, ${project.longitude}, '${engineerEscape(project.name).replace(/'/g, "\\'")}')">View Map</button>`
+        : `<p class="engineer-scope-note" style="margin-top:10px;">Site location not pinned yet.</p>`}
       <h4 style="margin: 12px 0 8px; color:#1e293b;">Milestones</h4>
       <div class="engineer-mini-list">
         ${project.milestones.length ? project.milestones.map(row => `
@@ -1408,16 +1420,13 @@ async function engineerSubmitInspection(event) {
   event.preventDefault();
   const formEl = event.target;
   engineerClearFieldErrors(formEl);
+  // multipart, not JSON — the form may carry site photos (photos[N][title]/
+  // caption + photo_files[N], same repeatable-row convention as the
+  // standalone Photos page) alongside the findings/progress fields.
   const form = new FormData(formEl);
 
   try {
-    await engineerPostJson('inspection', {
-      progress_report_id: form.get('progress_report_id'),
-      inspection_date: form.get('inspection_date'),
-      actual_progress_percent: form.get('actual_progress_percent'),
-      recommendation: form.get('recommendation'),
-      findings: form.get('findings'),
-    });
+    await engineerPostForm('inspection', form);
     engineerToast('Inspection saved.');
     formEl.reset();
     await engineerRefreshData();
@@ -1850,7 +1859,11 @@ function engineerUpShowMap(lat, lng, label) {
     if (!container || typeof L === 'undefined') return;
     engineerUpMapInstance = L.map('engineerUpMapView').setView([lat, lng], 15);
     L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { attribution: '&copy; OpenStreetMap contributors' }).addTo(engineerUpMapInstance);
-    L.marker([lat, lng]).addTo(engineerUpMapInstance);
+    // Same pin design as every other project map (assets/js/project-map.js)
+    // in place of Leaflet's plain default marker; this view has no
+    // status/rating data to preview, so it's the neutral variant.
+    const pinIcon = window.ProjectMap ? window.ProjectMap.pinIcon(null, { neutral: true }) : undefined;
+    L.marker([lat, lng], pinIcon ? { icon: pinIcon } : {}).addTo(engineerUpMapInstance);
     setTimeout(() => engineerUpMapInstance.invalidateSize(), 50);
   }, 50);
 }
@@ -2157,6 +2170,104 @@ async function engineerUpExportHistoryCsv() {
   URL.revokeObjectURL(url);
 }
 
+/* ---- "My Field Status" (topbar user-menu, see includes/topbar.php) ----
+   Reports presence/work status to the Admin/Head Office Engineer Live
+   Status widget (assets/js/engineer-status-widget.js) via a separate
+   endpoint (api/engineer-status.php) from the rest of this portal. */
+const ENGINEER_STATUS_PROJECT_REQUIRED = ['on_site', 'on_inspection', 'field_assignment'];
+// Same status→color mapping as the Admin/Head Office widget's work-status
+// dots (assets/css/engineer-status-widget.css's .work-* classes), so the
+// color means the same thing everywhere it appears in the app.
+const ENGINEER_STATUS_META = {
+  available: { label: 'Available', ring: '#22c55e' },
+  on_site: { label: 'On Site', ring: '#3b82f6' },
+  on_inspection: { label: 'On Inspection', ring: '#f97316' },
+  field_assignment: { label: 'Field Assignment', ring: '#a855f7' },
+  busy: { label: 'Busy', ring: '#eab308' },
+  off_duty: { label: 'Off Duty', ring: '#64748b' },
+};
+
+// Colors the topbar avatar's ring to match "My Field Status" — no separate
+// badge element; the avatar itself (#userMenuBtn) is the indicator.
+function engineerStatusRenderBadge(workStatus) {
+  const avatar = document.getElementById('userMenuBtn');
+  if (!avatar) return;
+  const meta = ENGINEER_STATUS_META[workStatus] || ENGINEER_STATUS_META.available;
+  avatar.style.setProperty('--status-ring-color', meta.ring);
+  avatar.title = `My Field Status: ${meta.label} (click to change)`;
+}
+
+async function engineerStatusGet(action) {
+  const response = await fetch(`${window.ENGINEER_STATUS_ENDPOINT}?action=${encodeURIComponent(action)}`, {
+    headers: ENGINEER_CSRF_HEADERS,
+  });
+  const data = await response.json();
+  if (!response.ok || data.error) throw engineerErrorFrom(data, response);
+  return data;
+}
+
+async function engineerStatusPost(body) {
+  const response = await fetch(`${window.ENGINEER_STATUS_ENDPOINT}?action=set_status`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...ENGINEER_CSRF_HEADERS },
+    body: JSON.stringify(body),
+  });
+  const data = await response.json();
+  if (!response.ok || data.error) throw engineerErrorFrom(data, response);
+  return data;
+}
+
+function engineerStatusToggleProjectFields(workStatus) {
+  const wrap = document.getElementById('engMyStatusProjectWrap');
+  if (wrap) wrap.style.display = ENGINEER_STATUS_PROJECT_REQUIRED.includes(workStatus) ? 'flex' : 'none';
+}
+
+function engineerStatusSave() {
+  const select = document.getElementById('engMyStatusSelect');
+  const projectSelect = document.getElementById('engMyStatusProject');
+  const activityInput = document.getElementById('engMyStatusActivity');
+  if (!select) return;
+
+  const workStatus = select.value;
+  const needsProject = ENGINEER_STATUS_PROJECT_REQUIRED.includes(workStatus);
+  engineerStatusRenderBadge(workStatus); // optimistic — flips instantly, no need to wait on the round trip
+  engineerStatusPost({
+    work_status: workStatus,
+    project_id: needsProject ? Number(projectSelect.value || 0) : null,
+    activity: needsProject ? activityInput.value : null,
+  }).catch(error => engineerToast(error.message, 'error'));
+}
+
+async function engineerStatusInit() {
+  const select = document.getElementById('engMyStatusSelect');
+  if (!select) return; // topbar only renders this for role === 'engineer'
+
+  const projectSelect = document.getElementById('engMyStatusProject');
+  const activityInput = document.getElementById('engMyStatusActivity');
+
+  try {
+    const mine = await engineerStatusGet('mine');
+    projectSelect.innerHTML = mine.projects.map(p =>
+      `<option value="${p.id}">${engineerEscape(p.project_code)} — ${engineerEscape(p.name)}</option>`
+    ).join('') || '<option value="">No active assignments</option>';
+
+    select.value = mine.work_status;
+    if (mine.project_id) projectSelect.value = String(mine.project_id);
+    activityInput.value = mine.activity || '';
+    engineerStatusToggleProjectFields(mine.work_status);
+    engineerStatusRenderBadge(mine.work_status);
+  } catch (error) {
+    // Non-critical widget-reporting feature — the rest of the portal keeps working.
+  }
+
+  select.addEventListener('change', () => {
+    engineerStatusToggleProjectFields(select.value);
+    engineerStatusSave();
+  });
+  projectSelect.addEventListener('change', engineerStatusSave);
+  activityInput.addEventListener('blur', engineerStatusSave);
+}
+
 window.engineerUpOpenInspectionForm = engineerUpOpenInspectionForm;
 window.engineerUpShowMap = engineerUpShowMap;
 window.engineerUpPrintReport = engineerUpPrintReport;
@@ -2175,6 +2286,7 @@ window.showChangePassword = showChangePassword;
 
 document.addEventListener('DOMContentLoaded', async () => {
   engineerWireShell();
+  engineerStatusInit();
   try {
     await engineerRefreshData();
   } catch (error) {
