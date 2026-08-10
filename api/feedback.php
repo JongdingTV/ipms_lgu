@@ -20,8 +20,66 @@ requireCsrfProtection();
 $db     = getDB();
 $id     = isset($_GET['id']) ? (int) $_GET['id'] : null;
 
+// Mirrors assets/js/script.js's FEEDBACK_CATEGORY_LABELS — kept in sync by
+// hand since this is the only server-side spot that needs the human label.
+const FEEDBACK_CATEGORY_LABELS_PHP = [
+    'complaint' => 'General Complaint',
+    'road_damage' => 'Road Damage',
+    'drainage_flooding' => 'Drainage / Flooding',
+    'streetlight' => 'Streetlight',
+    'sidewalk_accessibility' => 'Sidewalk / Accessibility',
+    'safety_hazard' => 'Safety Hazard',
+    'project_delay' => 'Project Delay',
+    'suggestion' => 'Suggestion',
+    'inquiry' => 'Inquiry',
+    'commendation' => 'Commendation',
+];
+
 // ── GET ────────────────────────────────────────────────────
 if ($method === 'GET') {
+    // Rule-based triage, not a live read of the message content — an
+    // explainable urgency score from signals already on the row (priority,
+    // how long it's been sitting untouched, category, status), same
+    // "advisory only" honesty convention as the dashboard's AI Insights
+    // widget and the contractor/engineer score breakdowns. Only open/
+    // in_progress entries are scored; resolved/closed never "need attention".
+    if (($_GET['action'] ?? '') === 'needs_attention') {
+        $categoryWeight = [
+            'safety_hazard' => 15,
+            'road_damage' => 8,
+            'drainage_flooding' => 8,
+            'project_delay' => 6,
+        ];
+        $priorityWeight = ['urgent' => 40, 'high' => 25, 'medium' => 10, 'low' => 0];
+
+        $rows = $db->query("
+            SELECT f.id, f.citizen_name, f.message, f.category, f.priority, f.status, f.created_at,
+                   p.name AS project_name, DATEDIFF(NOW(), f.created_at) AS days_open
+            FROM feedback f
+            LEFT JOIN projects p ON p.id = f.project_id
+            WHERE f.status IN ('open', 'in_progress')
+        ")->fetchAll();
+
+        foreach ($rows as &$row) {
+            $daysOpen = max(0, (int) $row['days_open']);
+            $row['score'] = ($priorityWeight[$row['priority']] ?? 0)
+                + ($categoryWeight[$row['category']] ?? 0)
+                + ($row['status'] === 'open' ? 5 : 0)
+                + min($daysOpen, 14);
+            $row['days_open'] = $daysOpen;
+
+            $reasons = [];
+            if (in_array($row['priority'], ['urgent', 'high'], true)) $reasons[] = ucfirst($row['priority']) . ' priority';
+            if (isset($categoryWeight[$row['category']])) $reasons[] = FEEDBACK_CATEGORY_LABELS_PHP[$row['category']] ?? $row['category'];
+            if ($daysOpen >= 3) $reasons[] = "open {$daysOpen}d";
+            $row['reason'] = implode(' · ', $reasons) ?: 'Recently submitted';
+        }
+        unset($row);
+
+        usort($rows, fn($a, $b) => $b['score'] <=> $a['score']);
+        respond(['success' => true, 'data' => array_slice($rows, 0, 5)]);
+    }
+
     if ($id) {
         $stmt = $db->prepare("
             SELECT f.*, p.name AS project_name
@@ -50,6 +108,10 @@ if ($method === 'GET') {
     if (!empty($_GET['priority'])) {
         $where[]  = 'f.priority = ?';
         $params[] = $_GET['priority'];
+    }
+    if (!empty($_GET['category'])) {
+        $where[]  = 'f.category = ?';
+        $params[] = $_GET['category'];
     }
     if (!empty($_GET['project_id'])) {
         $where[]  = 'f.project_id = ?';

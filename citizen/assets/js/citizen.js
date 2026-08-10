@@ -832,9 +832,10 @@ function renderProjectSlideshow() {
     track.innerHTML = projects.map(p => `
         <div class="slideshow-slide" onclick="openProjectDetail(${p.id})">
             <img src="${citizenUrl(escapeHtml(p.cover_photo))}" alt="${escapeHtml(p.cover_title || p.name)}" loading="lazy">
-            ${p.rating_count > 0 ? `<span class="slideshow-rating-badge">★ ${p.rating_average.toFixed(1)}</span>` : ''}
+            ${p.rating_count > 0 ? `<span class="slideshow-rating-badge">★ ${p.rating_average.toFixed(1)} <span class="slideshow-rating-count">(${p.rating_count})</span></span>` : ''}
             <div class="slideshow-caption">
                 <span class="project-badge badge-${escapeHtml(p.status)}">${projectStatusLabel(p.status)}</span>
+                ${p.category ? `<span class="slideshow-category-chip">${escapeHtml(p.category)}</span>` : ''}
                 <h3>${escapeHtml(p.name)}</h3>
                 <p>${escapeHtml(p.project_code || '')}${p.location ? ' · ' + escapeHtml(p.location) : ''}</p>
                 <div class="slideshow-progress">
@@ -1049,8 +1050,9 @@ function renderProjectDetail(data) {
                 </div>
             </div>
 
-            ${data.citizen_verified ? `
+            ${data.citizen_verified && data.rating_eligible ? `
             <form id="projectRatingForm" class="rating-form" onsubmit="submitProjectRating(event, ${p.id})">
+                ${ownRating ? `<div class="rating-own-status">Your review: <strong>${ratingStatusLabel(ownRating.status)}</strong>${(ownRating.status === 'rejected' || ownRating.status === 'flagged') && ownRating.decision_remarks ? ' — ' + escapeHtml(ownRating.decision_remarks) : ''}</div>` : ''}
                 <div class="star-input" id="ratingStarInput">
                     ${[1, 2, 3, 4, 5].map(n => `
                         <button type="button" class="star-input-btn${ownRating && Number(ownRating.rating) >= n ? ' active' : ''}" data-star="${n}" onclick="setRatingStars(${n})" aria-label="${n} star${n === 1 ? '' : 's'}">★</button>
@@ -1063,7 +1065,9 @@ function renderProjectDetail(data) {
                 </div>
                 <p class="rating-form-status" id="ratingFormStatus"></p>
             </form>
-            ` : '<p class="empty-state empty-state-compact">Verify your account in Profile to rate this project.</p>'}
+            ` : (!data.citizen_verified
+                ? '<p class="empty-state empty-state-compact">Verify your account in Profile to rate this project.</p>'
+                : '<p class="empty-state empty-state-compact">Ratings open once this project is actively underway or completed.</p>')}
 
             <div class="rating-list">
                 ${ratings.length ? ratings.map(r => `
@@ -1083,6 +1087,16 @@ function renderProjectDetail(data) {
 
 function renderStarIcons(count) {
     return [1, 2, 3, 4, 5].map(n => `<span class="star${n <= count ? ' filled' : ''}">★</span>`).join('');
+}
+
+function ratingStatusLabel(status) {
+    return {
+        pending: 'Pending review',
+        approved: 'Approved — visible to the public',
+        rejected: 'Not approved',
+        flagged: 'Flagged for review',
+        archived: 'Archived',
+    }[status] || status;
 }
 
 function setRatingStars(n) {

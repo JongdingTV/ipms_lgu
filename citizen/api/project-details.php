@@ -75,13 +75,31 @@ $stmt = $pdo->prepare("
 $stmt->execute([$projectId]);
 $galleryPhotos = $stmt->fetchAll();
 
-// Star ratings: aggregate, other citizens' reviews, and the requesting
-// citizen's own rating (so the frontend knows Submit vs Edit/Delete)
+// Star ratings: aggregate, distribution, other citizens' reviews, and the
+// requesting citizen's own rating (so the frontend knows Submit vs
+// Edit/Delete) — only APPROVED reviews count toward anything public; the
+// citizen's own row is always visible to them regardless of its moderation
+// status.
 projectRatingsEnsureSchema($pdo);
-$stmt = $pdo->prepare("SELECT COUNT(*) AS count, COALESCE(AVG(rating), 0) AS average FROM project_ratings WHERE project_id = ?");
+$stmt = $pdo->prepare("SELECT COUNT(*) AS count, COALESCE(AVG(rating), 0) AS average FROM project_ratings WHERE project_id = ? AND status = 'approved'");
 $stmt->execute([$projectId]);
 $ratingRow = $stmt->fetch();
 $ratingSummary = ['count' => (int) $ratingRow['count'], 'average' => round((float) $ratingRow['average'], 1)];
+
+$distStmt = $pdo->prepare("SELECT rating, COUNT(*) AS c FROM project_ratings WHERE project_id = ? AND status = 'approved' GROUP BY rating");
+$distStmt->execute([$projectId]);
+$distRaw = $distStmt->fetchAll(PDO::FETCH_KEY_PAIR);
+$ratingDistribution = [];
+for ($star = 5; $star >= 1; $star--) {
+    $c = (int) ($distRaw[$star] ?? 0);
+    $ratingDistribution[] = [
+        'star' => $star,
+        'count' => $c,
+        'percent' => $ratingSummary['count'] > 0 ? (int) round($c / $ratingSummary['count'] * 100) : 0,
+    ];
+}
+
+$ratingEligible = in_array($project['status'], projectRatingEligibleStatuses(), true);
 
 $stmt = $pdo->prepare('SELECT id, verification_status FROM citizens WHERE user_id = ?');
 $stmt->execute([$user['user_id']]);
@@ -91,7 +109,7 @@ $citizenVerified = ($citizenRow['verification_status'] ?? null) === 'verified';
 
 $ownRating = null;
 if ($citizenId) {
-    $ownStmt = $pdo->prepare('SELECT id, rating, comment, created_at, updated_at FROM project_ratings WHERE project_id = ? AND citizen_id = ?');
+    $ownStmt = $pdo->prepare('SELECT id, rating, comment, status, decision_remarks, created_at, updated_at FROM project_ratings WHERE project_id = ? AND citizen_id = ?');
     $ownStmt->execute([$projectId, $citizenId]);
     $ownRating = $ownStmt->fetch() ?: null;
 }
@@ -105,7 +123,7 @@ $stmt = $pdo->prepare("
            CONCAT(c.first_name, ' ', LEFT(c.last_name, 1), '.') AS citizen_name
     FROM project_ratings r
     INNER JOIN citizens c ON c.id = r.citizen_id
-    WHERE r.project_id = ? AND r.citizen_id " . ($citizenId ? '!= ?' : 'IS NOT NULL') . "
+    WHERE r.project_id = ? AND r.status = 'approved' AND r.citizen_id " . ($citizenId ? '!= ?' : 'IS NOT NULL') . "
     ORDER BY r.created_at DESC
     LIMIT 20
 ");
@@ -135,6 +153,8 @@ echo json_encode([
     'photos' => $photos,
     'gallery_photos' => $galleryPhotos,
     'rating_summary' => $ratingSummary,
+    'rating_distribution' => $ratingDistribution,
+    'rating_eligible' => $ratingEligible,
     'ratings' => $ratings,
     'own_rating' => $ownRating,
     'citizen_verified' => $citizenVerified,

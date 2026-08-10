@@ -1459,6 +1459,23 @@ body {
     backdrop-filter: blur(2px);
 }
 
+.slideshow-rating-count {
+    font-weight: 500;
+    opacity: .85;
+    margin-left: 2px;
+}
+
+.slideshow-category-chip {
+    display: inline-block;
+    background: rgba(255, 255, 255, .16);
+    color: #fff;
+    font-size: .7rem;
+    font-weight: 600;
+    padding: 3px 9px;
+    border-radius: 999px;
+    margin-bottom: 6px;
+}
+
 .slideshow-caption {
     position: absolute;
     left: 0;
@@ -1607,6 +1624,12 @@ body {
 .rating-form textarea {
     resize: vertical;
     margin-bottom: 10px;
+}
+
+.rating-own-status {
+    font-size: .78rem;
+    color: var(--text-muted, #64748b);
+    margin-bottom: 8px;
 }
 
 .rating-form-actions {

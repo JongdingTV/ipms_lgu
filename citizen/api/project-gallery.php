@@ -25,7 +25,7 @@ $visibleStatuses = ['approved', 'bidding', 'awarded', 'assigned', 'active', 'del
 $placeholders = implode(',', array_fill(0, count($visibleStatuses), '?'));
 
 $stmt = $pdo->prepare("
-    SELECT p.id, p.project_code, p.name, p.status, p.progress, p.location,
+    SELECT p.id, p.project_code, p.name, p.status, p.progress, p.location, p.category,
            g.file_path AS cover_photo, g.title AS cover_title,
            r.rating_count, r.rating_average
     FROM projects p
@@ -33,6 +33,7 @@ $stmt = $pdo->prepare("
     LEFT JOIN (
         SELECT project_id, COUNT(*) AS rating_count, AVG(rating) AS rating_average
         FROM project_ratings
+        WHERE status = 'approved'
         GROUP BY project_id
     ) r ON r.project_id = p.id
     WHERE p.status IN ($placeholders)

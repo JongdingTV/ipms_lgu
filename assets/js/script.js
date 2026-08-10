@@ -4207,11 +4207,22 @@ async function deleteGalleryPhoto(id) {
 }
 
 /* ============================================================
-   CITIZEN RATINGS (Admin — read-only view; citizens own their reviews,
-   so there is deliberately no edit/delete action anywhere on this page —
-   api/project-ratings.php has no mutation route to call even if there were)
+   CITIZEN RATINGS (Admin — moderation queue. Approve/Reject/Flag/Archive
+   only ever touch the row's status — api/project-ratings.php's UPDATE
+   structurally excludes rating/comment from its SET list, so staff can
+   never alter what a citizen actually said.)
    ============================================================ */
-let ratingsState = { page: 1, search: '', project_id: '' };
+let ratingsState = { page: 1, search: '', project_id: '', status: 'pending' };
+
+const RATING_STATUS_BADGE = { pending: 'badge-urgent', approved: 'badge-resolved', rejected: 'badge-overbudget', flagged: 'badge-flagged', archived: 'badge-archived' };
+const RATING_STATUS_LABELS = { pending: 'Pending', approved: 'Approved', rejected: 'Rejected', flagged: 'Flagged', archived: 'Archived' };
+
+const REVIEW_STATUS_CONFIRM = {
+  approved: { title: 'Approve this review?', message: "This makes the review publicly visible on the project's public page and counts it toward the public rating. The citizen will be notified.", confirmLabel: 'Approve', tone: 'success' },
+  rejected: { title: 'Reject this review?', message: 'This keeps the review hidden from public display and out of the rating average. The citizen will be notified.', confirmLabel: 'Reject', tone: 'danger' },
+  flagged: { title: 'Flag this review for follow-up?', message: 'This keeps it out of public display pending further staff review. The citizen is not notified.', confirmLabel: 'Flag', tone: 'warning' },
+  archived: { title: 'Archive this review?', message: 'This removes it from the moderation queue and public display without deleting it. The citizen is not notified.', confirmLabel: 'Archive', tone: 'warning' },
+};
 
 async function loadCitizenRatingsPage() {
   const container = document.getElementById('page-citizen-ratings');
@@ -4222,13 +4233,21 @@ async function loadCitizenRatingsPage() {
       <div>
         <h2 class="page-title">Citizen Ratings</h2>
         <p style="font-size:.8rem;color:var(--text-muted);margin-top:4px;max-width:640px;">
-          Star ratings and reviews citizens leave on projects. View-only — citizens own their reviews and manage them from their own dashboard.
+          Star ratings and reviews citizens leave on projects. Approve, reject, flag, or archive — the star rating and review text are never editable here.
         </p>
       </div>
       <div id="ratingsSummary" style="font-size:.82rem;font-weight:600;color:var(--text-muted);"></div>
     </div>
     <div class="filter-bar">
       <input class="filter-input" placeholder="Search citizen or project…" oninput="ratingsState.search=this.value;ratingsState.page=1;fetchCitizenRatings()" />
+      <select class="filter-select" onchange="ratingsState.status=this.value;ratingsState.page=1;fetchCitizenRatings()">
+        <option value="pending" selected>Pending</option>
+        <option value="approved">Approved</option>
+        <option value="rejected">Rejected</option>
+        <option value="flagged">Flagged</option>
+        <option value="archived">Archived</option>
+        <option value="">All</option>
+      </select>
     </div>
     <div id="ratingsTable" class="table-card"></div>
     <div id="ratingsPager" class="pager"></div>
@@ -4257,26 +4276,82 @@ async function fetchCitizenRatings() {
 function renderCitizenRatingsTable(rows) {
   const wrap = document.getElementById('ratingsTable');
   if (!wrap) return;
-  if (!rows.length) { wrap.innerHTML = '<p class="empty-state">No ratings yet.</p>'; return; }
+  if (!rows.length) { wrap.innerHTML = '<p class="empty-state">No ratings in this view.</p>'; return; }
 
   wrap.innerHTML = `
     <table class="data-table">
       <thead>
-        <tr><th>Citizen</th><th>Project</th><th>Rating</th><th>Comment</th><th>Date</th></tr>
+        <tr><th>Project</th><th>Rating</th><th>Review</th><th>Citizen</th><th>Submitted</th><th>Status</th><th>Actions</th></tr>
       </thead>
       <tbody>
         ${rows.map(r => `
           <tr>
-            <td>${escapeHtml(r.citizen_name)}</td>
             <td>${escapeHtml(r.project_code)} — ${escapeHtml(r.project_name)}</td>
             <td>${'★'.repeat(Number(r.rating))}${'☆'.repeat(5 - Number(r.rating))}</td>
             <td style="max-width:280px;">${r.comment ? escapeHtml(r.comment) : '<span style="color:#94a3b8;">—</span>'}</td>
+            <td>${escapeHtml(r.citizen_name)}</td>
             <td style="font-size:.75rem;color:#94a3b8;">${formatDate(r.created_at)}</td>
+            <td><span class="badge ${RATING_STATUS_BADGE[r.status] || 'badge-spike'}">${RATING_STATUS_LABELS[r.status] || r.status}</span></td>
+            <td><button class="btn-secondary btn-compact" onclick="openRatingDetailModal(${r.id})">View Details</button></td>
           </tr>
         `).join('')}
       </tbody>
     </table>
   `;
+}
+
+async function openRatingDetailModal(id) {
+  try {
+    const res = await get(API.projectRatings, { id });
+    if (!res.success) { toast(res.message || 'Failed to load review', 'error'); return; }
+    const r = res.data;
+
+    openModal(`Review #${r.id}`, `
+      <div style="display:flex;flex-direction:column;gap:14px;">
+        <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;">
+          <span class="badge ${RATING_STATUS_BADGE[r.status] || 'badge-spike'}">${RATING_STATUS_LABELS[r.status] || r.status}</span>
+          <span style="font-size:1.1rem;">${'★'.repeat(Number(r.rating))}${'☆'.repeat(5 - Number(r.rating))}</span>
+        </div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">
+          <div><p class="modal-label">PROJECT</p><p class="modal-val">${escapeHtml(r.project_code)} — ${escapeHtml(r.project_name)}</p></div>
+          <div><p class="modal-label">CITIZEN</p><p class="modal-val">${escapeHtml(r.citizen_name)}</p></div>
+          <div><p class="modal-label">SUBMITTED</p><p class="modal-val">${formatDate(r.created_at)}</p></div>
+          ${r.moderated_at ? `<div><p class="modal-label">MODERATED</p><p class="modal-val">${escapeHtml(r.moderated_by_name || 'Staff')} on ${formatDate(r.moderated_at)}</p></div>` : ''}
+        </div>
+        <div>
+          <p class="modal-label">REVIEW</p>
+          <p class="modal-val" style="font-weight:400;white-space:pre-wrap;">${r.comment ? escapeHtml(r.comment) : '<span style="color:#94a3b8;">No written review.</span>'}</p>
+        </div>
+        ${r.decision_remarks ? `<div><p class="modal-label">MODERATION REMARKS</p><p class="modal-val" style="font-weight:400;">${escapeHtml(r.decision_remarks)}</p></div>` : ''}
+        <div class="form-actions">
+          <button class="btn-secondary" onclick="moderateReview(${r.id}, 'approved')" ${r.status === 'approved' ? 'disabled' : ''}>Approve</button>
+          <button class="btn-secondary" onclick="moderateReview(${r.id}, 'rejected')" ${r.status === 'rejected' ? 'disabled' : ''}>Reject</button>
+          <button class="btn-secondary" onclick="moderateReview(${r.id}, 'flagged')" ${r.status === 'flagged' ? 'disabled' : ''}>Flag</button>
+          <button class="btn-secondary" onclick="moderateReview(${r.id}, 'archived')" ${r.status === 'archived' ? 'disabled' : ''}>Archive</button>
+        </div>
+      </div>
+    `);
+  } catch {
+    toast('Failed to load review', 'error');
+  }
+}
+
+async function moderateReview(id, status) {
+  let decision_remarks = '';
+  if (status === 'rejected' || status === 'flagged') {
+    decision_remarks = window.prompt('Optional note (shown to the citizen if rejecting; internal-only if flagging):', '') || '';
+  }
+  const confirmed = await showConfirm(REVIEW_STATUS_CONFIRM[status]);
+  if (!confirmed) return;
+  try {
+    const res = await postAction(API.projectRatings, 'moderate', { id, status, decision_remarks });
+    if (!res.success) { toast(res.message || 'Update failed', 'error'); return; }
+    toast(`Review marked as ${RATING_STATUS_LABELS[status]}`);
+    closeModal();
+    fetchCitizenRatings();
+  } catch {
+    toast('Update failed', 'error');
+  }
 }
 
 /* ============================================================
@@ -5170,7 +5245,20 @@ async function loadStaffRequestsPage() {
 /* ============================================================
    FEEDBACK PAGE
    ============================================================ */
-let feedbackState = { page: 1, search: '', status: '', priority: '' };
+let feedbackState = { page: 1, search: '', status: '', priority: '', category: '' };
+
+const FEEDBACK_CATEGORY_LABELS = {
+  complaint: 'General Complaint',
+  road_damage: 'Road Damage',
+  drainage_flooding: 'Drainage / Flooding',
+  streetlight: 'Streetlight',
+  sidewalk_accessibility: 'Sidewalk / Accessibility',
+  safety_hazard: 'Safety Hazard',
+  project_delay: 'Project Delay',
+  suggestion: 'Suggestion',
+  inquiry: 'Inquiry',
+  commendation: 'Commendation',
+};
 
 async function loadFeedbackPage(containerId = 'page-citizen-feedback', title = 'Citizen Feedback Review', allowNewEntry = false) {
   const container = document.getElementById(containerId);
@@ -5180,6 +5268,7 @@ async function loadFeedbackPage(containerId = 'page-citizen-feedback', title = '
     <div class="page-header">
       <h2 class="page-title">${title}</h2>
     </div>
+    <div id="feedbackNeedsAttention"></div>
     <div class="filter-bar">
       <input class="filter-input" placeholder="Search feedback…"
         oninput="feedbackState.search=this.value;feedbackState.page=1;fetchFeedback()" />
@@ -5197,12 +5286,49 @@ async function loadFeedbackPage(containerId = 'page-citizen-feedback', title = '
         <option value="resolved">Resolved</option>
         <option value="closed">Closed</option>
       </select>
+      <select class="filter-select" onchange="feedbackState.category=this.value;feedbackState.page=1;fetchFeedback()">
+        <option value="">All Categories</option>
+        ${Object.entries(FEEDBACK_CATEGORY_LABELS).map(([value, label]) => `<option value="${value}">${label}</option>`).join('')}
+      </select>
       ${allowNewEntry ? '<button class="btn-primary" style="margin-left:auto;" onclick="showFeedbackForm()">+ New Entry</button>' : ''}
     </div>
     <div id="feedbackTable" class="table-card"></div>
     <div id="feedbackPager" class="pager"></div>
   `;
   fetchFeedback();
+  fetchFeedbackNeedsAttention();
+}
+
+async function fetchFeedbackNeedsAttention() {
+  const wrap = document.getElementById('feedbackNeedsAttention');
+  if (!wrap) return;
+  try {
+    const d = await get(API.feedback, { action: 'needs_attention' });
+    renderFeedbackNeedsAttention(d.data || []);
+  } catch {
+    wrap.innerHTML = '';
+  }
+}
+
+function renderFeedbackNeedsAttention(rows) {
+  const wrap = document.getElementById('feedbackNeedsAttention');
+  if (!wrap) return;
+  if (!rows.length) { wrap.innerHTML = ''; return; }
+
+  wrap.innerHTML = `
+    <div class="table-card" style="padding:16px 18px;margin-bottom:14px;">
+      <h3 style="font-size:.88rem;margin:0 0 10px;">Needs Attention <small style="font-weight:400;color:#94a3b8;">— rule-based priority score, advisory only</small></h3>
+      <div style="display:flex;flex-direction:column;gap:8px;">
+        ${rows.map(f => `
+          <div style="display:flex;align-items:center;gap:10px;padding:8px 10px;border-radius:8px;background:var(--bg-body);cursor:pointer;" onclick="openFeedbackDetailModal(${f.id})">
+            <span class="badge badge-urgent" style="flex-shrink:0;">${escapeHtml(f.reason)}</span>
+            <span style="flex:1;font-size:.82rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${escapeHtml(f.message)}</span>
+            <span style="font-size:.72rem;color:#94a3b8;flex-shrink:0;">${f.project_name ? escapeHtml(f.project_name) : 'General'}</span>
+          </div>
+        `).join('')}
+      </div>
+    </div>
+  `;
 }
 
 async function fetchFeedback() {
@@ -5238,7 +5364,7 @@ function renderFeedbackTable(rows) {
             <td>${f.citizen_name ? escapeHtml(f.citizen_name) : '<em style="color:#94a3b8">Anonymous</em>'}</td>
             <td>${f.concern_type === 'maintenance' ? 'Maintenance' : 'Project'}</td>
             <td style="max-width:200px;">${escapeHtml(f.message)}</td>
-            <td>${escapeHtml(f.category)}</td>
+            <td>${escapeHtml(FEEDBACK_CATEGORY_LABELS[f.category] || f.category)}</td>
             <td><span class="badge ${pBadge[f.priority]||'badge-resolved'}">${f.priority}</span></td>
             <td><span class="badge ${sBadge[f.status]||'badge-resolved'}">${f.status}</span></td>
             <td style="font-size:.75rem;">${
@@ -5292,7 +5418,7 @@ async function openFeedbackDetailModal(id) {
           <div><p class="modal-label">SUBMITTED BY</p><p class="modal-val">${f.citizen_name ? escapeHtml(f.citizen_name) : 'Anonymous'}</p></div>
           <div><p class="modal-label">DATE SUBMITTED</p><p class="modal-val">${formatDateTime(f.created_at)}</p></div>
           <div><p class="modal-label">TYPE</p><p class="modal-val">${f.concern_type === 'maintenance' ? 'Maintenance' : 'Project'}</p></div>
-          <div><p class="modal-label">CATEGORY</p><p class="modal-val">${escapeHtml(formatStatus(f.category))}</p></div>
+          <div><p class="modal-label">CATEGORY</p><p class="modal-val">${escapeHtml(FEEDBACK_CATEGORY_LABELS[f.category] || formatStatus(f.category))}</p></div>
           <div><p class="modal-label">RELATED PROJECT</p><p class="modal-val">${f.project_name ? escapeHtml(f.project_name) : '—'}</p></div>
           <div><p class="modal-label">LOCATION</p><p class="modal-val">${[f.barangay, f.district].filter(Boolean).map(v => escapeHtml(v)).join(', ') || '—'}</p></div>
         </div>

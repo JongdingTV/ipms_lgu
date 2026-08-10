@@ -1105,7 +1105,7 @@ function saViewAuditTrailDetail(idx) {
   const item = saAuditTrailCache[idx];
   if (!item) return;
 
-  saOpenModal('Audit Trail Entry', `
+  saOpenModal('Audit Log Entry', `
     <p><strong>${saEscape(saLabel(item.action))}</strong> ${saBadge(item.status)}</p>
     <p><small>${saEscape(item.actor_name)} &middot; ${saEscape(saRoleLabel(item.actor_role))} &middot; ${saDateTime(item.created_at)}</small></p>
     <p><small>Module: ${saEscape(item.module)}${item.record_id ? ' &middot; Record #' + saEscape(item.record_id) : ''}</small></p>

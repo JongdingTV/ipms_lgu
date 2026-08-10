@@ -178,7 +178,7 @@ require_once __DIR__ . '/sidebar.php';
 
     <section id="page-audit-trail" class="page-section" style="display:none;">
       <div class="sa-section-head">
-        <h1 class="page-title">Audit Trail</h1>
+        <h1 class="page-title">Audit Logs</h1>
         <p class="sa-scope-note">Every login, project action, approval, payment, document upload, and account/settings change across the whole system — read-only.</p>
       </div>
 

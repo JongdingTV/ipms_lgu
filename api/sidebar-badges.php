@@ -189,6 +189,11 @@ function computeAdminBadges(PDO $db, int $userId, array $lv): array
     $urgentOpenFeedback = (int) $db->query("SELECT COUNT(*) FROM feedback WHERE priority = 'urgent' AND status IN ('open','in_progress')")->fetchColumn();
     $b['citizen-feedback'] = ['type' => 'red', 'count' => (int) $stmt->fetchColumn(), 'urgent' => $urgentOpenFeedback > 0];
 
+    projectRatingsEnsureSchema($db);
+    $stmt = $db->prepare("SELECT COUNT(*) FROM project_ratings WHERE status = 'pending' AND created_at > ?");
+    $stmt->execute([lv($lv, 'citizen-ratings')]);
+    $b['citizen-ratings'] = ['type' => 'red', 'count' => (int) $stmt->fetchColumn()];
+
     $stmt = $db->prepare("SELECT COUNT(*) FROM staff_account_requests WHERE status = 'pending' AND requested_by = ? AND created_at > ?");
     $stmt->execute([$userId, lv($lv, 'staff-requests')]);
     $b['staff-requests'] = ['type' => 'red', 'count' => (int) $stmt->fetchColumn()];
@@ -214,7 +219,7 @@ function computeAdminBadges(PDO $db, int $userId, array $lv): array
     $b['dashboard'] = ['type' => 'red', 'count' =>
         $b['project-registration']['count'] + $b['project-approval']['count'] + $b['contractor-assignment']['count']
         + $b['workflow-management']['count'] + $b['budget-monitoring']['count'] + $b['milestone-overview']['count']
-        + $b['citizen-feedback']['count'] + $b['staff-requests']['count']];
+        + $b['citizen-feedback']['count'] + $b['citizen-ratings']['count'] + $b['staff-requests']['count']];
 
     return $b;
 }

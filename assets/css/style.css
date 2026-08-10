@@ -436,6 +436,8 @@ button { cursor: pointer; font-family: var(--font); }
 .badge-urgent     { background: #f97316; color: white; }
 .badge-highprio   { background: #22c55e; color: white; }
 .badge-resolved   { background: #1e2a3b; color: white; font-size: .65rem; }
+.badge-flagged    { background: #7c3aed; color: white; }
+.badge-archived   { background: #64748b; color: white; }
 .status-draft     { background: #f1f5f9; color: #475569; }
 .status-returned  { background: #ffedd5; color: #c2410c; }
 .status-planning  { background: #dbeafe; color: #1d4ed8; }

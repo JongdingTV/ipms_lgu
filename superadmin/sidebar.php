@@ -22,7 +22,7 @@
       </a>
       <a href="#" class="nav-item" data-page="audit-trail">
         <span class="nav-icon"><svg viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M4 3a2 2 0 012-2h5.586A2 2 0 0113 1.586L16.414 5A2 2 0 0117 6.414V17a2 2 0 01-2 2H6a2 2 0 01-2-2V3zm4 6a1 1 0 000 2h4a1 1 0 100-2H8zm0 4a1 1 0 100 2h4a1 1 0 100-2H8z" clip-rule="evenodd"/></svg></span>
-        <span class="nav-label">Audit Trail</span>
+        <span class="nav-label">Audit Logs</span>
         <span class="nav-badge" data-badge="audit-trail"></span>
       </a>
       <a href="#" class="nav-item" data-page="login-security">

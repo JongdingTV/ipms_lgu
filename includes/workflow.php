@@ -885,8 +885,33 @@ function projectRatingsEnsureSchema(PDO $db): void
                 CONSTRAINT chk_project_ratings_range CHECK (rating BETWEEN 1 AND 5)
             ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
         ");
+
+        // Moderation: reviews start 'pending' and only ever become publicly
+        // visible / count toward the aggregate once 'approved' (see
+        // api/project-ratings.php's action=moderate — the only place these
+        // columns are ever written after initial insert, and it structurally
+        // never touches rating/comment). No FK on moderated_by: every other
+        // self-healed ADD COLUMN in this file is FK-less too, since a FK
+        // added after the original CREATE TABLE has no IF NOT EXISTS form in
+        // MySQL and would throw (aborting the rest of this try block) on
+        // every request after the first.
+        $db->exec("ALTER TABLE project_ratings ADD COLUMN IF NOT EXISTS status ENUM('pending','approved','rejected','flagged','archived') NOT NULL DEFAULT 'pending' AFTER comment");
+        $db->exec("ALTER TABLE project_ratings ADD COLUMN IF NOT EXISTS moderated_by INT NULL AFTER status");
+        $db->exec("ALTER TABLE project_ratings ADD COLUMN IF NOT EXISTS moderated_at DATETIME NULL AFTER moderated_by");
+        $db->exec("ALTER TABLE project_ratings ADD COLUMN IF NOT EXISTS decision_remarks TEXT NULL AFTER moderated_at");
+        $db->exec("ALTER TABLE project_ratings ADD INDEX IF NOT EXISTS idx_project_ratings_status (status)");
     } catch (Throwable $e) {
     }
+}
+
+// Narrower than the broad citizen-visibility list used everywhere else for
+// *viewing* a project (approved/bidding/awarded/assigned are all visible but
+// nothing has been built yet) — a citizen can only ever *submit* a rating
+// once a project has physically observable work: underway, or substantially
+// finished. Viewing already-approved reviews stays on the broader list.
+function projectRatingEligibleStatuses(): array
+{
+    return ['active', 'delayed', 'on_hold', 'completion_inspection', 'completed', 'turnover'];
 }
 
 // AI ID Verification — the automated Quezon-City-residency gate on citizen

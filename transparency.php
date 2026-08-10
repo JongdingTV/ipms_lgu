@@ -13,6 +13,7 @@
 // and exit()s on failure, which would corrupt this HTML page.
 // ============================================================
 require_once __DIR__ . '/includes/config.php';
+require_once __DIR__ . '/includes/workflow.php';
 
 // Same publicly-visible status gate citizen/api/project-details.php already
 // uses — a project still in internal draft/review has no business being
@@ -24,6 +25,10 @@ $project = null;
 $photos = [];
 $engineerName = null;
 $dbError = false;
+$ratingSummary = ['count' => 0, 'average' => 0];
+$ratingDistribution = [];
+$recentReviews = [];
+$ratingEligible = false;
 
 if ($code !== '') {
     try {
@@ -65,6 +70,35 @@ if ($code !== '') {
             ");
             $photoStmt->execute([$project['id']]);
             $photos = $photoStmt->fetchAll();
+
+            projectRatingsEnsureSchema($db);
+            $ratingEligible = in_array($project['status'], projectRatingEligibleStatuses(), true);
+
+            $ratingStmt = $db->prepare("SELECT COUNT(*) AS count, COALESCE(AVG(rating), 0) AS average FROM project_ratings WHERE project_id = ? AND status = 'approved'");
+            $ratingStmt->execute([$project['id']]);
+            $rr = $ratingStmt->fetch();
+            $ratingSummary = ['count' => (int) $rr['count'], 'average' => round((float) $rr['average'], 1)];
+
+            $distStmt = $db->prepare("SELECT rating, COUNT(*) AS c FROM project_ratings WHERE project_id = ? AND status = 'approved' GROUP BY rating");
+            $distStmt->execute([$project['id']]);
+            $distRaw = $distStmt->fetchAll(PDO::FETCH_KEY_PAIR);
+            for ($star = 5; $star >= 1; $star--) {
+                $c = (int) ($distRaw[$star] ?? 0);
+                $ratingDistribution[] = [
+                    'star' => $star,
+                    'count' => $c,
+                    'percent' => $ratingSummary['count'] > 0 ? (int) round($c / $ratingSummary['count'] * 100) : 0,
+                ];
+            }
+
+            $reviewStmt = $db->prepare("
+                SELECT r.rating, r.comment, r.created_at, CONCAT(c.first_name, ' ', LEFT(c.last_name, 1), '.') AS citizen_name
+                FROM project_ratings r INNER JOIN citizens c ON c.id = r.citizen_id
+                WHERE r.project_id = ? AND r.status = 'approved'
+                ORDER BY r.created_at DESC LIMIT 10
+            ");
+            $reviewStmt->execute([$project['id']]);
+            $recentReviews = $reviewStmt->fetchAll();
         }
     } catch (Throwable $e) {
         $dbError = true;
@@ -127,6 +161,19 @@ function transparencyStatusLabel(string $status): string
   h2 { font-size: 1rem; margin: 0 0 4px; }
   .t-footer { text-align: center; color: var(--muted); font-size: .75rem; margin-top: 24px; }
   #tMap { height: 240px; border-radius: 10px; overflow: hidden; margin-top: 10px; border: 1px solid var(--border); }
+  .t-stars { color: #f59e0b; font-size: 1.1rem; letter-spacing: 1px; }
+  .t-rating-head { display: flex; align-items: center; gap: 14px; }
+  .t-rating-score { font-size: 2.2rem; font-weight: 800; }
+  .t-rating-bars { margin-top: 14px; }
+  .t-rating-bar-row { display: flex; align-items: center; gap: 8px; font-size: .75rem; color: var(--muted); margin: 4px 0; }
+  .t-rating-bar-track { flex: 1; background: #f1f5f9; border-radius: 20px; height: 8px; overflow: hidden; }
+  .t-rating-bar-fill { height: 100%; background: #f59e0b; border-radius: 20px; }
+  .t-review { padding: 12px 0; border-top: 1px solid var(--border); }
+  .t-review:first-child { border-top: none; }
+  .t-review-head { display: flex; align-items: center; gap: 8px; font-size: .82rem; }
+  .t-review-comment { font-size: .85rem; color: var(--muted); margin-top: 4px; line-height: 1.5; }
+  .t-rating-cta { margin-top: 14px; padding-top: 14px; border-top: 1px solid var(--border); text-align: center; }
+  .t-cta-btn { display: inline-block; background: var(--blue); color: #fff; padding: 10px 18px; border-radius: 8px; font-weight: 700; font-size: .85rem; text-decoration: none; margin-top: 8px; }
 </style>
 </head>
 <body>
@@ -180,6 +227,53 @@ function transparencyStatusLabel(string $status): string
           </div>
         <?php else: ?>
           <p class="t-empty">No photos posted yet.</p>
+        <?php endif; ?>
+      </div>
+
+      <div class="t-card">
+        <h2>Citizen Rating &amp; Reviews</h2>
+        <?php if ($ratingSummary['count'] > 0): ?>
+          <div class="t-rating-head">
+            <span class="t-rating-score"><?= htmlspecialchars((string) $ratingSummary['average']) ?></span>
+            <div>
+              <div class="t-stars"><?= str_repeat('★', (int) round($ratingSummary['average'])) . str_repeat('☆', 5 - (int) round($ratingSummary['average'])) ?></div>
+              <span style="font-size:.8rem;color:var(--muted);"><?= $ratingSummary['average'] ?> out of 5 based on <?= $ratingSummary['count'] ?> citizen review<?= $ratingSummary['count'] === 1 ? '' : 's' ?>.</span>
+            </div>
+          </div>
+          <div class="t-rating-bars">
+            <?php foreach ($ratingDistribution as $d): ?>
+              <div class="t-rating-bar-row">
+                <span style="width:34px;"><?= $d['star'] ?>★</span>
+                <div class="t-rating-bar-track"><div class="t-rating-bar-fill" style="width:<?= $d['percent'] ?>%;"></div></div>
+                <span style="width:32px;text-align:right;"><?= $d['percent'] ?>%</span>
+              </div>
+            <?php endforeach; ?>
+          </div>
+          <?php if ($recentReviews): ?>
+            <div style="margin-top:16px;">
+              <?php foreach ($recentReviews as $r): ?>
+                <div class="t-review">
+                  <div class="t-review-head">
+                    <span class="t-stars" style="font-size:.85rem;"><?= str_repeat('★', (int) $r['rating']) . str_repeat('☆', 5 - (int) $r['rating']) ?></span>
+                    <strong><?= htmlspecialchars($r['citizen_name']) ?></strong>
+                    <span style="color:var(--muted);font-size:.75rem;"><?= htmlspecialchars(date('F j, Y', strtotime($r['created_at']))) ?></span>
+                  </div>
+                  <?php if ($r['comment']): ?><p class="t-review-comment"><?= nl2br(htmlspecialchars($r['comment'])) ?></p><?php endif; ?>
+                </div>
+              <?php endforeach; ?>
+            </div>
+          <?php endif; ?>
+        <?php else: ?>
+          <p class="t-empty">No citizen reviews yet.</p>
+        <?php endif; ?>
+
+        <?php if ($ratingEligible): ?>
+          <div class="t-rating-cta">
+            <p style="margin:0;font-size:.85rem;color:var(--muted);">Have you seen this project up close?</p>
+            <a class="t-cta-btn" href="<?= htmlspecialchars(appUrl('/citizen/login.php')) ?>">Sign in to rate this project</a>
+          </div>
+        <?php else: ?>
+          <p class="t-empty" style="padding-top:14px;border-top:1px solid var(--border);margin-top:14px;">Ratings open once this project is actively underway or completed.</p>
         <?php endif; ?>
       </div>
 

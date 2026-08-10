@@ -1,5 +1,6 @@
 <?php
 require_once __DIR__ . '/includes/config.php';
+require_once __DIR__ . '/includes/workflow.php';
 
 $landingImages = [
     'building' => appUrl('/assets/img/landing_pic/building-qc.jpeg'),
@@ -44,10 +45,16 @@ try {
     $stats['avgProgress'] = (int) round((float) $row['avg_progress']);
     $stats['feedback'] = (int) $statsDb->query('SELECT COUNT(*) FROM feedback')->fetchColumn();
 
+    projectRatingsEnsureSchema($statsDb);
     $recentProjects = $statsDb->query(
-        "SELECT project_code, name, location, status, updated_at
-         FROM projects WHERE status NOT IN ('draft', 'returned')
-         ORDER BY updated_at DESC LIMIT 3"
+        "SELECT p.project_code, p.name, p.location, p.status, p.updated_at, r.rating_count, r.rating_average
+         FROM projects p
+         LEFT JOIN (
+             SELECT project_id, COUNT(*) AS rating_count, AVG(rating) AS rating_average
+             FROM project_ratings WHERE status = 'approved' GROUP BY project_id
+         ) r ON r.project_id = p.id
+         WHERE p.status NOT IN ('draft', 'returned')
+         ORDER BY p.updated_at DESC LIMIT 3"
     )->fetchAll();
 } catch (Throwable $e) {
     // Public page must never break on a DB hiccup; keep the null/empty fallbacks.
@@ -103,13 +110,17 @@ $statusRows = $fallbackStatusRows;
 if (!empty($recentProjects)) {
     $statusRows = array_map(function ($p) {
         $badge = projectStatusBadge($p['status']);
+        $ratingCount = (int) ($p['rating_count'] ?? 0);
         return [
             'icon' => projectIcon($p['name'], $p['location']),
             'color' => $badge['var'],
             'title' => $p['name'],
+            'project_code' => $p['project_code'] ?? null,
             'subtitle' => ($p['location'] ?: 'Quezon City') . ' · updated ' . timeAgo($p['updated_at']),
             'badge' => $badge['label'],
             'pulse' => $badge['pulse'],
+            'rating_count' => $ratingCount,
+            'rating_average' => $ratingCount > 0 ? round((float) $p['rating_average'], 1) : null,
         ];
     }, $recentProjects);
 }
@@ -601,6 +612,7 @@ function renderStat(?float $n, string $prefix = '', string $suffix = ''): string
         .status-row:hover i { transform: scale(1.08) rotate(-4deg); }
         .status-row strong { display: block; font-size: .9rem; }
         .status-row span { display: block; margin-top: 3px; color: var(--muted); font-size: .75rem; }
+        .status-row span.status-row-rating { display: inline-block; margin-top: 4px; color: var(--gold); font-weight: 700; font-size: .72rem; }
         .status-row b {
             display: inline-flex;
             align-items: center;
@@ -1307,8 +1319,17 @@ function renderStat(?float $n, string $prefix = '', string $suffix = ''): string
                         <div class="status-row">
                             <i class="fa-solid <?= htmlspecialchars($row['icon']) ?>" style="background:<?= htmlspecialchars($row['color']) ?>"></i>
                             <div>
-                                <strong><?= htmlspecialchars($row['title']) ?></strong>
+                                <?php if (!empty($row['project_code'])): ?>
+                                    <a href="<?= htmlspecialchars(appUrl('/transparency.php?code=' . urlencode($row['project_code']))) ?>" style="color:inherit;text-decoration:none;">
+                                        <strong><?= htmlspecialchars($row['title']) ?></strong>
+                                    </a>
+                                <?php else: ?>
+                                    <strong><?= htmlspecialchars($row['title']) ?></strong>
+                                <?php endif; ?>
                                 <span><?= htmlspecialchars($row['subtitle']) ?></span>
+                                <?php if (!empty($row['rating_count'])): ?>
+                                    <span class="status-row-rating">★ <?= htmlspecialchars((string) $row['rating_average']) ?></span>
+                                <?php endif; ?>
                             </div>
                             <b class="<?= $row['pulse'] ? '' : 'static' ?>"><?= htmlspecialchars($row['badge']) ?></b>
                         </div>

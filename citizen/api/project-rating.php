@@ -13,6 +13,7 @@
 // ============================================================
 require_once __DIR__ . '/../../auth/session.php';
 require_once __DIR__ . '/../../includes/workflow.php';
+require_once __DIR__ . '/../../includes/Notifications.php';
 
 header('Content-Type: application/json');
 
@@ -49,15 +50,22 @@ $projectId = (int) ($_POST['project_id'] ?? 0);
 
 $visibleStatuses = ['approved', 'bidding', 'awarded', 'assigned', 'active', 'delayed', 'on_hold', 'completion_inspection', 'completed', 'turnover'];
 $placeholders = implode(',', array_fill(0, count($visibleStatuses), '?'));
-$check = $pdo->prepare("SELECT id FROM projects WHERE id = ? AND status IN ($placeholders)");
+$check = $pdo->prepare("SELECT id, status, project_code, name FROM projects WHERE id = ? AND status IN ($placeholders)");
 $check->execute(array_merge([$projectId], $visibleStatuses));
-if ($projectId <= 0 || !$check->fetchColumn()) {
+$project = $check->fetch();
+if ($projectId <= 0 || !$project) {
     http_response_code(404);
     echo json_encode(['success' => false, 'message' => 'Project not found.']);
     exit;
 }
 
 if ($action === 'submit') {
+    if (!in_array($project['status'], projectRatingEligibleStatuses(), true)) {
+        http_response_code(403);
+        echo json_encode(['success' => false, 'message' => 'This project is not yet open for ratings — check back once work is underway or completed.']);
+        exit;
+    }
+
     $rating = (int) ($_POST['rating'] ?? 0);
     $comment = trim((string) ($_POST['comment'] ?? ''));
 
@@ -72,15 +80,39 @@ if ($action === 'submit') {
         exit;
     }
 
-    $pdo->prepare('
-        INSERT INTO project_ratings (project_id, citizen_id, rating, comment)
-        VALUES (?, ?, ?, ?)
-        ON DUPLICATE KEY UPDATE rating = VALUES(rating), comment = VALUES(comment), updated_at = CURRENT_TIMESTAMP
-    ')->execute([$projectId, $citizenId, $rating, $comment !== '' ? $comment : null]);
+    $existing = $pdo->prepare('SELECT id FROM project_ratings WHERE project_id = ? AND citizen_id = ?');
+    $existing->execute([$projectId, $citizenId]);
+    $isUpdate = (bool) $existing->fetchColumn();
 
-    logActivity((int) $user['user_id'], 'project_rating_submitted', "Rated project #$projectId $rating star(s).", 'Project Ratings', $projectId);
+    // Editing a review re-enters moderation — an approved review that's
+    // since been changed shouldn't stay publicly visible on its old wording.
+    $pdo->prepare("
+        INSERT INTO project_ratings (project_id, citizen_id, rating, comment, status, moderated_by, moderated_at, decision_remarks)
+        VALUES (?, ?, ?, ?, 'pending', NULL, NULL, NULL)
+        ON DUPLICATE KEY UPDATE rating = VALUES(rating), comment = VALUES(comment), status = 'pending',
+            moderated_by = NULL, moderated_at = NULL, decision_remarks = NULL, updated_at = CURRENT_TIMESTAMP
+    ")->execute([$projectId, $citizenId, $rating, $comment !== '' ? $comment : null]);
 
-    echo json_encode(['success' => true, 'message' => 'Thank you for your rating!']);
+    $actionName = $isUpdate ? 'project_rating_updated' : 'project_rating_submitted';
+    $verb = $isUpdate ? 'Updated rating for' : 'Rated';
+    logActivity((int) $user['user_id'], $actionName, "$verb project #$projectId to $rating star(s) — pending moderation.", 'Project Ratings', $projectId);
+
+    $nameStmt = $pdo->prepare('SELECT first_name, last_name FROM citizens WHERE id = ?');
+    $nameStmt->execute([$citizenId]);
+    $n = $nameStmt->fetch();
+    $displayName = trim(($n['first_name'] ?? '') . ' ' . mb_substr((string) ($n['last_name'] ?? ''), 0, 1) . '.');
+
+    $adminIds = $pdo->query("SELECT id FROM users WHERE role IN ('admin', 'super_admin') AND status = 'active'")->fetchAll(PDO::FETCH_COLUMN);
+    foreach ($adminIds as $adminUserId) {
+        notifyUser(
+            (int) $adminUserId,
+            'info',
+            'New citizen review pending',
+            "$displayName left a $rating-star review on {$project['name']} ({$project['project_code']}) — awaiting moderation."
+        );
+    }
+
+    echo json_encode(['success' => true, 'message' => 'Thank you for your rating! It will appear publicly once reviewed.']);
     exit;
 }
 
