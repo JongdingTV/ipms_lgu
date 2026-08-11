@@ -14,6 +14,7 @@ require_once __DIR__ . '/../../includes/Validator.php';
 require_once __DIR__ . '/../../includes/Pagination.php';
 require_once __DIR__ . '/../../includes/Settings.php';
 require_once __DIR__ . '/../../includes/workflow.php';
+require_once __DIR__ . '/../../citizen/includes/qc-locations.php';
 apiHeaders();
 requireAnyRole(['super_admin']);
 requireCsrfProtection();
@@ -145,7 +146,7 @@ function superadminListUsers(PDO $db, int $page, int $perPage, string $search, s
     }
 
     $whereSql = implode(' AND ', $where);
-    $select = "SELECT id, username, email, full_name, role, status, last_login, created_at
+    $select = "SELECT id, username, email, full_name, role, status, district, last_login, created_at
                FROM users WHERE $whereSql ORDER BY full_name ASC, username ASC";
     $count = "SELECT COUNT(*) FROM users WHERE $whereSql";
 
@@ -505,6 +506,33 @@ if ($action === 'update_role') {
 
     $details = $target['full_name'] . ' role changed from ' . $target['role'] . ' to ' . $role . '.';
     auditLog($db, $actorId, 'user_role_updated', 'users', $targetId, $details);
+
+    respond(['success' => true]);
+}
+
+if ($action === 'update_district') {
+    $validated = Validator::make($body, [
+        'user_id' => 'required|integer',
+        'district' => 'required|in:' . implode(',', array_keys(qcDistricts())),
+    ])->stopOnFailure();
+
+    $targetId = (int) $validated['user_id'];
+    $district = (string) $validated['district'];
+
+    $stmt = $db->prepare('SELECT id, full_name, role FROM users WHERE id = ?');
+    $stmt->execute([$targetId]);
+    $target = $stmt->fetch();
+    if (!$target) {
+        respond(['error' => 'User not found.'], 404);
+    }
+    if ($target['role'] !== 'engineer') {
+        respond(['error' => 'District only applies to Engineer accounts.'], 422);
+    }
+
+    $db->prepare('UPDATE users SET district = ? WHERE id = ?')->execute([$district, $targetId]);
+
+    $details = $target['full_name'] . ' district set to ' . $district . '.';
+    auditLog($db, $actorId, 'user_district_updated', 'users', $targetId, $details);
 
     respond(['success' => true]);
 }

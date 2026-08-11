@@ -264,6 +264,19 @@ button { cursor: pointer; font-family: var(--font); }
 .theme-toggle-btn:hover svg { transform: rotate(20deg); }
 .notif-badge { position: absolute; top: 4px; right: 2px; background: var(--red); color: white; font-size: .6rem; font-weight: 700; border-radius: 50%; width: 18px; height: 18px; display: flex; align-items: center; justify-content: center; border: 2px solid white; }
 
+/* My Tasks topbar icon — reuses the generic .nav-badge[data-badge] auto-render
+   from assets/js/sidebar-badges.js (no JS changes needed), just repositioned
+   as a corner badge like .notif-badge instead of an inline sidebar-row badge. */
+.topbar-icon-badge { position: absolute; top: 2px; right: 2px; }
+.topbar-icon-badge:empty { display: none; }
+.topbar-icon-badge .nav-badge-dot { min-width: 16px; height: 16px; padding: 0 4px; font-size: .6rem; border: 2px solid var(--card-bg); box-sizing: border-box; }
+
+/* My Tasks popup modal (assets/js/task-center.js's taskCenterOpenPanelModal)
+   reuses each portal's existing centered modal-overlay — just needs its
+   task-card list to scroll instead of growing the modal unbounded. */
+.tc-modal-list { max-height: 60vh; overflow-y: auto; margin: 0 -4px; padding: 0 4px; }
+.tc-modal-footer { margin-top: 14px; padding-top: 14px; border-top: 1px solid var(--border); text-align: center; }
+
 .user-section { display: flex; align-items: center; gap: 12px; }
 .user-info { display: flex; flex-direction: column; align-items: flex-end; min-width: 0; }
 .user-name { font-size: .82rem; font-weight: 600; color: var(--text-primary); }
@@ -528,6 +541,10 @@ button { cursor: pointer; font-family: var(--font); }
 .notif-panel { position: fixed; top: var(--topbar-h); right: 16px; width: 300px; max-height: calc(100vh - var(--topbar-h) - 24px); background: var(--card-bg); border: 1px solid var(--border); border-radius: var(--radius); box-shadow: 0 8px 32px rgba(0,0,0,.12); z-index: 150; opacity: 0; pointer-events: none; transform: translateY(-8px); transition: opacity .2s, transform .2s; overflow: hidden; display: flex; flex-direction: column; }
 .notif-panel.open { opacity: 1; pointer-events: all; transform: translateY(0); }
 .notif-panel-header { flex: 0 0 auto; display: flex; align-items: center; justify-content: space-between; padding: 14px 16px 10px; font-size: .83rem; font-weight: 700; border-bottom: 1px solid var(--border); }
+.notif-tabs { flex: 0 0 auto; display: flex; gap: 4px; padding: 8px 12px; border-bottom: 1px solid var(--border); }
+.notif-tab { background: none; border: none; border-radius: 999px; padding: 5px 12px; font-size: .74rem; font-weight: 600; color: var(--text-muted); cursor: pointer; transition: background .15s, color .15s; }
+.notif-tab:hover { background: var(--bg-body); color: var(--text-primary); }
+.notif-tab.active { background: var(--accent-light); color: var(--accent-dark); }
 #notifList { overflow-y: auto; flex: 1 1 auto; }
 .notif-clear { background: none; border: none; font-size: .75rem; color: var(--accent); cursor: pointer; }
 .notif-item { display: flex; align-items: flex-start; gap: 10px; padding: 12px 16px; border-bottom: 1px solid var(--border); }
@@ -1767,3 +1784,58 @@ input.search-pill {
 .gallery-admin-body { padding: 12px 14px 4px; display: flex; flex-direction: column; gap: 4px; }
 .gallery-admin-body strong { font-size: .88rem; color: var(--text-primary); }
 .gallery-admin-card .action-btns { padding: 10px 14px 14px; }
+
+/* ── Smart Task & Assignment Center (assets/js/task-center.js) ── */
+.tc-list { display: flex; flex-direction: column; gap: 10px; }
+.tc-card {
+  display: flex; align-items: stretch; gap: 14px;
+  background: var(--card-bg); border: 1px solid var(--border); border-radius: var(--radius-sm);
+  box-shadow: var(--card-shadow); padding: 14px 16px; border-left: 4px solid var(--border);
+}
+.tc-card.tc-urgent    { border-left-color: var(--red); }
+.tc-card.tc-due-today { border-left-color: var(--orange); }
+.tc-card.tc-upcoming  { border-left-color: var(--green); }
+.tc-card.tc-info      { border-left-color: var(--blue); }
+.tc-card.tc-completed { border-left-color: var(--border); opacity: .85; }
+.tc-card-priority { flex-shrink: 0; writing-mode: horizontal-tb; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; font-size: .62rem; font-weight: 700; letter-spacing: .04em; color: var(--text-muted); width: 34px; text-align: center; }
+.tc-card-priority span { white-space: normal; }
+.tc-card-body { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 4px; }
+.tc-card-body strong { font-size: .9rem; color: var(--text-primary); }
+.tc-card-project { font-size: .78rem; font-weight: 600; color: var(--accent); margin: 0; }
+.tc-card-desc { font-size: .82rem; color: var(--text-muted); margin: 0; }
+.tc-card-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; font-size: .74rem; color: var(--text-muted); margin-top: 2px; }
+.tc-card-actions { flex-shrink: 0; display: flex; flex-direction: column; align-items: flex-end; justify-content: space-between; gap: 8px; }
+.tc-dismiss-btn { background: none; border: none; color: var(--text-muted); font-size: 1.1rem; line-height: 1; cursor: pointer; padding: 2px 6px; border-radius: 6px; transition: background .15s, color .15s; }
+.tc-dismiss-btn:hover { background: var(--bg-body); color: var(--red); }
+.tc-status-badge { display: inline-block; padding: 2px 10px; border-radius: 999px; font-size: .68rem; font-weight: 700; text-transform: uppercase; letter-spacing: .03em; }
+.tc-status-pending     { background: var(--accent-light); color: var(--accent-dark); }
+.tc-status-in_progress { background: #ede9fe; color: #7c3aed; }
+.tc-status-overdue     { background: #fee2e2; color: var(--red); }
+.tc-summary-row { font-size: .82rem; padding: 6px 0; border-bottom: 1px solid var(--border); }
+.tc-summary-row:last-child { border-bottom: none; }
+.empty-state-compact { padding: 8px 0; text-align: left; }
+
+/* ── Document Checklist (assets/js/document-checklist.js) ── */
+.dc-summary { margin-bottom: 12px; }
+.dc-progress-bar { height: 8px; border-radius: 999px; background: var(--bg-body); overflow: hidden; margin-bottom: 8px; }
+.dc-progress-fill { height: 100%; background: linear-gradient(90deg, var(--accent), var(--green)); border-radius: 999px; transition: width .3s ease; }
+.dc-summary-line { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; flex-wrap: wrap; font-size: .78rem; color: var(--text-muted); }
+.dc-summary-line strong { font-size: .95rem; color: var(--text-primary); }
+.dc-alert { background: #fff7ed; border: 1px solid #fed7aa; border-radius: var(--radius-sm); padding: 10px 14px; margin-bottom: 12px; }
+:root[data-theme="dark"] .dc-alert { background: rgba(249,115,22,.12); border-color: rgba(249,115,22,.3); }
+.dc-alert strong { font-size: .82rem; }
+.dc-alert p { font-size: .78rem; color: var(--text-muted); margin: 4px 0 0; }
+.dc-categories { display: flex; flex-direction: column; gap: 12px; }
+.dc-category-title { font-size: .74rem; font-weight: 700; text-transform: uppercase; letter-spacing: .04em; color: var(--text-muted); margin: 0 0 6px; padding-bottom: 4px; border-bottom: 1px solid var(--border); }
+.dc-item { display: grid; grid-template-columns: 20px 1fr auto; gap: 8px; align-items: baseline; padding: 5px 0; font-size: .82rem; }
+.dc-item-icon { font-size: .9rem; }
+.dc-item-label { color: var(--text-primary); font-weight: 500; }
+.dc-item-status { font-size: .72rem; font-weight: 700; text-transform: uppercase; letter-spacing: .03em; }
+.dc-item-detail { grid-column: 2 / -1; font-size: .74rem; color: var(--text-muted); margin-top: -2px; }
+.dc-item.dc-complete .dc-item-status     { color: var(--green); }
+.dc-item.dc-pending .dc-item-status      { color: var(--orange); }
+.dc-item.dc-missing .dc-item-status      { color: var(--red); }
+.dc-item.dc-under-review .dc-item-status { color: #7c3aed; }
+.dc-item.dc-returned .dc-item-status     { color: var(--red); }
+.dc-item.dc-not-required .dc-item-status { color: var(--blue); }
+.dc-item.dc-info-only { opacity: .7; }

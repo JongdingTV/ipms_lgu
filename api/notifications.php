@@ -20,6 +20,7 @@ $method = $_SERVER['REQUEST_METHOD'] ?? 'GET';
 
 if ($method === 'GET') {
     $unreadOnly = !empty($_GET['unread_only']);
+    $type = trim((string) ($_GET['type'] ?? ''));
     $page = max(1, (int) ($_GET['page'] ?? 1));
     $perPage = min(50, max(1, (int) ($_GET['per_page'] ?? 10)));
 
@@ -27,6 +28,13 @@ if ($method === 'GET') {
     $params = [$userId];
     if ($unreadOnly) {
         $where .= ' AND is_read = 0';
+    }
+    if ($type !== '') {
+        // e.g. type=reminder — lets the notification panel's Reminders tab
+        // (assets/js/notifications.js) ask for just that subset. Additive
+        // only: the default (no ?type=) behavior is completely unchanged.
+        $where .= ' AND type = ?';
+        $params[] = $type;
     }
 
     $result = paginate(

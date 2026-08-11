@@ -18,6 +18,7 @@ require_once __DIR__ . '/../../includes/Validator.php';
 require_once __DIR__ . '/../../includes/Notifications.php';
 require_once __DIR__ . '/../../includes/Pagination.php';
 require_once __DIR__ . '/../../includes/OTPManager.php';
+require_once __DIR__ . '/../../citizen/includes/qc-locations.php';
 apiHeaders();
 // Widened from super_admin-only so admin can reach the new request_staff_account
 // action below — every other (pre-existing) action re-asserts super_admin-only
@@ -30,6 +31,11 @@ $method = $_SERVER['REQUEST_METHOD'] ?? 'GET';
 $action = $_GET['action'] ?? '';
 $user = currentUser();
 $actorId = (int) ($user['user_id'] ?? 0);
+
+// Single source of truth for the "in:" validation list — reuses the same
+// district keys already surfaced to the client as window.QC_DISTRICTS.
+// (Plain variable, not a const — const expressions can't call functions.)
+$engineerDistrictRule = 'in:' . implode(',', array_keys(qcDistricts()));
 
 const SUPPORTING_DOC_MAX_SIZE = 10 * 1024 * 1024;
 const SUPPORTING_DOC_EXTENSIONS = ['pdf', 'doc', 'docx', 'xls', 'xlsx', 'png', 'jpg', 'jpeg'];
@@ -61,10 +67,26 @@ function ensureStaffAccountRequestsTable(PDO $db): void
               CONSTRAINT fk_staff_req_reviewed_by FOREIGN KEY (reviewed_by) REFERENCES users(id) ON DELETE SET NULL
             ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
         ");
+
+        // Carries an engineer request's district through to approval, so
+        // decide_staff_request can stamp it onto the new users row without
+        // asking the super_admin to re-enter it (see api/projects.php's
+        // per-district engineer scoping).
+        $db->exec("ALTER TABLE staff_account_requests ADD COLUMN IF NOT EXISTS district VARCHAR(20) NULL AFTER requested_role");
     } catch (Throwable $e) {
     }
 }
 ensureStaffAccountRequestsTable($db);
+// Pre-warms activity_logs' self-healed columns before any action's DB
+// transaction opens. logActivity() (called via auditLog() from inside
+// create_engineer/decide_staff_request's beginTransaction()/commit() block)
+// otherwise runs this same ALTER TABLE lazily on its first call each
+// request — and an ALTER TABLE inside an open transaction triggers MySQL's
+// implicit commit, which makes the transaction's own commit() throw
+// "There is no active transaction" (and then rollBack() in the catch throws
+// the same, turning a handled error into an uncaught fatal). Pre-existing
+// bug, unrelated to district — surfaced while adding it here.
+activityLogEnsureSchema($db);
 
 /**
  * Reads documents[N][document_type]/[title] + document_files[N] into a flat,
@@ -354,6 +376,7 @@ if ($action === 'create_engineer') {
         'username' => 'required|string|min:3|max:60',
         'email' => 'required|email',
         'status' => 'nullable|in:active,inactive',
+        'district' => 'required|' . $engineerDistrictRule,
     ])->stopOnFailure();
 
     $documentRows = superadminCollectDocumentRows($_POST['documents'] ?? [], $_FILES['document_files'] ?? []);
@@ -369,13 +392,14 @@ if ($action === 'create_engineer') {
 
     $db->beginTransaction();
     try {
-        $stmt = $db->prepare("INSERT INTO users (username, email, password_hash, full_name, role, status) VALUES (?, ?, ?, ?, 'engineer', ?)");
+        $stmt = $db->prepare("INSERT INTO users (username, email, password_hash, full_name, role, status, district) VALUES (?, ?, ?, ?, 'engineer', ?, ?)");
         $stmt->execute([
             $validated['username'],
             $validated['email'],
             password_hash($tempPassword, PASSWORD_BCRYPT),
             $validated['full_name'],
             $validated['status'] ?? 'active',
+            $validated['district'],
         ]);
         $newUserId = (int) $db->lastInsertId();
 
@@ -449,16 +473,20 @@ if ($action === 'request_staff_account') {
     // requests.)
     requireAnyRole(['admin']);
 
-    $validated = Validator::make(requestBody(), [
+    $body = requestBody();
+    $validated = Validator::make($body, [
         'requested_role' => 'required|in:engineer,bac',
         'full_name' => 'required|string|max:150',
         'username' => 'required|string|min:3|max:60',
         'email' => 'required|email',
+        // Only engineers are district-scoped — BAC has no district concept,
+        // so the rule is conditional rather than a blanket 'required'.
+        'district' => ($body['requested_role'] ?? null) === 'engineer' ? 'required|' . $engineerDistrictRule : 'nullable',
     ])->stopOnFailure();
 
     $stmt = $db->prepare('
-        INSERT INTO staff_account_requests (requested_role, full_name, username, email, requested_by, status)
-        VALUES (?, ?, ?, ?, ?, "pending")
+        INSERT INTO staff_account_requests (requested_role, full_name, username, email, requested_by, status, district)
+        VALUES (?, ?, ?, ?, ?, "pending", ?)
     ');
     $stmt->execute([
         $validated['requested_role'],
@@ -466,6 +494,7 @@ if ($action === 'request_staff_account') {
         $validated['username'],
         $validated['email'],
         $actorId,
+        $validated['requested_role'] === 'engineer' ? $validated['district'] : null,
     ]);
     $requestId = (int) $db->lastInsertId();
 
@@ -523,13 +552,14 @@ if ($action === 'decide_staff_request') {
 
     $db->beginTransaction();
     try {
-        $stmt = $db->prepare("INSERT INTO users (username, email, password_hash, full_name, role, status) VALUES (?, ?, ?, ?, ?, 'active')");
+        $stmt = $db->prepare("INSERT INTO users (username, email, password_hash, full_name, role, status, district) VALUES (?, ?, ?, ?, ?, 'active', ?)");
         $stmt->execute([
             $reqRow['username'],
             $reqRow['email'],
             password_hash($tempPassword, PASSWORD_BCRYPT),
             $reqRow['full_name'],
             $reqRow['requested_role'],
+            $reqRow['district'],
         ]);
         $newUserId = (int) $db->lastInsertId();
 

@@ -11,6 +11,7 @@ require_once __DIR__ . '/../includes/Notifications.php';
 require_once __DIR__ . '/../includes/Validator.php';
 require_once __DIR__ . '/../includes/ProjectHealth.php';
 require_once __DIR__ . '/../includes/RoadGeometry.php';
+require_once __DIR__ . '/../includes/DocumentChecklist.php';
 apiHeaders();
 
 $method = $_SERVER['REQUEST_METHOD'];
@@ -182,7 +183,11 @@ if ($method === 'GET') {
             $projectParams[] = $contractorScopeId;
             $projectWhere .= " AND p.status IN ('assigned','active','delayed','on_hold','completed')";
         }
-        if ($isEngineer && $engineerDistrict !== null) {
+        // Unconditional whenever the caller is an engineer — binding a NULL
+        // $engineerDistrict is safe (p.district = NULL never matches any
+        // row), so a still-unconfigured engineer correctly sees nothing
+        // instead of falling through to "no filter, show everything".
+        if ($isEngineer) {
             $projectWhere .= ' AND p.district = ?';
             $projectParams[] = $engineerDistrict;
         }
@@ -272,7 +277,8 @@ if ($method === 'GET') {
     $where   = ['1=1'];
     $params  = [];
 
-    if ($isEngineer && $engineerDistrict !== null) {
+    // See the single-project branch above for why this is unconditional.
+    if ($isEngineer) {
         $where[] = 'p.district = ?';
         $params[] = $engineerDistrict;
     }
@@ -563,7 +569,16 @@ if ($method === 'POST' && $action === 'request_completion_inspection') {
         }
     }
 
-    respond(['success' => true, 'status' => 'completion_inspection']);
+    // Document Checklist — soft warning only, per explicit design decision:
+    // never block this action, just surface any documentation gaps so the
+    // frontend can show a dismissible banner.
+    $checklistItems = documentChecklistForProject($db, $projectId);
+    $missingDocs = documentChecklistMissingRequired($checklistItems);
+    $warnings = $missingDocs ? [
+        count($missingDocs) . ' documentation gap(s): ' . implode(', ', array_column($missingDocs, 'label')),
+    ] : [];
+
+    respond(['success' => true, 'status' => 'completion_inspection', 'warnings' => $warnings]);
 }
 
 // ── POST action=completion_decide (Engineer only — accept as complete, or return with a punch-list) ──
@@ -610,7 +625,17 @@ if ($method === 'POST' && $action === 'completion_decide') {
         notifyUser((int) $project['created_by'], 'info', 'Completion inspection: ' . $verb, $details);
     }
 
-    respond(['success' => true, 'status' => $newStatus]);
+    // Document Checklist — soft warning only (see request_completion_inspection above).
+    $warnings = [];
+    if ($decision === 'accept') {
+        $checklistItems = documentChecklistForProject($db, $projectId);
+        $missingDocs = documentChecklistMissingRequired($checklistItems);
+        if ($missingDocs) {
+            $warnings[] = count($missingDocs) . ' documentation gap(s): ' . implode(', ', array_column($missingDocs, 'label'));
+        }
+    }
+
+    respond(['success' => true, 'status' => $newStatus, 'warnings' => $warnings]);
 }
 
 // ── POST action=turnover (Admin only — completed -> turnover) ──
@@ -936,6 +961,26 @@ if ($method === 'POST') {
     $details = $b['name'] . ' was registered with status ' . $status . ' and ' . count($documentRows) . ' supporting document(s).';
     projectWorkflowLog($db, 'Project registered', $newId, $details, (int) ($user['user_id'] ?? 0) ?: null);
     logActivity((int) ($user['user_id'] ?? 0) ?: null, 'project_created', $details, 'Projects', $newId);
+
+    // Auto-assign the district's engineer(s) — each district has exactly one
+    // assigned engineer in practice, but this loops over every active match
+    // rather than assuming exactly one row. A district with no engineer yet
+    // simply leaves the project unassigned; engineer/api/portal.php's
+    // accept_project action still covers that case manually.
+    if ($district !== null) {
+        $districtEngineers = $db->prepare("SELECT id, full_name FROM users WHERE role = 'engineer' AND status = 'active' AND district = ?");
+        $districtEngineers->execute([$district]);
+        foreach ($districtEngineers->fetchAll() as $eng) {
+            $db->prepare("
+                INSERT INTO engineer_project_assignments (engineer_id, project_id, assigned_by, assignment_notes, status)
+                VALUES (?, ?, ?, 'Auto-assigned by district on project registration', 'active')
+            ")->execute([$eng['id'], $newId, (int) ($user['user_id'] ?? 0) ?: null]);
+
+            $assignDetails = $b['name'] . ' (' . $district . ') was registered and assigned to ' . $eng['full_name'] . '.';
+            notifyUser((int) $eng['id'], 'info', 'New project in your district', $b['name'] . ' (' . $district . ') was registered and assigned to you.');
+            logActivity((int) ($user['user_id'] ?? 0) ?: null, 'project_auto_assigned', $assignDetails, 'Projects', $newId);
+        }
+    }
 
     respond(['id' => $newId, 'project_code' => $code], 201);
 }

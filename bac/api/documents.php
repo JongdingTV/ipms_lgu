@@ -229,6 +229,13 @@ if ($action === 'upload') {
 }
 
 if ($action === 'review') {
+    // Same RA 12009 reasoning already applied to review_contractor_application
+    // in bac/api/portal.php: verifying/rejecting a procurement document is a
+    // BAC decision, not a generic admin one. The file-level gate below still
+    // lets admin/super_admin list/upload documents in this file — only the
+    // review decision itself narrows to BAC.
+    requireAnyRole(['bac']);
+
     $validated = Validator::make(requestBody(), [
         'document_id' => 'required|integer',
         'decision' => 'required|in:verified,rejected',

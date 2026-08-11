@@ -127,6 +127,8 @@ async function hopeRefresh(page = hopeCurrentPage) {
 /* ---- Dashboard ----------------------------------------------------------- */
 
 async function hopeRenderDashboard() {
+  taskCenterInitDashboardWidget();
+
   let data;
   try {
     data = await hopeGet('summary');
@@ -467,6 +469,10 @@ async function hopeOpenProjectModal(id) {
             `).join('') : '<p class="empty-state">No supporting documents on file.</p>'}
           </div>
         </div>
+        <div>
+          <p class="modal-label">DOCUMENT CHECKLIST</p>
+          <div id="hopeProjectDocChecklist" style="margin-top:6px;"></div>
+        </div>
         <div class="hope-risk-box hope-risk-${hopeEscape(risk.risk)}">
           <p class="modal-label">RISK SUMMARY — AI SUMMARY, ADVISORY ONLY</p>
           <p class="modal-val" style="font-weight:400;">${hopeEscape(risk.summary)}</p>
@@ -478,6 +484,7 @@ async function hopeOpenProjectModal(id) {
       </div>
     `);
     renderProjectTimeline('projectTimelineSection', p.id);
+    documentChecklistInit('hopeProjectDocChecklist', p.id);
   } catch (error) {
     hopeToast('Failed to load project details.', 'error');
   }
@@ -1260,6 +1267,7 @@ async function hopeRenderProfilePage() {
 
 const hopeRenderers = {
   dashboard: hopeRenderDashboard,
+  'my-tasks': () => taskCenterInitPage('page-my-tasks'),
   'project-approvals': hopeRenderProjectApprovals,
   'award-approvals': hopeRenderAwardApprovals,
   'returned-projects': hopeRenderReturnedProjects,
@@ -1289,6 +1297,14 @@ function hopeShowPage(page) {
 }
 
 window.GLOBAL_SEARCH_NAVIGATE = hopeShowPage;
+
+// Smart Task & Assignment Center (assets/js/task-center.js) glue.
+window.TASK_CENTER_NAVIGATE = hopeShowPage;
+window.TASK_CENTER_OPEN_MODAL = hopeOpenModal;
+window.TASK_CENTER_CLOSE_MODAL = hopeCloseModal;
+window.TASK_CENTER_ESCAPE = hopeEscape;
+window.TASK_CENTER_TOAST = hopeToast;
+
 window.GLOBAL_SEARCH_SOURCES = [
   {
     label: 'Projects',

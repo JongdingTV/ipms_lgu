@@ -260,6 +260,8 @@ function contractorRenderStatusChart(stats) {
 }
 
 function contractorRenderDashboard() {
+  taskCenterInitDashboardWidget();
+
   const stats = contractorState.summary?.stats || {};
   document.getElementById('contractorAssignedCount').textContent = stats.assigned_projects || 0;
   document.getElementById('contractorAverageProgress').textContent = `${stats.average_progress || 0}%`;
@@ -1537,6 +1539,7 @@ function contractorShowPage(page) {
   });
 
   if (page === 'dashboard') contractorRenderDashboard();
+  if (page === 'my-tasks') taskCenterInitPage('page-my-tasks');
   if (page === 'company-profile') contractorRenderCompanyProfile();
   if (page === 'accreditation-status') contractorRenderAccreditationStatus();
   if (page === 'accreditation-documents') contractorRenderAccreditationDocuments();
@@ -1566,6 +1569,14 @@ function contractorGoToReport(projectId = '') {
 }
 
 window.GLOBAL_SEARCH_NAVIGATE = contractorShowPage;
+
+// Smart Task & Assignment Center (assets/js/task-center.js) glue.
+window.TASK_CENTER_NAVIGATE = contractorShowPage;
+window.TASK_CENTER_OPEN_MODAL = contractorOpenModal;
+window.TASK_CENTER_CLOSE_MODAL = contractorCloseModal;
+window.TASK_CENTER_ESCAPE = contractorEscape;
+window.TASK_CENTER_TOAST = contractorToast;
+
 window.GLOBAL_SEARCH_SOURCES = [
   {
     label: 'Assigned Projects',

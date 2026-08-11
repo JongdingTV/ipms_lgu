@@ -51,6 +51,8 @@
   <script src="<?= htmlspecialchars(assetUrl('/assets/js/sidebar-badges.js')) ?>"></script>
   <script src="<?= htmlspecialchars(assetUrl('/assets/js/sidebar-toggle.js')) ?>"></script>
   <script src="<?= htmlspecialchars(assetUrl('/assets/js/project-timeline.js')) ?>"></script>
+  <script src="<?= htmlspecialchars(assetUrl('/assets/js/task-center.js')) ?>"></script>
+  <script src="<?= htmlspecialchars(assetUrl('/assets/js/document-checklist.js')) ?>"></script>
   <script src="<?= htmlspecialchars(assetUrl('/assets/js/script.js')) ?>"></script>
 </body>
 </html>

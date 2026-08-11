@@ -249,6 +249,7 @@ function navigate(page) {
   // Load page data
   const loaders = {
     dashboard: loadDashboard,
+    'my-tasks': () => taskCenterInitPage('page-my-tasks'),
     'project-registration': () => loadProjectsPage('page-project-registration', 'Project Registration'),
     'project-approval': loadProjectApprovalPage,
     'contractor-assignment': loadContractorAssignmentPage,
@@ -274,6 +275,15 @@ function navigate(page) {
 }
 
 window.GLOBAL_SEARCH_NAVIGATE = navigate;
+
+// Smart Task & Assignment Center (assets/js/task-center.js) glue — lets the
+// portal-agnostic module drive this portal's own router/modal/toast/escape.
+window.TASK_CENTER_NAVIGATE = navigate;
+window.TASK_CENTER_OPEN_MODAL = openModal;
+window.TASK_CENTER_CLOSE_MODAL = closeModal;
+window.TASK_CENTER_ESCAPE = escapeHtml;
+window.TASK_CENTER_TOAST = toast;
+
 window.GLOBAL_SEARCH_SOURCES = [
   {
     label: 'Projects',
@@ -322,6 +332,9 @@ async function loadDashboard() {
       const el = document.getElementById(id);
       if (el) animateCounter(el, cfg.target, cfg.budget);
     });
+
+    // My Tasks widget — own independent fetch, not part of API.dashboard.
+    taskCenterInitDashboardWidget();
 
     // Budget total label
     const totalEl = document.getElementById('kpi-budget-total');
@@ -954,6 +967,10 @@ async function openProjectModal(id) {
           </div>
         </div>
         <div>
+          <p class="modal-label">DOCUMENT CHECKLIST</p>
+          <div id="projectDocChecklist" style="margin-top:6px;"></div>
+        </div>
+        <div>
           <p class="modal-label">QR CODE <small style="font-weight:400;color:#94a3b8;">— public transparency page, no login required</small></p>
           <div style="display:flex;align-items:center;gap:14px;margin-top:6px;">
             <div id="projectQRTarget" style="padding:8px;background:#fff;border-radius:8px;border:1px solid #e2e8f0;"></div>
@@ -971,6 +988,7 @@ async function openProjectModal(id) {
     `);
     renderProjectTimeline('projectTimelineSection', p.id);
     renderProjectQR('projectQRTarget', p.project_code, 96);
+    documentChecklistInit('projectDocChecklist', p.id);
   } catch (e) {
     toast('Failed to load project details', 'error');
   }
@@ -4646,6 +4664,30 @@ function renderReports(dashboard, contractors, openFeedback, expenseSummary) {
         `).join('') : '<p class="empty-state">No project health data yet.</p>'}
       </article>
     </section>
+
+    <section class="report-columns-2">
+      <article class="report-panel" style="grid-column: span 2;">
+        <h3>Documentation Completeness</h3>
+        ${(() => {
+          const docSummary = dashboard.document_checklist_summary;
+          if (!docSummary) return '<p class="empty-state">No documentation data yet.</p>';
+          const b = docSummary.buckets;
+          return `
+            <div class="admin-summary-grid" style="margin-bottom:12px;">
+              <article class="admin-summary-card"><span>Fully Documented</span><strong>${b.complete}</strong></article>
+              <article class="admin-summary-card"><span>In Progress</span><strong>${b.in_progress}</strong></article>
+              <article class="admin-summary-card"><span>Has Documentation Gaps</span><strong>${b.has_gaps}</strong></article>
+            </div>
+            ${docSummary.projects_with_gaps.length ? docSummary.projects_with_gaps.map(p => `
+              <div class="report-row">
+                <span>${escapeHtml(p.project_code)} — ${escapeHtml(p.name)}</span>
+                <span style="color:var(--red);font-size:.78rem;">${escapeHtml(p.missing_labels)}</span>
+              </div>
+            `).join('') : '<p class="empty-state">No project currently has a documentation gap.</p>'}
+          `;
+        })()}
+      </article>
+    </section>
   `;
 
   renderReportsCharts(dashboard, topContractors, highestSpend);
@@ -4797,6 +4839,17 @@ function exportReportsCsv() {
 
   addSection('Project Health Overview', ['Project', 'Health Score', 'Health Status'],
     (dashboard.project_health_summary || []).map(h => [`${h.project_code} — ${h.name}`, h.health_score, HEALTH_LABELS[h.health_status] || h.health_status]));
+
+  const docSummary = dashboard.document_checklist_summary;
+  if (docSummary) {
+    addSection('Documentation Completeness', ['Metric', 'Value'], [
+      ['Fully Documented', docSummary.buckets.complete],
+      ['In Progress', docSummary.buckets.in_progress],
+      ['Has Documentation Gaps', docSummary.buckets.has_gaps],
+    ]);
+    addSection('Projects With Missing Documentation', ['Project', 'Missing Items'],
+      docSummary.projects_with_gaps.map(p => [`${p.project_code} — ${p.name}`, p.missing_labels]));
+  }
 
   const csv = lines.map(row => row.map(v => `"${String(v ?? '').replace(/"/g, '""')}"`).join(',')).join('\n');
   const blob = new Blob([csv], { type: 'text/csv' });
@@ -5214,7 +5267,7 @@ async function loadStaffRequestsPage() {
         <form id="staffRequestForm">
           <div class="form-group">
             <label>Role *</label>
-            <select name="requested_role" class="form-input" required>
+            <select name="requested_role" class="form-input" required onchange="toggleStaffRequestDistrict(this.value)">
               <option value="engineer">Engineer</option>
               <option value="bac">BAC</option>
             </select>
@@ -5230,6 +5283,14 @@ async function loadStaffRequestsPage() {
           <div class="form-group">
             <label>Email *</label>
             <input name="email" type="email" class="form-input" required />
+          </div>
+          <div class="form-group" id="staffRequestDistrictGroup">
+            <label>District *</label>
+            <select name="district" class="form-input" required>
+              <option value="">— Select district —</option>
+              ${Object.keys(window.QC_DISTRICTS || {}).map(d => `<option value="${d}">${d}</option>`).join('')}
+            </select>
+            <p style="font-size:.78rem;color:var(--text-muted);margin-top:6px;">This engineer will only see and handle projects registered in this district.</p>
           </div>
           <div class="form-actions">
             <button type="submit" class="btn-primary">Submit Request</button>
@@ -5247,8 +5308,18 @@ async function loadStaffRequestsPage() {
       if (res.error) { toast(res.error, 'error'); return; }
       toast('Request submitted — awaiting Super Admin approval.');
       e.target.reset();
+      toggleStaffRequestDistrict('engineer');
     } catch { toast('Something went wrong', 'error'); }
   });
+}
+
+function toggleStaffRequestDistrict(role) {
+  const group = document.getElementById('staffRequestDistrictGroup');
+  if (!group) return;
+  const isEngineer = role === 'engineer';
+  group.style.display = isEngineer ? '' : 'none';
+  group.querySelector('select[name="district"]').required = isEngineer;
+  if (!isEngineer) group.querySelector('select[name="district"]').value = '';
 }
 
 /* ============================================================
@@ -5715,6 +5786,7 @@ document.addEventListener('DOMContentLoaded', () => {
   const dashHTML = contentEl.innerHTML;
   contentEl.innerHTML = `
     <div id="page-dashboard" class="page-section">${dashHTML}</div>
+    <div id="page-my-tasks" class="page-section" style="display:none;"></div>
     <div id="page-project-registration" class="page-section" style="display:none;"></div>
     <div id="page-project-approval" class="page-section" style="display:none;"></div>
     <div id="page-contractor-assignment" class="page-section" style="display:none;"></div>

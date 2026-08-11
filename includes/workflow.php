@@ -914,6 +914,68 @@ function projectRatingEligibleStatuses(): array
     return ['active', 'delayed', 'on_hold', 'completion_inspection', 'completed', 'turnover'];
 }
 
+// Smart Task & Assignment Center — the ONLY persisted state the feature
+// owns. Tasks themselves are never stored; includes/TaskCenter.php computes
+// them fresh on every request from tables that are already the source of
+// truth (milestones, payment_requests, staff_account_requests, ...), same
+// live-query convention as api/sidebar-badges.php. This table exists only
+// for the one thing with no natural home in existing data: a user hiding a
+// task from their own view. Mirrors sidebar_badge_views' shape exactly.
+function taskCenterEnsureSchema(PDO $db): void
+{
+    try {
+        $db->exec("
+            CREATE TABLE IF NOT EXISTS task_center_dismissals (
+                user_id INT NOT NULL,
+                task_key VARCHAR(80) NOT NULL,
+                dismissed_at DATETIME NOT NULL,
+                PRIMARY KEY (user_id, task_key),
+                CONSTRAINT fk_task_dismiss_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+        ");
+    } catch (Throwable $e) {
+    }
+}
+
+// Automated Reminders — three small overlay tables, same self-healing
+// pattern as task_center_dismissals above. reminder_log is both the dedup
+// ledger (UNIQUE user_id+reminder_key gates every notifyUser() call) and the
+// dismiss-state store; reminder_sweep_state throttles the per-user candidate
+// sweep; reminder_escalation_state is a single-row singleton throttling the
+// separate, user-agnostic escalation sweep. See includes/Reminders.php.
+function remindersEnsureSchema(PDO $db): void
+{
+    try {
+        $db->exec("
+            CREATE TABLE IF NOT EXISTS reminder_log (
+                id INT AUTO_INCREMENT PRIMARY KEY,
+                user_id INT NOT NULL,
+                reminder_key VARCHAR(160) NOT NULL,
+                dismissible TINYINT(1) NOT NULL DEFAULT 1,
+                status ENUM('sent','dismissed') NOT NULL DEFAULT 'sent',
+                created_at DATETIME NOT NULL,
+                dismissed_at DATETIME NULL,
+                UNIQUE KEY uniq_reminder (user_id, reminder_key),
+                CONSTRAINT fk_reminder_log_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+        ");
+        $db->exec("
+            CREATE TABLE IF NOT EXISTS reminder_sweep_state (
+                user_id INT NOT NULL PRIMARY KEY,
+                last_swept_at DATETIME NOT NULL,
+                CONSTRAINT fk_reminder_sweep_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+        ");
+        $db->exec("
+            CREATE TABLE IF NOT EXISTS reminder_escalation_state (
+                id TINYINT PRIMARY KEY DEFAULT 1,
+                last_swept_at DATETIME NOT NULL
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+        ");
+    } catch (Throwable $e) {
+    }
+}
+
 // AI ID Verification — the automated Quezon-City-residency gate on citizen
 // registration (includes/IdVerification.php, citizen/register.php,
 // citizen/api/verify-id.php). Recorded on the citizens row itself (not a

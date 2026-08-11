@@ -23,6 +23,16 @@ require_once __DIR__ . '/sidebar.php';
 
       <section class="kpi-grid">
         <article class="kpi-card">
+          <div class="kpi-icon kpi-red">
+            <svg viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 10-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd"/></svg>
+          </div>
+          <div class="kpi-info">
+            <span class="kpi-label">My Tasks</span>
+            <strong class="kpi-value" id="taskCenterKpiValue">0</strong>
+          </div>
+        </article>
+
+        <article class="kpi-card">
           <div class="kpi-icon kpi-blue">
             <svg viewBox="0 0 20 20" fill="currentColor"><path d="M2 6a2 2 0 012-2h5l2 2h5a2 2 0 012 2v6a2 2 0 01-2 2H4a2 2 0 01-2-2V6z"/></svg>
           </div>
@@ -133,8 +143,19 @@ require_once __DIR__ . '/sidebar.php';
           </div>
         </article>
       </section>
+
+      <section class="lower-row reveal">
+        <article class="info-card">
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;">
+            <h2 class="info-card-title" style="margin-bottom:0;">My Tasks</h2>
+            <button class="btn-secondary btn-compact" type="button" onclick="engineerShowPage('my-tasks')">View All Tasks</button>
+          </div>
+          <div id="taskCenterSummaryBody"></div>
+        </article>
+      </section>
     </section>
 
+    <section id="page-my-tasks" class="page-section" style="display:none;"></section>
     <section id="page-assigned-projects" class="page-section" style="display:none;"></section>
     <section id="page-available-projects" class="page-section" style="display:none;"></section>
     <section id="page-engineering-review" class="page-section" style="display:none;"></section>
@@ -180,6 +201,8 @@ require_once __DIR__ . '/sidebar.php';
 <link rel="stylesheet" href="<?= htmlspecialchars(assetUrl('/assets/css/project-map.css')) ?>">
 <script src="<?= htmlspecialchars(assetUrl('/assets/js/project-map.js')) ?>"></script>
 
+<script src="<?= htmlspecialchars(assetUrl('/assets/js/task-center.js')) ?>"></script>
+<script src="<?= htmlspecialchars(assetUrl('/assets/js/document-checklist.js')) ?>"></script>
 <script src="<?= htmlspecialchars(assetUrl('/engineer/assets/js/engineer.js')) ?>"></script>
 </body>
 </html>

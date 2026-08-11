@@ -351,6 +351,8 @@ function engineerRenderProgressChart(projects) {
 }
 
 function engineerRenderDashboard() {
+  taskCenterInitDashboardWidget();
+
   const stats = engineerState.summary?.stats || {};
   document.getElementById('engineerAssignedCount').textContent = stats.assigned_projects || 0;
   document.getElementById('engineerAverageProgress').textContent = `${stats.average_progress || 0}%`;
@@ -560,10 +562,13 @@ async function engineerOpenProjectPreview(projectId) {
           </div>
         `).join('') : '<p class="empty-state">No documents attached.</p>'}
       </div>
+      <h4 style="margin: 16px 0 8px; color:#1e293b;">Document Checklist</h4>
+      <div id="engineerProjectDocChecklist"></div>
       <h4 style="margin: 16px 0 8px; color:#1e293b;">Activity Timeline</h4>
       <div id="projectTimelineSection"></div>
     `);
     renderProjectTimeline('projectTimelineSection', project.id);
+    documentChecklistInit('engineerProjectDocChecklist', project.id);
   } catch (error) {
     engineerToast(error.message || 'Failed to load project details.', 'error');
   }
@@ -1358,6 +1363,7 @@ function engineerShowPage(page, selectedProjectId = '') {
   });
 
   if (page === 'dashboard') engineerRenderDashboard();
+  if (page === 'my-tasks') taskCenterInitPage('page-my-tasks');
   if (page === 'assigned-projects') engineerRenderAssignedProjects();
   if (page === 'available-projects') engineerRenderAvailableProjects();
   if (page === 'engineering-review') engineerRenderEngineeringReviewPage();
@@ -1549,6 +1555,16 @@ async function engineerSubmitStatus(event) {
 }
 
 window.GLOBAL_SEARCH_NAVIGATE = engineerShowPage;
+
+// Smart Task & Assignment Center (assets/js/task-center.js) glue.
+// engineerShowPage's 2nd arg is a project id, unlike the other portals'
+// single-arg routers — unpack link_params.project_id into that slot.
+window.TASK_CENTER_NAVIGATE = (page, params) => engineerShowPage(page, (params && params.project_id) || '');
+window.TASK_CENTER_OPEN_MODAL = engineerOpenModal;
+window.TASK_CENTER_CLOSE_MODAL = engineerCloseModal;
+window.TASK_CENTER_ESCAPE = engineerEscape;
+window.TASK_CENTER_TOAST = engineerToast;
+
 window.GLOBAL_SEARCH_SOURCES = [
   {
     label: 'Assigned Projects',

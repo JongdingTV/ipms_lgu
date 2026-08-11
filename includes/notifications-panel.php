@@ -7,6 +7,12 @@
     <span><?= htmlspecialchars($notifPanelTitle ?? 'Notifications') ?></span>
     <button class="notif-clear" id="notifClear" type="button">Clear all</button>
   </div>
+  <!-- Automated Reminders — same panel, same list, just a filtered view
+       (assets/js/notifications.js) — not a separate portal/component. -->
+  <div class="notif-tabs" id="notifTabs">
+    <button class="notif-tab active" data-tab="all" type="button">All</button>
+    <button class="notif-tab" data-tab="reminders" type="button">Reminders</button>
+  </div>
   <div id="notifList">
     <p class="empty-state" style="padding:16px;">Loading…</p>
   </div>

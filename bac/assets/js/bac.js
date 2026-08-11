@@ -352,6 +352,8 @@ async function bacRenderDashboard() {
     return;
   }
 
+  taskCenterInitDashboardWidget();
+
   const stats = bacDashboardData.stats || {};
   document.getElementById('bacOpenBids').textContent = stats.open_bids || 0;
   document.getElementById('bacEvaluationCount').textContent = stats.for_evaluation || 0;
@@ -1081,6 +1083,7 @@ function bacOpenContractorApplicationReview(index) {
 
 const bacRenderers = {
   dashboard: bacRenderDashboard,
+  'my-tasks': () => taskCenterInitPage('page-my-tasks'),
   'bidding-announcements': bacRenderAnnouncements,
   'contractor-evaluation': bacRenderEvaluation,
   'bid-comparison': bacRenderBidComparison,
@@ -1105,6 +1108,14 @@ function bacShowPage(page) {
 }
 
 window.GLOBAL_SEARCH_NAVIGATE = bacShowPage;
+
+// Smart Task & Assignment Center (assets/js/task-center.js) glue.
+window.TASK_CENTER_NAVIGATE = bacShowPage;
+window.TASK_CENTER_OPEN_MODAL = bacOpenModal;
+window.TASK_CENTER_CLOSE_MODAL = bacCloseModal;
+window.TASK_CENTER_ESCAPE = bacEscape;
+window.TASK_CENTER_TOAST = bacToast;
+
 window.GLOBAL_SEARCH_SOURCES = [
   {
     label: 'Bidding Announcements',

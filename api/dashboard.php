@@ -8,6 +8,7 @@ require_once __DIR__ . '/../includes/workflow.php';
 require_once __DIR__ . '/../includes/ContractorScoring.php';
 require_once __DIR__ . '/../includes/Notifications.php';
 require_once __DIR__ . '/../includes/ProjectHealth.php';
+require_once __DIR__ . '/../includes/DocumentChecklist.php';
 apiHeaders();
 
 requireAnyRole(['super_admin', 'admin', 'engineer']);
@@ -385,5 +386,35 @@ $out['recent_workflow'] = $db->query("
     ORDER BY record_date DESC
     LIMIT 8
 ")->fetchAll();
+
+// ── Documentation Completeness — feeds the Reports page's new panel.
+// Reuses includes/DocumentChecklist.php directly (same engine behind the
+// project-detail Document Checklist section and Task Center's checklist_gap
+// task) rather than re-deriving any of its rules. ──
+$docProjects = $db->query("SELECT id, project_code, name FROM projects WHERE status NOT IN ('draft', 'cancelled')")->fetchAll();
+$docBuckets = ['complete' => 0, 'in_progress' => 0, 'has_gaps' => 0];
+$docProjectsWithGaps = [];
+foreach ($docProjects as $p) {
+    $items = documentChecklistForProject($db, (int) $p['id']);
+    $summary = documentChecklistSummary($items);
+    $missing = documentChecklistMissingRequired($items);
+    if ($missing) {
+        $docBuckets['has_gaps']++;
+        $docProjectsWithGaps[] = [
+            'project_code' => $p['project_code'], 'name' => $p['name'],
+            'missing_count' => count($missing),
+            'missing_labels' => implode(', ', array_column($missing, 'label')),
+        ];
+    } elseif ($summary['percent'] >= 100) {
+        $docBuckets['complete']++;
+    } else {
+        $docBuckets['in_progress']++;
+    }
+}
+usort($docProjectsWithGaps, fn($a, $b) => $b['missing_count'] <=> $a['missing_count']);
+$out['document_checklist_summary'] = [
+    'buckets' => $docBuckets,
+    'projects_with_gaps' => array_slice($docProjectsWithGaps, 0, 20),
+];
 
 respond($out);

@@ -28,6 +28,19 @@
       </svg>
     </button>
 
+    <?php if (($_SESSION['role'] ?? '') !== 'citizen'): // My Tasks is staff-only (Smart Task & Assignment Center) ?>
+    <!-- My Tasks — lives next to Notifications instead of the sidebar so it
+         doesn't add another tab to click through. Clicking it opens the same
+         centered modal popup every other detail view in this app uses (see
+         taskCenterOpenPanelModal() in assets/js/task-center.js). -->
+    <button class="icon-btn" id="myTasksBtn" type="button" title="My Tasks" onclick="taskCenterOpenPanelModal()">
+      <svg width="20" height="20" viewBox="0 0 20 20" fill="currentColor">
+        <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 10-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd"/>
+      </svg>
+      <span class="nav-badge topbar-icon-badge" data-badge="my-tasks"></span>
+    </button>
+    <?php endif; ?>
+
     <!-- Notifications -->
     <button class="icon-btn" id="notifBtn" title="Notifications">
       <svg width="20" height="20" viewBox="0 0 20 20" fill="currentColor">

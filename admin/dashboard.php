@@ -18,6 +18,16 @@ require_once '../citizen/includes/qc-locations.php';
   <main class="content">
     <section class="kpi-grid">
       <article class="kpi-card">
+        <div class="kpi-icon kpi-red">
+          <svg viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 10-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd"/></svg>
+        </div>
+        <div class="kpi-info">
+          <span class="kpi-label">My Tasks</span>
+          <strong class="kpi-value" id="taskCenterKpiValue">0</strong>
+        </div>
+      </article>
+
+      <article class="kpi-card">
         <div class="kpi-icon kpi-blue">
           <svg viewBox="0 0 20 20" fill="currentColor">
             <path d="M2 6a2 2 0 012-2h5l2 2h5a2 2 0 012 2v6a2 2 0 01-2 2H4a2 2 0 01-2-2V6z"/>
@@ -220,6 +230,14 @@ require_once '../citizen/includes/qc-locations.php';
     </article>
 
     <section class="lower-row reveal">
+      <article class="info-card">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;">
+          <h2 class="info-card-title" style="margin-bottom:0;">My Tasks</h2>
+          <button class="btn-secondary btn-compact" type="button" onclick="navigate('my-tasks')">View All Tasks</button>
+        </div>
+        <div id="taskCenterSummaryBody"></div>
+      </article>
+
       <article class="info-card">
         <h2 class="info-card-title">Recent Activities</h2>
         <div id="recentActivitiesList" class="feedback-list">

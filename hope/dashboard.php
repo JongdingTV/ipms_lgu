@@ -24,6 +24,16 @@ require_once __DIR__ . '/sidebar.php';
 
       <section class="kpi-grid hope-kpis">
         <article class="kpi-card">
+          <div class="kpi-icon kpi-red">
+            <svg viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 10-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd"/></svg>
+          </div>
+          <div class="kpi-info">
+            <span class="kpi-label">My Tasks</span>
+            <strong class="kpi-value" id="taskCenterKpiValue">0</strong>
+          </div>
+        </article>
+
+        <article class="kpi-card">
           <div class="kpi-icon kpi-orange">
             <svg viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M6 2a2 2 0 00-2 2v12a2 2 0 002 2h8a2 2 0 002-2V7.414A2 2 0 0013.414 6L10 2.586A2 2 0 008.586 2H6zm1 9a1 1 0 011-1h4a1 1 0 110 2H8a1 1 0 01-1-1z" clip-rule="evenodd"/></svg>
           </div>
@@ -176,8 +186,19 @@ require_once __DIR__ . '/sidebar.php';
           </div>
         </article>
       </section>
+
+      <section class="lower-row reveal">
+        <article class="info-card">
+          <div class="hope-panel-head">
+            <h2 class="info-card-title">My Tasks</h2>
+            <button class="btn-secondary btn-compact" type="button" onclick="hopeShowPage('my-tasks')">View All Tasks</button>
+          </div>
+          <div id="taskCenterSummaryBody"></div>
+        </article>
+      </section>
     </section>
 
+    <section id="page-my-tasks" class="page-section" style="display:none;"></section>
     <section id="page-project-approvals" class="page-section" style="display:none;"></section>
     <section id="page-award-approvals" class="page-section" style="display:none;"></section>
     <section id="page-returned-projects" class="page-section" style="display:none;"></section>
@@ -212,6 +233,8 @@ require_once __DIR__ . '/sidebar.php';
 <script src="<?= htmlspecialchars(assetUrl('/assets/js/pagination.js')) ?>"></script>
 <script src="<?= htmlspecialchars(assetUrl('/assets/js/sidebar-toggle.js')) ?>"></script>
 <script src="<?= htmlspecialchars(assetUrl('/assets/js/project-timeline.js')) ?>"></script>
+<script src="<?= htmlspecialchars(assetUrl('/assets/js/task-center.js')) ?>"></script>
+<script src="<?= htmlspecialchars(assetUrl('/assets/js/document-checklist.js')) ?>"></script>
 <script src="<?= htmlspecialchars(assetUrl('/hope/assets/js/hope.js')) ?>"></script>
 </body>
 </html>

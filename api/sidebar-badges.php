@@ -21,6 +21,8 @@
 require_once __DIR__ . '/../includes/db.php';
 require_once __DIR__ . '/../includes/auth.php';
 require_once __DIR__ . '/../includes/workflow.php';
+require_once __DIR__ . '/../includes/TaskCenter.php';
+require_once __DIR__ . '/../includes/Reminders.php';
 
 apiHeaders();
 requireAnyRole(['super_admin', 'admin', 'bac', 'engineer', 'contractor', 'hope', 'citizen']);
@@ -95,6 +97,20 @@ if ($method !== 'GET') {
     respond(['error' => 'Method not allowed.'], 405);
 }
 
+// Automated Reminders — piggybacks on this poll (every logged-in staff
+// user's browser already hits this endpoint every 45s) so reminders get
+// delivered without any new client-side polling loop. Both sweeps are
+// self-throttled (~20 min) so this adds negligible cost to a normal poll.
+// Staff-only, same 6 roles as the Smart Task & Assignment Center.
+if ($role !== 'citizen') {
+    try {
+        remindersSweep($db, $userId, $role);
+        remindersEscalationSweep($db);
+    } catch (Throwable $e) {
+        // Reminders are a convenience layer — never let a sweep failure break badges.
+    }
+}
+
 $portal = (string) ($_GET['portal'] ?? '');
 if (!in_array($portal, VALID_PORTALS, true)) {
     respond(['error' => 'Unknown or missing portal.'], 422);
@@ -123,10 +139,10 @@ switch ($portal) {
         $badges = computeAdminBadges($db, $userId, $lastViewed);
         break;
     case 'superadmin':
-        $badges = computeSuperAdminBadges($db, $lastViewed);
+        $badges = computeSuperAdminBadges($db, $userId, $lastViewed);
         break;
     case 'bac':
-        $badges = computeBacBadges($db, $lastViewed);
+        $badges = computeBacBadges($db, $userId, $lastViewed);
         break;
     case 'engineer':
         $badges = computeEngineerBadges($db, $userId, $lastViewed);
@@ -216,6 +232,14 @@ function computeAdminBadges(PDO $db, int $userId, array $lv): array
     $stmt->execute([lv($lv, 'cancelled-projects')]);
     $b['cancelled-projects'] = ['label' => $stmt->fetchColumn() > 0 ? 'UPDATED' : null];
 
+    // My Tasks — the Task Center's own live actionable count. Deliberately
+    // NOT folded into $b['dashboard'] below: it aggregates several of the
+    // same underlying signals already counted individually above (project
+    // registration, contractor assignment, feedback, ratings, ...), so
+    // adding it to that sum would double-count the same real items twice.
+    $taskCount = taskCenterCounts(taskCenterFilterDismissed($db, $userId, taskCenterForAdmin($db, $userId)))['total'];
+    $b['my-tasks'] = ['type' => 'red', 'count' => $taskCount];
+
     $b['dashboard'] = ['type' => 'red', 'count' =>
         $b['project-registration']['count'] + $b['project-approval']['count'] + $b['contractor-assignment']['count']
         + $b['workflow-management']['count'] + $b['budget-monitoring']['count'] + $b['milestone-overview']['count']
@@ -227,7 +251,7 @@ function computeAdminBadges(PDO $db, int $userId, array $lv): array
 // ============================================================
 // SUPER ADMIN
 // ============================================================
-function computeSuperAdminBadges(PDO $db, array $lv): array
+function computeSuperAdminBadges(PDO $db, int $userId, array $lv): array
 {
     $b = [];
 
@@ -245,6 +269,12 @@ function computeSuperAdminBadges(PDO $db, array $lv): array
     $stmt->execute([lv($lv, 'login-security')]);
     $b['login-security'] = ['type' => 'red', 'count' => (int) $stmt->fetchColumn()];
 
+    // My Tasks — platform-governance-only queue (staff requests, citizen ID
+    // verification, document review, account lockouts). Not folded into
+    // $b['dashboard'] below — same double-counting reasoning as Admin's.
+    $taskCount = taskCenterCounts(taskCenterFilterDismissed($db, $userId, taskCenterForSuperAdmin($db, $userId)))['total'];
+    $b['my-tasks'] = ['type' => 'red', 'count' => $taskCount];
+
     $b['dashboard'] = ['type' => 'red', 'count' => $b['user-governance']['count'] + $b['login-security']['count']];
 
     return $b;
@@ -253,7 +283,7 @@ function computeSuperAdminBadges(PDO $db, array $lv): array
 // ============================================================
 // BAC
 // ============================================================
-function computeBacBadges(PDO $db, array $lv): array
+function computeBacBadges(PDO $db, int $userId, array $lv): array
 {
     $b = [];
 
@@ -284,6 +314,9 @@ function computeBacBadges(PDO $db, array $lv): array
     $stmt = $db->prepare("SELECT COUNT(*) FROM contractors WHERE application_status = 'pending' AND created_at > ?");
     $stmt->execute([lv($lv, 'contractor-applications')]);
     $b['contractor-applications'] = ['type' => 'red', 'count' => (int) $stmt->fetchColumn()];
+
+    $taskCount = taskCenterCounts(taskCenterFilterDismissed($db, $userId, taskCenterForBac($db, $userId)))['total'];
+    $b['my-tasks'] = ['type' => 'red', 'count' => $taskCount];
 
     $b['dashboard'] = ['type' => 'red', 'count' =>
         $b['bidding-announcements']['count'] + $b['contractor-evaluation']['count'] + $b['award-recommendation']['count']
@@ -363,6 +396,9 @@ function computeEngineerBadges(PDO $db, int $userId, array $lv): array
     $stmt->execute([$userId, lv($lv, 'status-tracker')]);
     $b['status-tracker'] = ['type' => 'orange', 'count' => (int) $stmt->fetchColumn()];
 
+    $taskCount = taskCenterCounts(taskCenterFilterDismissed($db, $userId, taskCenterForEngineer($db, $userId)))['total'];
+    $b['my-tasks'] = ['type' => 'red', 'count' => $taskCount];
+
     $b['dashboard'] = ['type' => 'red', 'count' =>
         $b['assigned-projects']['count'] + $b['engineering-review']['count'] + $b['available-projects']['count']
         + $b['inspection-review']['count'] + $b['payment-review']['count']];
@@ -404,6 +440,9 @@ function computeContractorBadges(PDO $db, int $userId, array $lv): array
     $stmt->execute([$contractorId, lv($lv, 'accreditation-documents')]);
     $b['accreditation-documents'] = ['type' => 'blue', 'count' => (int) $stmt->fetchColumn()];
 
+    $taskCount = taskCenterCounts(taskCenterFilterDismissed($db, $userId, taskCenterForContractor($db, $userId)))['total'];
+    $b['my-tasks'] = ['type' => 'red', 'count' => $taskCount];
+
     $b['dashboard'] = ['type' => 'red', 'count' =>
         $b['open-biddings']['count'] + $b['bid-results']['count'] + $b['assigned-projects']['count']];
 
@@ -440,6 +479,9 @@ function computeHopeBadges(PDO $db, int $userId, array $lv): array
     // Reuses the same shared per-user notifications feed the topbar bell uses.
     require_once __DIR__ . '/../includes/Notifications.php';
     $b['notifications'] = ['type' => 'blue', 'count' => (int) Notifications::unreadCount($userId)];
+
+    $taskCount = taskCenterCounts(taskCenterFilterDismissed($db, $userId, taskCenterForHope($db, $userId)))['total'];
+    $b['my-tasks'] = ['type' => 'red', 'count' => $taskCount];
 
     $b['dashboard'] = ['type' => 'red', 'count' =>
         $b['project-approvals']['count'] + $b['award-approvals']['count'] + $b['returned-projects']['count'] + $b['deletion-requests']['count'] + $b['edit-requests']['count']];

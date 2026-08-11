@@ -6,10 +6,16 @@ $extraStylesheets = ['assets/css/pagination.css', 'superadmin/assets/css/superad
 
 require_once __DIR__ . '/../includes/header.php';
 require_once __DIR__ . '/sidebar.php';
+// Pure geography data (district/barangay names), no citizen-session
+// dependency — reused here so the Add Engineer / Staff Request forms can
+// share the same District list as Project Registration's location picker.
+require_once __DIR__ . '/../citizen/includes/qc-locations.php';
 ?>
 
 <div class="main-wrapper superadmin-wrapper">
   <?php require_once __DIR__ . '/../includes/topbar.php'; ?>
+
+  <script>window.QC_DISTRICTS = <?= json_encode(qcDistricts(), JSON_UNESCAPED_UNICODE) ?>;</script>
 
   <main class="content superadmin-content">
     <section id="page-dashboard" class="page-section">
@@ -23,6 +29,16 @@ require_once __DIR__ . '/sidebar.php';
       </div>
 
       <section class="kpi-grid sa-kpis">
+        <article class="kpi-card">
+          <div class="kpi-icon kpi-red">
+            <svg viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 10-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd"/></svg>
+          </div>
+          <div class="kpi-info">
+            <span class="kpi-label">My Tasks</span>
+            <strong class="kpi-value" id="taskCenterKpiValue">0</strong>
+          </div>
+        </article>
+
         <article class="kpi-card">
           <div class="kpi-icon kpi-blue">
             <svg viewBox="0 0 20 20" fill="currentColor"><path d="M13 6a3 3 0 11-6 0 3 3 0 016 0zM18 8a2 2 0 11-4 0 2 2 0 014 0zM14 15a4 4 0 00-8 0v3h8v-3z"/></svg>
@@ -109,7 +125,19 @@ require_once __DIR__ . '/sidebar.php';
           </div>
         </article>
       </section>
+
+      <section class="lower-row reveal">
+        <article class="info-card">
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;">
+            <h2 class="info-card-title" style="margin-bottom:0;">My Tasks</h2>
+            <button class="btn-secondary btn-compact" type="button" onclick="saShowPage('my-tasks')">View All Tasks</button>
+          </div>
+          <div id="taskCenterSummaryBody"></div>
+        </article>
+      </section>
     </section>
+
+    <section id="page-my-tasks" class="page-section" style="display:none;"></section>
 
     <section id="page-user-governance" class="page-section" style="display:none;">
       <div class="sa-section-head">
@@ -347,6 +375,7 @@ require_once __DIR__ . '/sidebar.php';
 <script src="<?= htmlspecialchars(assetUrl('/assets/js/sidebar-badges.js')) ?>"></script>
 <script src="<?= htmlspecialchars(assetUrl('/assets/js/pagination.js')) ?>"></script>
 <script src="<?= htmlspecialchars(assetUrl('/assets/js/sidebar-toggle.js')) ?>"></script>
+<script src="<?= htmlspecialchars(assetUrl('/assets/js/task-center.js')) ?>"></script>
 <script src="<?= htmlspecialchars(assetUrl('/superadmin/assets/js/superadmin.js')) ?>"></script>
 </body>
 </html>

@@ -15,7 +15,6 @@
         <span class="nav-label">Dashboard</span>
         <span class="nav-badge" data-badge="dashboard"></span>
       </a>
-
       <div class="nav-group">
         <p class="nav-group-label">Accreditation</p>
         <a href="#" class="nav-item" data-page="company-profile">

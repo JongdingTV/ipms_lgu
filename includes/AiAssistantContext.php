@@ -12,9 +12,12 @@
 // Every section here reuses an existing, already-established computation
 // rather than inventing a new one: includes/ContractorScoring.php for
 // contractor scores, includes/ProjectHealth.php for the priority-projects
-// ranking, and the same "pending inspection" LEFT JOIN pattern
-// engineer/api/portal.php's own pending_inspections action already uses.
+// ranking, includes/DocumentChecklist.php for documentation gaps, and the
+// same "pending inspection" LEFT JOIN pattern engineer/api/portal.php's own
+// pending_inspections action already uses.
 // ============================================================
+
+require_once __DIR__ . '/DocumentChecklist.php';
 
 function aiAssistantSystemPrompt(string $dataSnapshot): string
 {
@@ -62,6 +65,7 @@ function aiAssistantBuildContext(PDO $db): string
         aiAssistantOverdueInspectionsSection($db),
         aiAssistantFeedbackSection($db),
         aiAssistantPrioritySection($db),
+        aiAssistantDocumentGapsSection($db),
         '=== END OF DATA SNAPSHOT ===',
     ];
 
@@ -259,6 +263,40 @@ function aiAssistantPrioritySection(PDO $db): string
     foreach ($rows as $r) {
         $lines[] = "{$rank}. {$r['project_code']} \"{$r['name']}\" — health {$r['health_score']}/100 ({$r['health_status']}), status: " . str_replace('_', ' ', (string) $r['status']);
         $rank++;
+    }
+    return implode("\n", $lines);
+}
+
+// Reuses includes/DocumentChecklist.php's live checklist directly, per
+// project — the same engine behind the Document Checklist section on the
+// Admin/HOPE/Engineer project views and the checklist_gap Task Center task,
+// so the assistant's answers never disagree with what those show.
+function aiAssistantDocumentGapsSection(PDO $db): string
+{
+    $projects = $db->query("
+        SELECT id, project_code, name FROM projects WHERE status NOT IN ('draft', 'cancelled')
+    ")->fetchAll();
+
+    $gaps = [];
+    foreach ($projects as $p) {
+        $missing = documentChecklistMissingRequired(documentChecklistForProject($db, (int) $p['id']));
+        if ($missing) {
+            $gaps[] = [
+                'project_code' => $p['project_code'], 'name' => $p['name'],
+                'labels' => implode(', ', array_column($missing, 'label')),
+                'count' => count($missing),
+            ];
+        }
+    }
+
+    if ($gaps === []) {
+        return "DOCUMENTATION GAPS\nNo project currently has a required documentation item missing.";
+    }
+
+    usort($gaps, fn(array $a, array $b): int => $b['count'] <=> $a['count']);
+    $lines = ['DOCUMENTATION GAPS — projects missing a required Document Checklist item (' . count($gaps) . ')'];
+    foreach (array_slice($gaps, 0, 15) as $g) {
+        $lines[] = "- {$g['project_code']} \"{$g['name']}\" — missing: {$g['labels']}";
     }
     return implode("\n", $lines);
 }

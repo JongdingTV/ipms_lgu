@@ -266,6 +266,8 @@ async function saRenderDashboard() {
     return;
   }
 
+  taskCenterInitDashboardWidget();
+
   const stats = saDashboardData.stats || {};
   document.getElementById('saTotalUsers').textContent = stats.total_users || 0;
   document.getElementById('saActiveInactive').textContent = `${stats.active_users || 0} / ${stats.inactive_users || 0}`;
@@ -451,6 +453,7 @@ async function saLoadUsersTable() {
                     ${u.status === 'active' ? 'Deactivate' : 'Activate'}
                   </button>
                   <button class="btn-secondary btn-compact" type="button" onclick="saOpenRoleForm(${u.id})">Change Role</button>
+                  ${u.role === 'engineer' ? `<button class="btn-secondary btn-compact" type="button" onclick="saOpenDistrictForm(${u.id})">${u.district ? saEscape(u.district) : 'Set District'}</button>` : ''}
                   <button class="btn-secondary btn-compact" type="button" onclick="saOpenResetPasswordConfirm(${u.id})">Reset Password</button>
                 `}
               </td>
@@ -628,7 +631,7 @@ function saOpenStaffRequestReview(index) {
   }
 
   saOpenModal('Review Staff Account Request', `
-    <p><strong>${saEscape(req.full_name)}</strong> - ${saEscape(SA_ROLE_LABELS[req.requested_role] || req.requested_role)}</p>
+    <p><strong>${saEscape(req.full_name)}</strong> - ${saEscape(SA_ROLE_LABELS[req.requested_role] || req.requested_role)}${req.district ? ' - ' + saEscape(req.district) : ''}</p>
     <p><small>Username: ${saEscape(req.username)} - Email: ${saEscape(req.email)} - requested by ${saEscape(req.requested_by_name || 'Unknown')}</small></p>
     <form id="saStaffRequestForm">
       <div class="form-group" style="margin-top:12px;">
@@ -726,6 +729,50 @@ function saOpenRoleForm(userId) {
       await saPost('update_role', { user_id: userId, role });
       saCloseModal();
       saToast(`${user.full_name} is now ${saRoleLabel(role)}.`);
+      await saLoadUsersTable();
+    } catch (error) {
+      saToast(error.message, 'error');
+    }
+  });
+}
+
+function saOpenDistrictForm(userId) {
+  const user = saUsersCache.find(item => Number(item.id) === Number(userId));
+  if (!user) {
+    saToast('User not found.', 'error');
+    return;
+  }
+
+  saOpenModal('Set District', `
+    <form id="saDistrictForm">
+      <div class="form-group">
+        <label>${saEscape(user.full_name)} - Engineer district</label>
+        <select class="form-input" name="district" required>
+          <option value="">— Select district —</option>
+          ${Object.keys(window.QC_DISTRICTS || {}).map(d => `
+            <option value="${d}" ${d === user.district ? 'selected' : ''}>${d}</option>
+          `).join('')}
+        </select>
+        <p style="font-size:.78rem;color:var(--text-muted);margin-top:6px;">This engineer will only see and handle projects registered in this district.</p>
+      </div>
+      <div class="form-actions">
+        <button class="btn-secondary" type="button" onclick="saCloseModal()">Cancel</button>
+        <button class="btn-primary" type="submit">Save District</button>
+      </div>
+    </form>
+  `);
+
+  document.getElementById('saDistrictForm').addEventListener('submit', async event => {
+    event.preventDefault();
+    const district = new FormData(event.target).get('district');
+    if (district === user.district) {
+      saCloseModal();
+      return;
+    }
+    try {
+      await saPost('update_district', { user_id: userId, district });
+      saCloseModal();
+      saToast(`${user.full_name} is now assigned to ${district}.`);
       await saLoadUsersTable();
     } catch (error) {
       saToast(error.message, 'error');
@@ -996,6 +1043,13 @@ function saOpenAddEngineerForm() {
         <div class="form-group" style="grid-column:1/-1;">
           <label>Email</label>
           <input class="form-input" type="email" name="email" required>
+        </div>
+        <div class="form-group" style="grid-column:1/-1;">
+          <label>District</label>
+          <select class="form-input" name="district" required>
+            <option value="">— Select district —</option>
+            ${Object.keys(window.QC_DISTRICTS || {}).map(d => `<option value="${d}">${d}</option>`).join('')}
+          </select>
         </div>
       </div>
       ${saDocSectionHtml('Supporting documents (e.g. PRC license)')}
@@ -1381,6 +1435,7 @@ function saWireSettingsForm() {
 
 const saRenderers = {
   dashboard: saRenderDashboard,
+  'my-tasks': () => taskCenterInitPage('page-my-tasks'),
   'user-governance': saRenderUserGovernance,
   'audit-trail': saRenderAuditTrail,
   'login-security': saRenderLoginSecurity,
@@ -1403,6 +1458,14 @@ function saShowPage(page) {
 }
 
 window.GLOBAL_SEARCH_NAVIGATE = saShowPage;
+
+// Smart Task & Assignment Center (assets/js/task-center.js) glue.
+window.TASK_CENTER_NAVIGATE = saShowPage;
+window.TASK_CENTER_OPEN_MODAL = saOpenModal;
+window.TASK_CENTER_CLOSE_MODAL = saCloseModal;
+window.TASK_CENTER_ESCAPE = saEscape;
+window.TASK_CENTER_TOAST = saToast;
+
 window.GLOBAL_SEARCH_SOURCES = [
   {
     label: 'Users',
