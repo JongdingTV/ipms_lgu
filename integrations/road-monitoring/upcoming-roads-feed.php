@@ -22,9 +22,10 @@
 // the owner of the project and its geometry; the Road Monitoring System only
 // ever consumes this data.
 //
-// Field list is intentionally narrow — see the README in this folder for
-// the full contract. No budget, no contractor/engineer identities, no
-// internal remarks or documents.
+// Field list — see the README in this folder for the full contract. Budget
+// and assigned-engineer name were added on the Road Monitoring System team's
+// request (previously deliberately excluded); still no contractor identity,
+// internal remarks, or documents.
 // ============================================================
 require_once __DIR__ . '/../../includes/db.php';
 require_once __DIR__ . '/../../includes/config.php';
@@ -73,7 +74,7 @@ const ROAD_MONITORING_STATUS_BUCKETS = [
 $placeholders = implode(',', array_fill(0, count(ROAD_MONITORING_FEED_STATUSES), '?'));
 $stmt = $db->prepare("
     SELECT p.id AS project_id, p.name AS project_name, p.status AS project_status,
-           p.progress, p.start_date, p.end_date,
+           p.progress, p.start_date, p.end_date, p.budget,
            g.road_name, g.road_type, g.road_status,
            g.start_latitude, g.start_longitude, g.end_latitude, g.end_longitude,
            g.polyline_coordinates, g.estimated_length_meters,
@@ -86,13 +87,35 @@ $stmt = $db->prepare("
 $stmt->execute(ROAD_MONITORING_FEED_STATUSES);
 $rows = $stmt->fetchAll();
 
-$results = array_map(function (array $row): array {
+// Separate query rather than a JOIN above — a project can have more than one
+// active engineer assignment, and joining directly would multiply each
+// project's road-geometry row per engineer. Grouped in PHP by project_id instead.
+$engineersByProject = [];
+if ($rows !== []) {
+    $projectIds = array_map(static fn(array $r): int => (int) $r['project_id'], $rows);
+    $idPlaceholders = implode(',', array_fill(0, count($projectIds), '?'));
+    $engineerStmt = $db->prepare("
+        SELECT epa.project_id, u.full_name
+        FROM engineer_project_assignments epa
+        INNER JOIN users u ON u.id = epa.engineer_id
+        WHERE epa.status = 'active' AND epa.project_id IN ($idPlaceholders)
+        ORDER BY u.full_name ASC
+    ");
+    $engineerStmt->execute($projectIds);
+    foreach ($engineerStmt->fetchAll() as $engineerRow) {
+        $engineersByProject[(int) $engineerRow['project_id']][] = $engineerRow['full_name'];
+    }
+}
+
+$results = array_map(function (array $row) use ($engineersByProject): array {
     return [
         'project_id' => (int) $row['project_id'],
         'project_name' => $row['project_name'],
         'project_status' => $row['project_status'],
         'status_bucket' => ROAD_MONITORING_STATUS_BUCKETS[$row['project_status']] ?? 'new',
         'progress_percent' => (int) $row['progress'],
+        'budget' => (float) $row['budget'],
+        'assigned_engineers' => $engineersByProject[(int) $row['project_id']] ?? [],
         'start_date' => $row['start_date'],
         'end_date' => $row['end_date'],
         'road_name' => $row['road_name'],

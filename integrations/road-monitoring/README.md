@@ -54,6 +54,8 @@ Already built on their side: `lgu_staff/pages/api/ipms-road-projects-pull.php` (
         "project_status": "delayed",
         "status_bucket": "ongoing",
         "progress_percent": 60,
+        "budget": 3200000000.00,
+        "assigned_engineers": ["Municipal Engineer", "Sheesh"],
         "start_date": "2022-06-01",
         "end_date": "2027-06-30",
         "road_name": "Kabayani Street–Matandang Balara Bridge",
@@ -72,6 +74,8 @@ Already built on their side: `lgu_staff/pages/api/ipms-road-projects-pull.php` (
         "project_status": "cancelled",
         "status_bucket": "cancelled",
         "progress_percent": 15,
+        "budget": 45000000.00,
+        "assigned_engineers": [],
         "start_date": "2023-01-15",
         "end_date": "2024-06-30",
         "road_name": "Commonwealth Avenue Widening",
@@ -87,7 +91,7 @@ Already built on their side: `lgu_staff/pages/api/ipms-road-projects-pull.php` (
     ]
   }
   ```
-- Deliberately narrow field list: Project ID, Project Name, Project Status, Status Bucket, Progress, Start/End Date, Road Name, Road Type, Road Status, Polyline Coordinates, Road Length, Start/End Coordinate, Barangays Covered, Districts Covered. No budget, no contractor/engineer identities, no internal remarks or documents — same restraint as the Urban Planning road geometry feed.
+- Field list: Project ID, Project Name, Project Status, Status Bucket, Progress, Budget, Assigned Engineers, Start/End Date, Road Name, Road Type, Road Status, Polyline Coordinates, Road Length, Start/End Coordinate, Barangays Covered, Districts Covered. `budget` is the project's full budget amount (`projects.budget`, the same figure IPMS shows internally). `assigned_engineers` is every engineer with an *active* assignment on the project (`engineer_project_assignments.status = 'active'`), by full name — usually one, occasionally more than one, possibly empty if nobody's assigned yet; never a fixed-size field. Budget and assigned-engineer name were added at the Road Monitoring System team's request — previously deliberately excluded (see git history). Still excluded: contractor identity, internal remarks, and documents.
 
 ## What this integration deliberately does NOT do
 
