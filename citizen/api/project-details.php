@@ -109,18 +109,20 @@ $citizenVerified = ($citizenRow['verification_status'] ?? null) === 'verified';
 
 $ownRating = null;
 if ($citizenId) {
-    $ownStmt = $pdo->prepare('SELECT id, rating, comment, status, decision_remarks, created_at, updated_at FROM project_ratings WHERE project_id = ? AND citizen_id = ?');
+    $ownStmt = $pdo->prepare('SELECT id, rating, comment, is_anonymous, status, decision_remarks, created_at, updated_at FROM project_ratings WHERE project_id = ? AND citizen_id = ?');
     $ownStmt->execute([$projectId, $citizenId]);
     $ownRating = $ownStmt->fetch() ?: null;
 }
 
 // Other citizens shown as "Juan D." (first name + last initial) — privacy-
 // conscious, consistent with the timeline widget's role-only convention
-// elsewhere on this page. Excludes the requester's own rating, which is
-// already surfaced separately via $ownRating above.
+// elsewhere on this page — unless the citizen chose to post anonymously, in
+// which case the real name never leaves the server at all. Excludes the
+// requester's own rating, which is already surfaced separately via
+// $ownRating above.
 $stmt = $pdo->prepare("
-    SELECT r.id, r.rating, r.comment, r.created_at,
-           CONCAT(c.first_name, ' ', LEFT(c.last_name, 1), '.') AS citizen_name
+    SELECT r.id, r.rating, r.comment, r.is_anonymous, r.created_at,
+           CASE WHEN r.is_anonymous = 1 THEN 'Anonymous' ELSE CONCAT(c.first_name, ' ', LEFT(c.last_name, 1), '.') END AS citizen_name
     FROM project_ratings r
     INNER JOIN citizens c ON c.id = r.citizen_id
     WHERE r.project_id = ? AND r.status = 'approved' AND r.citizen_id " . ($citizenId ? '!= ?' : 'IS NOT NULL') . "

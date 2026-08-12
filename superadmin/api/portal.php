@@ -477,9 +477,13 @@ if ($action === 'update_status') {
 }
 
 if ($action === 'update_role') {
+    // Citizen is not a staff role reachable from this endpoint: citizen accounts are
+    // never promoted to staff here, and staff accounts are never demoted to citizen —
+    // that boundary is managed elsewhere (registration / citizen verification).
+    $staffRoles = array_values(array_diff(APP_ROLES, ['citizen']));
     $validated = Validator::make($body, [
         'user_id' => 'required|integer',
-        'role' => 'required|in:' . implode(',', APP_ROLES),
+        'role' => 'required|in:' . implode(',', $staffRoles),
     ])->stopOnFailure();
 
     $targetId = (int) $validated['user_id'];
@@ -490,6 +494,10 @@ if ($action === 'update_role') {
     $target = $stmt->fetch();
     if (!$target) {
         respond(['error' => 'User not found.'], 404);
+    }
+
+    if ($target['role'] === 'citizen') {
+        respond(['error' => 'Citizen accounts cannot be reassigned to a staff role from here.'], 422);
     }
 
     if ($targetId === $actorId && $target['role'] === 'super_admin' && $role !== 'super_admin') {

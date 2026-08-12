@@ -126,6 +126,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if (empty($idNumber)) $errors[] = 'ID number is required';
     if (empty($password)) $errors[] = 'Password is required';
     if (empty($confirmPassword)) $errors[] = 'Please confirm your password';
+    if (empty($_POST['agree_terms'])) $errors[] = 'You must agree to the Terms and Conditions and Privacy Policy to register';
 
     // Email validation
     if (!empty($email) && !filter_var($email, FILTER_VALIDATE_EMAIL)) {
@@ -1250,6 +1251,17 @@ $civilStatuses = ['Single', 'Married', 'Divorced', 'Widowed', 'Separated'];
                     <div class="form-group">
                         <label for="confirm_password">Confirm Password <span class="required">*</span></label>
                         <input type="password" id="confirm_password" name="confirm_password" required>
+                    </div>
+
+                    <div class="form-group" style="flex-direction: row; align-items: flex-start; gap: 0.6rem;">
+                        <input type="checkbox" id="agree_terms" name="agree_terms" value="1" required style="margin-top: 0.2rem;" <?= !empty($formData['agree_terms']) ? 'checked' : '' ?>>
+                        <label for="agree_terms" style="font-weight: 500;">
+                            I have read and agree to the
+                            <a href="<?= htmlspecialchars(appUrl('/citizen/terms.php')) ?>" target="_blank" rel="noopener" style="color: var(--green);">Terms and Conditions</a>
+                            and
+                            <a href="<?= htmlspecialchars(appUrl('/citizen/privacy.php')) ?>" target="_blank" rel="noopener" style="color: var(--green);">Privacy Policy</a>
+                            <span class="required">*</span>
+                        </label>
                     </div>
                 </div>
 

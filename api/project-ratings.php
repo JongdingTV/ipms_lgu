@@ -1,13 +1,12 @@
 <?php
 // ============================================================
-// api/project-ratings.php — Citizen Project Ratings (Admin moderation)
+// api/project-ratings.php — Citizen Project Ratings (Admin read-only view)
 //
-// Admin/super_admin can moderate (approve/reject/flag/archive) citizen
-// ratings, but the UPDATE below structurally never references `rating` or
-// `comment` — staff can change whether a review is public, never what it
-// says. Mirrors api/feedback.php's PUT-status-update UX pattern but keeps
-// its own dedicated table/page, since ratings and complaints are shaped
-// differently (star+optional text vs. category/priority/message).
+// Reviews are public the moment a citizen submits them (see
+// citizen/api/project-rating.php) — admin/super_admin can see every review
+// here for visibility, but this endpoint has no mutation route at all.
+// Staff cannot approve, reject, flag, archive, or otherwise hide a citizen's
+// review; that would let admin control public opinion of a public project.
 // ============================================================
 require_once __DIR__ . '/../includes/db.php';
 require_once __DIR__ . '/../includes/auth.php';
@@ -16,73 +15,12 @@ require_once __DIR__ . '/../includes/Notifications.php';
 
 apiHeaders();
 requireAnyRole(['super_admin', 'admin']);
-requireCsrfProtection();
 
 $db = getDB();
 projectRatingsEnsureSchema($db);
 
 $moderationStatuses = ['pending', 'approved', 'rejected', 'flagged', 'archived'];
 $method = $_SERVER['REQUEST_METHOD'] ?? 'GET';
-
-if ($method === 'POST' && ($_GET['action'] ?? '') === 'moderate') {
-    $body = requestBody();
-    $id = (int) ($body['id'] ?? 0);
-    $newStatus = (string) ($body['status'] ?? '');
-    $remarks = trim((string) ($body['decision_remarks'] ?? ''));
-
-    if ($id <= 0 || !in_array($newStatus, $moderationStatuses, true)) {
-        respond(['success' => false, 'message' => 'Invalid moderation request.'], 422);
-    }
-
-    $stmt = $db->prepare("
-        SELECT r.id, r.status, r.rating, r.project_id, p.name AS project_name, p.project_code,
-               c.user_id AS citizen_user_id
-        FROM project_ratings r
-        INNER JOIN projects p ON p.id = r.project_id
-        INNER JOIN citizens c ON c.id = r.citizen_id
-        WHERE r.id = ?
-    ");
-    $stmt->execute([$id]);
-    $row = $stmt->fetch();
-    if (!$row) {
-        respond(['success' => false, 'message' => 'Rating not found.'], 404);
-    }
-
-    $actorId = (int) (currentUser()['user_id'] ?? 0);
-
-    // Structural guarantee, not a UI convention: rating/comment are not in
-    // this SET list, so no future edit here can accidentally expose them.
-    $db->prepare('UPDATE project_ratings SET status = ?, moderated_by = ?, moderated_at = NOW(), decision_remarks = ? WHERE id = ?')
-        ->execute([$newStatus, $actorId ?: null, $remarks !== '' ? $remarks : null, $id]);
-
-    $actionMap = [
-        'pending' => 'project_rating_reset_to_pending',
-        'approved' => 'project_rating_approved',
-        'rejected' => 'project_rating_rejected',
-        'flagged' => 'project_rating_flagged',
-        'archived' => 'project_rating_archived',
-    ];
-    logActivity(
-        $actorId ?: null,
-        $actionMap[$newStatus],
-        "Set rating #$id on {$row['project_name']} ({$row['project_code']}) to \"$newStatus\"." . ($remarks !== '' ? " Remarks: $remarks" : ''),
-        'Project Ratings',
-        $id
-    );
-
-    if (in_array($newStatus, ['approved', 'rejected'], true) && $row['status'] !== $newStatus) {
-        notifyUser(
-            (int) $row['citizen_user_id'],
-            $newStatus === 'approved' ? 'info' : 'warning',
-            $newStatus === 'approved' ? 'Your review was approved' : 'Your review was not approved',
-            $newStatus === 'approved'
-                ? "Your {$row['rating']}-star review on {$row['project_name']} is now publicly visible. Thank you for your feedback!"
-                : "Your review on {$row['project_name']} was not approved for public display." . ($remarks !== '' ? " Reason: $remarks" : '')
-        );
-    }
-
-    respond(['success' => true, 'status' => $newStatus]);
-}
 
 if ($method !== 'GET') {
     respond(['success' => false, 'message' => 'Not found'], 404);
@@ -145,7 +83,7 @@ $avgStmt->execute($params);
 $average = round((float) $avgStmt->fetchColumn(), 1);
 
 $stmt = $db->prepare("
-    SELECT r.id, r.rating, r.comment, r.status, r.created_at, r.updated_at, r.project_id,
+    SELECT r.id, r.rating, r.comment, r.status, r.is_anonymous, r.created_at, r.updated_at, r.project_id,
            p.project_code, p.name AS project_name,
            CONCAT(c.first_name, ' ', c.last_name) AS citizen_name
     $baseFrom

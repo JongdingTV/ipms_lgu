@@ -622,6 +622,11 @@ try {
                 <a href="<?= htmlspecialchars(appUrl('/citizen/register.php')) ?>" class="create-account-link">
                     Create Account
                 </a>
+                <p style="margin-top: 0.75rem; font-size: 0.78rem;">
+                    <a href="<?= htmlspecialchars(appUrl('/citizen/terms.php')) ?>" target="_blank" rel="noopener">Terms and Conditions</a>
+                    &nbsp;&middot;&nbsp;
+                    <a href="<?= htmlspecialchars(appUrl('/citizen/privacy.php')) ?>" target="_blank" rel="noopener">Privacy Policy</a>
+                </p>
             </div>
         </section>
     </div>

@@ -463,10 +463,8 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
             padding-right: 2.6rem;
         }
         /* Edge/IE show their own built-in reveal-password icon in the same
-           corner, but only once the user starts typing — sitting right on
-           top of the custom button below and making it look like nothing
-           is there until you type. Turn it off so only the custom, always-
-           visible button ever appears. */
+           corner once the user starts typing — same trigger as the custom
+           button below, so turn it off to avoid two overlapping icons. */
         .password-field input[type="password"]::-ms-reveal,
         .password-field input[type="password"]::-ms-clear {
             display: none;
@@ -477,7 +475,7 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
             right: 0;
             height: 100%;
             width: 2.6rem;
-            display: flex;
+            display: none;
             align-items: center;
             justify-content: center;
             background: none;
@@ -488,6 +486,11 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
             font-size: 0.95rem;
             transition: color 0.2s;
         }
+        /* Hidden until the field has something in it — appears the moment
+           the user starts typing their password, same as the citizen portal. */
+        .password-toggle.has-value {
+            display: flex;
+        }
         .password-toggle:hover {
             color: var(--primary);
         }
@@ -495,6 +498,18 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
             outline: 2px solid var(--primary);
             outline-offset: 2px;
             border-radius: 4px;
+        }
+        /* Browser/password-manager autofill sets the input's value without
+           firing a normal 'input' event, so the JS 'input' listener alone
+           can miss it. This no-op animation is a standard, harmless hook
+           Chrome/Edge/Safari fire on an autofilled field (their own
+           yellow-background trick) — 'animationstart' below catches it. */
+        @keyframes passwordFieldAutofilled {
+            from {}
+            to {}
+        }
+        .password-field input:-webkit-autofill {
+            animation-name: passwordFieldAutofilled;
         }
 
         /* ── Portal dropdown ── */
@@ -736,19 +751,6 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
             </div>
         </section>
     </main>
-    <script>
-        (function () {
-            var toggle = document.getElementById('passwordToggle');
-            var input = document.getElementById('password');
-            if (!toggle || !input) return;
-            toggle.addEventListener('click', function () {
-                var showing = input.type === 'text';
-                input.type = showing ? 'password' : 'text';
-                toggle.setAttribute('aria-pressed', String(!showing));
-                toggle.setAttribute('aria-label', showing ? 'Show password' : 'Hide password');
-                toggle.innerHTML = '<i class="fa-solid fa-eye' + (showing ? '' : '-slash') + '"></i>';
-            });
-        })();
-    </script>
+    <script src="<?= htmlspecialchars(assetUrl('/assets/js/staff-login.js')) ?>"></script>
 </body>
 </html>

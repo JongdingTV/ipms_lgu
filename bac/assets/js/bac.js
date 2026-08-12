@@ -638,6 +638,7 @@ async function bacRenderRecommendation() {
       </article>
       <article class="bac-panel">
         <div class="bac-panel-head"><h2>Recommendation Queue</h2></div>
+        <p class="bac-scope-note">"Suggested" scores are an automatic, rule-based estimate (price competitiveness, technical score, contractor track record, and document completeness) — advisory only. BAC makes the final call.</p>
         <div class="bac-decision-list" id="bacCandidateQueue"><p class="empty-state">Loading...</p></div>
       </article>
     </div>
@@ -676,21 +677,62 @@ async function bacLoadRecommendationsList() {
   }
 }
 
+const BAC_RECOMMENDATION_BADGE = {
+  'Strongly suggested': 'badge-resolved',
+  'Suggested': 'badge-active',
+  'Worth reviewing': 'badge-urgent',
+  'Not recommended': 'badge-overbudget',
+};
+
 async function bacLoadCandidateQueue() {
   const container = document.getElementById('bacCandidateQueue');
   try {
     const result = await bacGet('list_candidate_bids');
+    // Highest-scored bid first within each project, so the AI-assisted
+    // suggestion naturally floats to the top of the queue — still just a
+    // sort of BAC's own recorded bids, no filtering/hiding involved.
+    result.data.sort((a, b) => (b.recommendation?.score ?? 0) - (a.recommendation?.score ?? 0));
     result.data.forEach(bid => { bacBidsById[bid.id] = bid; });
 
     container.innerHTML = result.data.length ? result.data.map(item => `
       <div class="bac-decision-item">
-        <span>${bacEscape(item.contractor)}<br><small>${bacEscape(item.project)}</small></span>
+        <span>
+          ${bacEscape(item.contractor)}<br><small>${bacEscape(item.project)}</small>
+          ${item.recommendation ? `<br><span class="badge ${BAC_RECOMMENDATION_BADGE[item.recommendation.label] || 'badge-active'}" title="Advisory score — not a decision" style="cursor:help;" onclick="bacShowRecommendationBreakdown(${item.id})">${bacEscape(item.recommendation.label)} · ${item.recommendation.score}/100</span>` : ''}
+        </span>
         <button class="btn-primary btn-compact" type="button" onclick="bacOpenRecommendationForm(${item.id})">Select</button>
       </div>
     `).join('') : '<p class="empty-state">Record bids to build the recommendation queue.</p>';
   } catch (error) {
     container.innerHTML = '<p class="empty-state">Unable to load the recommendation queue.</p>';
   }
+}
+
+function bacShowRecommendationBreakdown(bidId) {
+  const bid = bacBidsById[bidId];
+  const rec = bid && bid.recommendation;
+  if (!rec) return;
+
+  const rows = [
+    ['Price competitiveness', rec.breakdown.price, `bid is ${rec.breakdown.price.variance_pct > 0 ? '+' : ''}${rec.breakdown.price.variance_pct}% vs budget`],
+    ['Technical score', rec.breakdown.technical, `BAC-scored ${bid.technical}/100`],
+    ['Contractor track record', rec.breakdown.performance, 'from completed-project history'],
+    ['Credibility rating', rec.breakdown.credibility, ''],
+    ['Document completeness', rec.breakdown.documents, `${rec.breakdown.documents.verified}/${rec.breakdown.documents.total || 0} verified`],
+  ];
+
+  bacOpenModal('Suggestion Breakdown', `
+    <p class="bac-scope-note" style="margin-bottom:12px;">Advisory only — a rule-based estimate, not a decision. BAC still chooses which bid to recommend.</p>
+    <div class="bac-decision-list">
+      ${rows.map(([label, part, note]) => `
+        <div class="bac-decision-item">
+          <span>${bacEscape(label)}${note ? `<br><small>${bacEscape(note)}</small>` : ''}</span>
+          <strong>${part.earned}/${part.weight}</strong>
+        </div>
+      `).join('')}
+      <div class="bac-decision-item"><span><strong>Total</strong></span><strong>${rec.score}/100 — ${bacEscape(rec.label)}</strong></div>
+    </div>
+  `);
 }
 
 async function bacOpenResolutionPacket() {
@@ -1570,6 +1612,7 @@ window.bacRefresh = bacRefresh;
 window.bacOpenPublishForm = bacOpenPublishForm;
 window.bacOpenBidForm = bacOpenBidForm;
 window.bacOpenRecommendationForm = bacOpenRecommendationForm;
+window.bacShowRecommendationBreakdown = bacShowRecommendationBreakdown;
 window.bacOpenScoreForm = bacOpenScoreForm;
 window.bacOpenResolutionPacket = bacOpenResolutionPacket;
 window.bacOpenDocumentReview = bacOpenDocumentReview;

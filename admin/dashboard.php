@@ -175,6 +175,7 @@ require_once '../citizen/includes/qc-locations.php';
       </div>
       <div id="dashboardGisMap" style="height:420px;border-radius:var(--radius);overflow:hidden;"></div>
       <p id="dashboardGisEmpty" class="empty-state" style="display:none;">No active projects have map coordinates yet.</p>
+      <p class="empty-state" style="text-align:left;padding:8px 2px 0;">Snapshot of active-workflow projects only. For every project regardless of status, open <a href="#" onclick="navigate('gis-map'); return false;">GIS Map</a>.</p>
     </article>
 
     <section class="charts-row">

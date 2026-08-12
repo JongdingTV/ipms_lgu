@@ -1,28 +1,38 @@
 /* Engineer Live Status widget — floating launcher + slide-in panel, shown to
    Admin/Head Office only (see includes/topbar.php). Same self-contained
    interaction pattern as assets/css/chatbot-widget.css (own palette, builds
-   its own DOM), offset further from the right edge so the two launchers
-   never collide on pages that ship both. */
+   its own DOM). Anchored close to the true right edge (chatbot-widget.js
+   isn't loaded on any page this widget appears on, so there's no launcher to
+   dodge horizontally) and raised above the global .toast's footprint
+   (style.css: bottom:24px/right:24px, up to 320px wide) so a visible toast
+   message never sits underneath/behind the launcher or panel.
+
+   Light/dark theming: surfaces and text reuse style.css's shared --card-bg /
+   --text-primary / --text-muted / --border / --bg-body variables (same ones
+   the sidebar, cards, and modals use), so this widget re-themes automatically
+   with the rest of the app (assets/js/theme-toggle.js toggles data-theme on
+   <html>, no separate switch needed here). The blue brand gradient itself is
+   left unchanged between themes — same as --bg-active elsewhere in style.css. */
 
 .eng-status-launcher {
   position: fixed;
-  right: 96px;
-  bottom: 20px;
+  right: 20px;
+  bottom: 100px;
   width: 58px;
   height: 58px;
   border-radius: 50%;
   border: none;
   cursor: pointer;
-  background: linear-gradient(135deg, #0f766e, #134e4a);
+  background: linear-gradient(135deg, #2563eb, #1e40af);
   color: #fff;
   display: flex;
   align-items: center;
   justify-content: center;
-  box-shadow: 0 10px 28px rgba(15, 118, 110, 0.35);
+  box-shadow: 0 10px 28px rgba(37, 99, 235, 0.35);
   z-index: 999997;
   transition: transform 0.15s ease, box-shadow 0.15s ease;
 }
-.eng-status-launcher:hover { transform: translateY(-2px); box-shadow: 0 14px 32px rgba(15, 118, 110, 0.42); }
+.eng-status-launcher:hover { transform: translateY(-2px); box-shadow: 0 14px 32px rgba(37, 99, 235, 0.42); }
 .eng-status-launcher svg { width: 26px; height: 26px; }
 
 /* Minimized: slides off the right edge only (same height it normally floats
@@ -34,7 +44,7 @@
   width: 58px;
   height: 58px;
   opacity: 0.55;
-  box-shadow: 0 6px 16px rgba(15, 118, 110, 0.25);
+  box-shadow: 0 6px 16px rgba(37, 99, 235, 0.25);
 }
 .eng-status-launcher.is-minimized:hover { opacity: 1; transform: none; right: -22px; }
 .eng-status-launcher.is-minimized .eng-status-hide-btn { display: none; }
@@ -46,9 +56,9 @@
   width: 20px;
   height: 20px;
   border-radius: 50%;
-  background: #fff;
-  color: #64748b;
-  border: 1px solid #e2e8f0;
+  background: var(--card-bg);
+  color: var(--text-muted);
+  border: 1px solid var(--border);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -56,11 +66,11 @@
   line-height: 1;
   cursor: pointer;
   opacity: 0;
-  transition: opacity 0.15s ease;
+  transition: opacity 0.15s ease, background-color .2s ease, color .2s ease;
   box-shadow: 0 2px 6px rgba(15, 23, 42, 0.15);
 }
 .eng-status-launcher:hover .eng-status-hide-btn { opacity: 1; }
-.eng-status-hide-btn:hover { background: #f1f5f9; color: #334155; }
+.eng-status-hide-btn:hover { background: var(--bg-body); color: var(--text-primary); }
 
 .eng-status-presence-dot {
   position: absolute;
@@ -90,12 +100,12 @@
 .eng-status-panel {
   position: fixed;
   right: 20px;
-  bottom: 90px;
+  bottom: 170px;
   width: 380px;
   max-width: calc(100vw - 32px);
   height: 560px;
-  max-height: calc(100vh - 140px);
-  background: #ffffff;
+  max-height: calc(100vh - 220px);
+  background: var(--card-bg);
   border-radius: 16px;
   box-shadow: 0 20px 60px rgba(15, 23, 42, 0.25);
   display: none;
@@ -103,11 +113,12 @@
   overflow: hidden;
   z-index: 999996;
   font-family: 'Plus Jakarta Sans', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  transition: background-color .25s ease;
 }
 .eng-status-panel.is-open { display: flex; }
 
 .eng-status-head {
-  background: linear-gradient(135deg, #0f766e, #134e4a);
+  background: linear-gradient(135deg, #2563eb, #1e40af);
   color: #fff;
   padding: 14px 16px;
   flex-shrink: 0;
@@ -139,26 +150,29 @@
   display: flex;
   flex-direction: column;
   gap: 8px;
-  background: #f8fafc;
+  background: var(--bg-body);
+  transition: background-color .25s ease;
 }
-.eng-status-empty { padding: 24px 8px; text-align: center; color: #64748b; font-size: 13px; }
+.eng-status-empty { padding: 24px 8px; text-align: center; color: var(--text-muted); font-size: 13px; }
 
 .eng-status-card {
-  background: #fff;
-  border: 1px solid #e2e8f0;
+  background: var(--card-bg);
+  border: 1px solid var(--border);
   border-radius: 12px;
   padding: 12px;
   cursor: pointer;
-  transition: border-color 0.15s ease;
+  transition: border-color 0.15s ease, background-color .25s ease;
 }
-.eng-status-card:hover { border-color: #99f6e4; }
+.eng-status-card:hover { border-color: #bfdbfe; }
 .eng-status-card.needs-attention { border-color: #fecaca; background: #fff5f5; }
+:root[data-theme="dark"] .eng-status-card:hover { border-color: #3b82f6; }
+:root[data-theme="dark"] .eng-status-card.needs-attention { border-color: rgba(239,68,68,.45); background: rgba(239,68,68,.14); }
 
 .eng-status-card-top { display: flex; align-items: center; gap: 10px; }
 .eng-status-avatar {
   position: relative;
   width: 36px; height: 36px; border-radius: 50%;
-  background: linear-gradient(135deg, #0f766e, #134e4a);
+  background: linear-gradient(135deg, #2563eb, #1e40af);
   color: #fff; font-weight: 700; font-size: 14px;
   display: flex; align-items: center; justify-content: center;
   flex-shrink: 0;
@@ -173,8 +187,8 @@
 .eng-status-dot.presence-offline { background: #94a3b8; }
 
 .eng-status-card-info { flex: 1; min-width: 0; }
-.eng-status-name { font-size: 13.5px; font-weight: 700; color: #1e293b; }
-.eng-status-work-line { display: flex; align-items: center; gap: 6px; font-size: 12px; color: #475569; margin-top: 2px; }
+.eng-status-name { font-size: 13.5px; font-weight: 700; color: var(--text-primary); }
+.eng-status-work-line { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--text-muted); margin-top: 2px; }
 .eng-status-work-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
 .work-available { background: #22c55e; }
 .work-on_site { background: #3b82f6; }
@@ -183,34 +197,37 @@
 .work-busy { background: #eab308; }
 .work-off_duty { background: #64748b; }
 
-.eng-status-card-caret { color: #94a3b8; transition: transform 0.15s ease; flex-shrink: 0; }
+.eng-status-card-caret { color: var(--text-muted); transition: transform 0.15s ease; flex-shrink: 0; }
 .eng-status-card.is-expanded .eng-status-card-caret { transform: rotate(180deg); }
 
 .eng-status-detail {
   display: none;
   margin-top: 10px;
   padding-top: 10px;
-  border-top: 1px dashed #e2e8f0;
+  border-top: 1px dashed var(--border);
   font-size: 12.5px;
-  color: #334155;
+  color: var(--text-primary);
 }
 .eng-status-card.is-expanded .eng-status-detail { display: block; }
 .eng-status-detail-row { display: flex; justify-content: space-between; gap: 10px; padding: 3px 0; }
-.eng-status-detail-row span:first-child { color: #64748b; }
+.eng-status-detail-row span:first-child { color: var(--text-muted); }
 .eng-status-detail-row span:last-child { font-weight: 600; text-align: right; }
 .eng-status-view-btn {
   margin-top: 8px;
   width: 100%;
-  border: 1px solid #0f766e;
-  background: #f0fdfa;
-  color: #0f766e;
+  border: 1px solid #2563eb;
+  background: #eff6ff;
+  color: #2563eb;
   font-weight: 700;
   font-size: 12.5px;
   padding: 7px 10px;
   border-radius: 8px;
   cursor: pointer;
+  transition: background-color .2s ease;
 }
-.eng-status-view-btn:hover { background: #ccfbf1; }
+.eng-status-view-btn:hover { background: #dbeafe; }
+:root[data-theme="dark"] .eng-status-view-btn { border-color: #3b82f6; background: rgba(59,130,246,.16); color: #93c5fd; }
+:root[data-theme="dark"] .eng-status-view-btn:hover { background: rgba(59,130,246,.26); }
 
 @media (max-width: 480px) {
   .eng-status-panel {
@@ -223,5 +240,5 @@
     max-height: 72vh;
     border-radius: 16px 16px 0 0;
   }
-  .eng-status-launcher { right: 84px; bottom: 14px; }
+  .eng-status-launcher { right: 16px; bottom: 90px; }
 }

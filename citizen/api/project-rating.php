@@ -68,6 +68,7 @@ if ($action === 'submit') {
 
     $rating = (int) ($_POST['rating'] ?? 0);
     $comment = trim((string) ($_POST['comment'] ?? ''));
+    $isAnonymous = !empty($_POST['anonymous']) ? 1 : 0;
 
     if ($rating < 1 || $rating > 5) {
         http_response_code(422);
@@ -84,35 +85,37 @@ if ($action === 'submit') {
     $existing->execute([$projectId, $citizenId]);
     $isUpdate = (bool) $existing->fetchColumn();
 
-    // Editing a review re-enters moderation — an approved review that's
-    // since been changed shouldn't stay publicly visible on its old wording.
+    // Reviews are public immediately — no moderation gate. Editing a review
+    // just updates it in place, still visible under its new wording.
     $pdo->prepare("
-        INSERT INTO project_ratings (project_id, citizen_id, rating, comment, status, moderated_by, moderated_at, decision_remarks)
-        VALUES (?, ?, ?, ?, 'pending', NULL, NULL, NULL)
-        ON DUPLICATE KEY UPDATE rating = VALUES(rating), comment = VALUES(comment), status = 'pending',
-            moderated_by = NULL, moderated_at = NULL, decision_remarks = NULL, updated_at = CURRENT_TIMESTAMP
-    ")->execute([$projectId, $citizenId, $rating, $comment !== '' ? $comment : null]);
+        INSERT INTO project_ratings (project_id, citizen_id, rating, comment, is_anonymous, status, moderated_by, moderated_at, decision_remarks)
+        VALUES (?, ?, ?, ?, ?, 'approved', NULL, NULL, NULL)
+        ON DUPLICATE KEY UPDATE rating = VALUES(rating), comment = VALUES(comment), is_anonymous = VALUES(is_anonymous),
+            status = 'approved', moderated_by = NULL, moderated_at = NULL, decision_remarks = NULL, updated_at = CURRENT_TIMESTAMP
+    ")->execute([$projectId, $citizenId, $rating, $comment !== '' ? $comment : null, $isAnonymous]);
 
     $actionName = $isUpdate ? 'project_rating_updated' : 'project_rating_submitted';
     $verb = $isUpdate ? 'Updated rating for' : 'Rated';
-    logActivity((int) $user['user_id'], $actionName, "$verb project #$projectId to $rating star(s) — pending moderation.", 'Project Ratings', $projectId);
+    logActivity((int) $user['user_id'], $actionName, "$verb project #$projectId to $rating star(s).", 'Project Ratings', $projectId);
 
     $nameStmt = $pdo->prepare('SELECT first_name, last_name FROM citizens WHERE id = ?');
     $nameStmt->execute([$citizenId]);
     $n = $nameStmt->fetch();
-    $displayName = trim(($n['first_name'] ?? '') . ' ' . mb_substr((string) ($n['last_name'] ?? ''), 0, 1) . '.');
+    $displayName = $isAnonymous
+        ? 'An anonymous citizen'
+        : trim(($n['first_name'] ?? '') . ' ' . mb_substr((string) ($n['last_name'] ?? ''), 0, 1) . '.');
 
     $adminIds = $pdo->query("SELECT id FROM users WHERE role IN ('admin', 'super_admin') AND status = 'active'")->fetchAll(PDO::FETCH_COLUMN);
     foreach ($adminIds as $adminUserId) {
         notifyUser(
             (int) $adminUserId,
             'info',
-            'New citizen review pending',
-            "$displayName left a $rating-star review on {$project['name']} ({$project['project_code']}) — awaiting moderation."
+            'New citizen review',
+            "$displayName left a $rating-star review on {$project['name']} ({$project['project_code']})."
         );
     }
 
-    echo json_encode(['success' => true, 'message' => 'Thank you for your rating! It will appear publicly once reviewed.']);
+    echo json_encode(['success' => true, 'message' => 'Thank you for your rating!']);
     exit;
 }
 

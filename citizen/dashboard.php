@@ -824,6 +824,23 @@ $statusChip = [
       <div class="page-header">
         <h1 class="page-title">Track Your Feedback & Complaints</h1>
       </div>
+
+      <div class="tf-map-card">
+        <div class="tf-map-head">
+          <div>
+            <h2 class="tf-map-title">Ongoing Projects Near You</h2>
+            <p class="tf-map-sub">Explore active infrastructure projects across Quezon City — tap a pin for details.</p>
+          </div>
+        </div>
+        <div id="tfMap" class="qc-map" style="height: 380px; border-radius: 12px;">
+          <div class="qc-map-loading">Loading map…</div>
+        </div>
+        <div class="tf-map-legend">
+          <span class="tf-legend-item"><span class="tf-legend-dot" style="background:#3b82f6;"></span>Active / In Progress</span>
+          <span class="tf-legend-item"><span class="tf-legend-dot" style="background:#ef4444;"></span>Delayed</span>
+        </div>
+      </div>
+
       <div class="list-toolbar">
         <div class="list-search">
           <svg viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M8 4a4 4 0 100 8 4 4 0 000-8zM2 8a6 6 0 1110.89 3.476l4.817 4.817a1 1 0 01-1.414 1.414l-4.816-4.816A6 6 0 012 8z" clip-rule="evenodd"/></svg>

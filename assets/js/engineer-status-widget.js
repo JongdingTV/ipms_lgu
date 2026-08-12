@@ -155,12 +155,20 @@
       if (!lastData) return;
       renderSummary(lastData.summary);
 
+      // The whole list is rebuilt below on every render — including the
+      // background poll every 45s while the panel sits open — so without
+      // this, reading down a long list yanks the scroll back to the top
+      // mid-read. expandedId already persists a card's open/closed state
+      // across re-renders the same way; this just does the same for scroll.
+      var scrollTop = body.scrollTop;
+
       if (!lastData.engineers.length) {
         body.innerHTML = '<p class="eng-status-empty">No engineers on record yet.</p>';
         return;
       }
 
       body.innerHTML = lastData.engineers.map(cardHtml).join('');
+      body.scrollTop = scrollTop;
 
       body.querySelectorAll('.eng-status-card').forEach(function (card) {
         card.addEventListener('click', function (e) {

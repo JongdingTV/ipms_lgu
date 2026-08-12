@@ -497,6 +497,9 @@ button { cursor: pointer; font-family: var(--font); }
 .modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,.45); z-index: 2100; display: flex; align-items: center; justify-content: center; opacity: 0; pointer-events: none; transition: opacity .2s; backdrop-filter: blur(3px); }
 .modal-overlay.open { opacity: 1; pointer-events: all; }
 .modal { background: var(--card-bg); color: var(--text-primary); border-radius: var(--radius); width: 560px; max-width: 94vw; max-height: 90vh; overflow-y: auto; box-shadow: 0 20px 60px rgba(0,0,0,.2); transform: scale(.94); transition: transform .2s, background-color .25s ease, color .25s ease; }
+/* Wider variant for form-heavy modals (e.g. New/Edit Project) that need more
+   breathing room and a bigger embedded map than the default 560px allows. */
+.modal.modal-lg { width: 920px; }
 .modal-overlay.open .modal { transform: scale(1); }
 .modal-header { display: flex; align-items: center; justify-content: space-between; padding: 18px 22px; border-bottom: 1px solid var(--border); position: sticky; top: 0; background: var(--card-bg); z-index: 1; }
 .modal-header h3 { font-size: .95rem; font-weight: 700; }
@@ -504,7 +507,7 @@ button { cursor: pointer; font-family: var(--font); }
 .modal-close:hover { color: var(--red); }
 .modal-body { padding: 20px 22px; font-size: .85rem; color: var(--text-muted); line-height: 1.6; }
 .modal-label { font-size: .72rem; color: #94a3b8; margin-bottom: 2px; font-weight: 600; letter-spacing: .04em; }
-.modal-val { color: #1e293b; font-weight: 600; }
+.modal-val { color: var(--text-primary); font-weight: 600; }
 
 /* ── Confirmation dialog — stacks above .modal-overlay (2100) so it can gate
    an action button that lives inside an already-open detail modal (e.g.

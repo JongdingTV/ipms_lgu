@@ -92,7 +92,8 @@ if ($code !== '') {
             }
 
             $reviewStmt = $db->prepare("
-                SELECT r.rating, r.comment, r.created_at, CONCAT(c.first_name, ' ', LEFT(c.last_name, 1), '.') AS citizen_name
+                SELECT r.rating, r.comment, r.created_at,
+                       CASE WHEN r.is_anonymous = 1 THEN 'Anonymous' ELSE CONCAT(c.first_name, ' ', LEFT(c.last_name, 1), '.') END AS citizen_name
                 FROM project_ratings r INNER JOIN citizens c ON c.id = r.citizen_id
                 WHERE r.project_id = ? AND r.status = 'approved'
                 ORDER BY r.created_at DESC LIMIT 10

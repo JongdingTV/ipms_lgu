@@ -299,6 +299,10 @@ let qcSelectedGeo = null;   // geojson name of the selected barangay
 let qcPinMarker = null;     // draggable marker for the exact spot
 let qcProjectMarkers = [];  // ongoing-project pins, separate layer from the barangay polygons
 
+let tfMap = null;           // Track Feedback page's browse-only ongoing-projects map
+let tfMapLoading = false;
+let tfProjectMarkers = [];
+
 // Pin icon/color/popup design lives in assets/js/project-map.js (window.ProjectMap)
 // — shared by every project map in the app, so a status looks the same
 // everywhere. See loadQcProjectPins() below for where it's used.
@@ -679,6 +683,94 @@ function loadQcProjectPins() {
         .catch(() => { /* Pins are a bonus on top of the barangay picker — a failed fetch shouldn't block feedback submission. */ });
 }
 
+// Track Feedback page's read-only browse map — no barangay picker, no pin
+// dropping, just ongoing-project pins so a citizen can see what's happening
+// near them. Same caching pattern as initQcMap(): the Leaflet instance is
+// created once and reused (invalidateSize on revisit), never rebuilt, since
+// this page never re-renders its DOM.
+const TF_ONGOING_STATUSES = ['approved', 'bidding', 'awarded', 'assigned', 'active', 'delayed', 'on_hold', 'completion_inspection'];
+
+function initTrackFeedbackMap() {
+    const container = document.getElementById('tfMap');
+    if (!container) return;
+
+    if (tfMap) {
+        setTimeout(() => tfMap.invalidateSize(), 120);
+        loadTfProjectPins();
+        return;
+    }
+    if (tfMapLoading) return;
+    tfMapLoading = true;
+
+    Promise.all([
+        loadLeafletOnce(),
+        window.QC_GEOJSON_URL ? fetch(window.QC_GEOJSON_URL).then(res => res.json()).catch(() => null) : Promise.resolve(null),
+    ])
+        .then(([, geojson]) => {
+            tfMap = L.map('tfMap', { minZoom: 11, maxZoom: 17, zoomSnap: 0.25 }).setView([14.676, 121.043], 12);
+            L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
+                attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
+                className: 'qc-basemap-tiles'
+            }).addTo(tfMap);
+
+            // Same light per-district tint every other project map in the app
+            // uses (window.ProjectMap, assets/js/project-map.js) — purely
+            // decorative here, just for visual consistency with the rest of
+            // the portal.
+            if (geojson && window.ProjectMap) {
+                window.ProjectMap.districtLayer(tfMap, geojson, { light: true });
+            }
+
+            const loading = container.querySelector('.qc-map-loading');
+            if (loading) loading.remove();
+
+            loadTfProjectPins();
+        })
+        .catch(err => {
+            console.error('Track Feedback map failed to load:', err);
+            const loading = container.querySelector('.qc-map-loading');
+            if (loading) loading.textContent = 'Map could not be loaded right now.';
+        })
+        .finally(() => { tfMapLoading = false; });
+}
+
+function loadTfProjectPins() {
+    if (!tfMap || !window.ProjectMap) return;
+    fetch(citizenUrl('citizen/api/projects.php'))
+        .then(res => res.json())
+        .then(data => {
+            const projects = (data.projects || []).filter(p => TF_ONGOING_STATUSES.includes(p.status));
+            tfProjectMarkers.forEach(m => tfMap.removeLayer(m));
+            tfProjectMarkers = [];
+
+            projects.forEach(p => {
+                if (p.latitude === null || p.longitude === null || p.latitude === undefined || p.longitude === undefined) return;
+                const lat = Number(p.latitude);
+                const lng = Number(p.longitude);
+                if (!Number.isFinite(lat) || !Number.isFinite(lng)) return;
+                if (lat < 14.55 || lat > 14.82 || lng < 120.96 || lng > 121.16) return;
+
+                const marker = L.marker([lat, lng], {
+                    icon: window.ProjectMap.pinIcon(p.status),
+                }).addTo(tfMap);
+
+                marker.bindPopup(window.ProjectMap.popupHtml({
+                    ...p,
+                    status_label: projectStatusLabel(p.status),
+                    budget_label: formatCurrency(p.budget),
+                }, citizenUrl('')));
+                window.ProjectMap.bindPin(marker, p, openProjectDetail);
+
+                tfProjectMarkers.push(marker);
+            });
+
+            if (tfProjectMarkers.length) {
+                tfMap.fitBounds(L.featureGroup(tfProjectMarkers).getBounds().pad(0.2), { maxZoom: 15 });
+            }
+        })
+        .catch(() => { /* Pins are a bonus on the tracking page — a failed fetch shouldn't block viewing reports. */ });
+}
+
 // Topbar user menu (avatar button at the top right). The shared topbar markup
 // expects this toggle, but the script that provides it for staff portals
 // (assets/js/script.js) isn't loaded on citizen pages, so it's wired here.
@@ -1017,13 +1109,17 @@ function renderProjectDetail(data) {
 
             ${data.citizen_verified && data.rating_eligible ? `
             <form id="projectRatingForm" class="rating-form" onsubmit="submitProjectRating(event, ${p.id})">
-                ${ownRating ? `<div class="rating-own-status">Your review: <strong>${ratingStatusLabel(ownRating.status)}</strong>${(ownRating.status === 'rejected' || ownRating.status === 'flagged') && ownRating.decision_remarks ? ' — ' + escapeHtml(ownRating.decision_remarks) : ''}</div>` : ''}
+                ${ownRating && ownRating.status !== 'approved' ? `<div class="rating-own-status">Your review: <strong>${ratingStatusLabel(ownRating.status)}</strong>${(ownRating.status === 'rejected' || ownRating.status === 'flagged') && ownRating.decision_remarks ? ' — ' + escapeHtml(ownRating.decision_remarks) : ''}</div>` : ''}
                 <div class="star-input" id="ratingStarInput">
                     ${[1, 2, 3, 4, 5].map(n => `
                         <button type="button" class="star-input-btn${ownRating && Number(ownRating.rating) >= n ? ' active' : ''}" data-star="${n}" onclick="setRatingStars(${n})" aria-label="${n} star${n === 1 ? '' : 's'}">★</button>
                     `).join('')}
                 </div>
                 <textarea class="form-input" name="comment" rows="3" maxlength="1000" placeholder="Share your experience with this project (optional)">${ownRating && ownRating.comment ? escapeHtml(ownRating.comment) : ''}</textarea>
+                <label class="rating-anon-toggle">
+                    <input type="checkbox" name="anonymous" value="1" ${ownRating && Number(ownRating.is_anonymous) === 1 ? 'checked' : ''}>
+                    Post as Anonymous (your name won't be shown on this review)
+                </label>
                 <div class="rating-form-actions">
                     <button class="btn-primary" type="submit">${ownRating ? 'Update Rating' : 'Submit Rating'}</button>
                     ${ownRating ? `<button type="button" class="btn-secondary" onclick="deleteProjectRating(${p.id})">Delete</button>` : ''}
@@ -1039,7 +1135,7 @@ function renderProjectDetail(data) {
                     <div class="rating-item">
                         <div class="rating-item-head">
                             <span class="star-display">${renderStarIcons(Number(r.rating))}</span>
-                            <strong>${escapeHtml(r.citizen_name)}</strong>
+                            <strong>${Number(r.is_anonymous) === 1 ? 'Anonymous' : escapeHtml(r.citizen_name)}</strong>
                             <span class="update-date">${formatDate(r.created_at)}</span>
                         </div>
                         ${r.comment ? `<p class="rating-item-comment">${escapeHtml(r.comment)}</p>` : ''}
@@ -1322,6 +1418,7 @@ function changePage(pageName) {
         loadProjects();
     } else if (pageName === 'track-feedback') {
         loadTrackedFeedback();
+        initTrackFeedbackMap();
     } else if (pageName === 'transparency') {
         loadTransparencyDashboard();
     } else if (pageName === 'submit-feedback') {

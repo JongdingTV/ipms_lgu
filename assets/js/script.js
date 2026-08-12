@@ -1231,7 +1231,7 @@ async function showProjectForm(id = null) {
           </div>
         </div>
         <p style="font-size:.75rem;color:var(--text-muted);margin:8px 0;">Tap the exact spot on the map to drop a pin — drag it to fine-tune. The location below fills in automatically; you can still edit it for more specific detail (e.g. a street or landmark).</p>
-        <div id="projQcMap" style="height:280px;border-radius:var(--radius);overflow:hidden;border:1px solid var(--border);"></div>
+        <div id="projQcMap" style="height:400px;border-radius:var(--radius);overflow:hidden;border:1px solid var(--border);"></div>
         <div class="form-group" style="margin-top:10px;">
           <label>Location *</label>
           <input name="location" id="projLocationText" class="form-input" required value="${escapeHtml(p?.location||'')}" />
@@ -1311,7 +1311,7 @@ async function showProjectForm(id = null) {
         <button type="submit" class="btn-primary">${id ? 'Submit Edit Request' : 'Submit for Registration'}</button>
       </div>
     </form>
-  `);
+  `, 'modal-lg');
 
   setupProjectLocationPicker(p);
   setupRoadGeometryModule(p);
@@ -1569,8 +1569,8 @@ function roadGeometrySectionHtml(p) {
         <button type="button" class="btn-secondary btn-compact" id="roadMapClear">Clear Road</button>
         <span class="road-point-count" id="roadPointCount">0 points</span>
       </div>
-      <p style="font-size:.75rem;color:var(--text-muted);margin:6px 0;">Click the map to place points along the road, in order from start to end — they connect automatically into one continuous line.</p>
-      <div id="roadGeometryMap" style="height:340px;border-radius:var(--radius);overflow:hidden;border:1px solid var(--border);"></div>
+      <p style="font-size:.75rem;color:var(--text-muted);margin:6px 0;">Click the map to place points along the road, in order from start to end — they connect automatically into one continuous line. Points automatically snap to the nearest street when one is close by.</p>
+      <div id="roadGeometryMap" style="height:420px;border-radius:var(--radius);overflow:hidden;border:1px solid var(--border);"></div>
 
       <div class="road-geometry-readouts">
         <div><span class="modal-label">START</span><p class="modal-val" id="roadStartReadout">Not set</p></div>
@@ -1847,14 +1847,49 @@ function roadGeoRefresh() {
   roadGeoSyncHiddenInput();
 }
 
+// Snaps a clicked point to the nearest real street centerline using OSRM's
+// public routing server (no API key, same no-cost pattern already used for
+// reverse-geocoding below). Returns null — never throws — if OSRM is
+// unreachable or the nearest road is implausibly far away (e.g. a click deep
+// inside a park/watershed with no nearby street), so a failed/slow lookup
+// never blocks placing a point, it just leaves the raw click coordinates.
+async function roadGeoSnapToRoad(lat, lng) {
+  try {
+    const res = await fetch(`https://router.project-osrm.org/nearest/v1/driving/${lng},${lat}?number=1`);
+    if (!res.ok) return null;
+    const data = await res.json();
+    const wp = data?.waypoints?.[0];
+    if (!wp || !Array.isArray(wp.location)) return null;
+    if (typeof wp.distance === 'number' && wp.distance > 60) return null; // meters
+    return { lat: wp.location[1], lng: wp.location[0] };
+  } catch {
+    return null;
+  }
+}
+
 async function roadGeoAddPoint(latlng) {
-  roadGeoPoints.push([latlng.lat, latlng.lng]);
+  const point = [latlng.lat, latlng.lng];
+  roadGeoPoints.push(point);
   const marker = L.circleMarker(latlng, { radius: 5, color: '#1e293b', fillColor: '#fff', fillOpacity: 1, weight: 2 }).addTo(roadGeoMap);
   roadGeoPointMarkers.push(marker);
 
   roadGeoRenderPolyline();
   roadGeoRenderStartEndMarkers();
   roadGeoUpdatePointCount();
+  await roadGeoRecomputeEndpoints();
+  roadGeoRefresh();
+
+  // Snap as a follow-up adjustment rather than before placing the marker —
+  // OSRM's public server can take a few hundred ms, and a click should
+  // register instantly rather than wait on it.
+  const snapped = await roadGeoSnapToRoad(latlng.lat, latlng.lng);
+  if (!snapped) return;
+  const idx = roadGeoPoints.indexOf(point);
+  if (idx === -1) return; // point was undone/cleared while the snap request was in flight
+  roadGeoPoints[idx] = [snapped.lat, snapped.lng];
+  marker.setLatLng(snapped);
+  roadGeoRenderPolyline();
+  roadGeoRenderStartEndMarkers();
   await roadGeoRecomputeEndpoints();
   roadGeoRefresh();
 }
@@ -1956,6 +1991,21 @@ function setupRoadGeometryModule(p) {
   const categorySelect = form?.querySelector('select[name="category"]');
   const section = document.getElementById('roadGeometrySection');
   if (!categorySelect || !section) return;
+
+  // This function runs fresh every time the New/Edit Project modal (re)opens
+  // — openModal() just replaced #modalBody's innerHTML, so any roadGeoMap
+  // left over from a PRIOR open of this same modal is a Leaflet instance
+  // still bound to a #roadGeometryMap div that no longer exists in the DOM.
+  // Without this, applyVisibility()'s `!roadGeoMap` check below sees that
+  // stale-but-truthy variable, skips re-initializing, and just calls
+  // invalidateSize() on a detached map — leaving the freshly-created
+  // container blank until a full page refresh resets the module state.
+  if (roadGeoMap && !document.body.contains(roadGeoMap.getContainer())) {
+    roadGeoMap.remove();
+    roadGeoMap = null;
+    roadGeoGeoLayer = null;
+    Object.keys(roadGeoLayersByGeo).forEach(k => delete roadGeoLayersByGeo[k]);
+  }
 
   const applyVisibility = async () => {
     const isRoads = categorySelect.value === 'Roads and Bridges';
@@ -4243,17 +4293,10 @@ async function deleteGalleryPhoto(id) {
    structurally excludes rating/comment from its SET list, so staff can
    never alter what a citizen actually said.)
    ============================================================ */
-let ratingsState = { page: 1, search: '', project_id: '', status: 'pending' };
+let ratingsState = { page: 1, search: '', project_id: '', status: '' };
 
 const RATING_STATUS_BADGE = { pending: 'badge-urgent', approved: 'badge-resolved', rejected: 'badge-overbudget', flagged: 'badge-flagged', archived: 'badge-archived' };
 const RATING_STATUS_LABELS = { pending: 'Pending', approved: 'Approved', rejected: 'Rejected', flagged: 'Flagged', archived: 'Archived' };
-
-const REVIEW_STATUS_CONFIRM = {
-  approved: { title: 'Approve this review?', message: "This makes the review publicly visible on the project's public page and counts it toward the public rating. The citizen will be notified.", confirmLabel: 'Approve', tone: 'success' },
-  rejected: { title: 'Reject this review?', message: 'This keeps the review hidden from public display and out of the rating average. The citizen will be notified.', confirmLabel: 'Reject', tone: 'danger' },
-  flagged: { title: 'Flag this review for follow-up?', message: 'This keeps it out of public display pending further staff review. The citizen is not notified.', confirmLabel: 'Flag', tone: 'warning' },
-  archived: { title: 'Archive this review?', message: 'This removes it from the moderation queue and public display without deleting it. The citizen is not notified.', confirmLabel: 'Archive', tone: 'warning' },
-};
 
 async function loadCitizenRatingsPage() {
   const container = document.getElementById('page-citizen-ratings');
@@ -4264,7 +4307,7 @@ async function loadCitizenRatingsPage() {
       <div>
         <h2 class="page-title">Citizen Ratings</h2>
         <p style="font-size:.8rem;color:var(--text-muted);margin-top:4px;max-width:640px;">
-          Star ratings and reviews citizens leave on projects. Approve, reject, flag, or archive — the star rating and review text are never editable here.
+          Star ratings and reviews citizens leave on projects. Reviews go live the moment a citizen submits them — this is a read-only view for visibility; staff cannot approve, reject, hide, or otherwise control what the public sees.
         </p>
       </div>
       <div id="ratingsSummary" style="font-size:.82rem;font-weight:600;color:var(--text-muted);"></div>
@@ -4272,12 +4315,12 @@ async function loadCitizenRatingsPage() {
     <div class="filter-bar">
       <input class="filter-input" placeholder="Search citizen or project…" oninput="ratingsState.search=this.value;ratingsState.page=1;fetchCitizenRatings()" />
       <select class="filter-select" onchange="ratingsState.status=this.value;ratingsState.page=1;fetchCitizenRatings()">
-        <option value="pending" selected>Pending</option>
-        <option value="approved">Approved</option>
-        <option value="rejected">Rejected</option>
-        <option value="flagged">Flagged</option>
-        <option value="archived">Archived</option>
-        <option value="">All</option>
+        <option value="" selected>All</option>
+        <option value="approved">Approved (visible reviews)</option>
+        <option value="pending">Pending (legacy, pre-2026)</option>
+        <option value="rejected">Rejected (legacy)</option>
+        <option value="flagged">Flagged (legacy)</option>
+        <option value="archived">Archived (legacy)</option>
       </select>
     </div>
     <div id="ratingsTable" class="table-card"></div>
@@ -4320,7 +4363,7 @@ function renderCitizenRatingsTable(rows) {
             <td>${escapeHtml(r.project_code)} — ${escapeHtml(r.project_name)}</td>
             <td>${'★'.repeat(Number(r.rating))}${'☆'.repeat(5 - Number(r.rating))}</td>
             <td style="max-width:280px;">${r.comment ? escapeHtml(r.comment) : '<span style="color:#94a3b8;">—</span>'}</td>
-            <td>${escapeHtml(r.citizen_name)}</td>
+            <td>${Number(r.is_anonymous) === 1 ? '<span class="badge badge-flagged">Anonymous</span> ' + escapeHtml(r.citizen_name) : escapeHtml(r.citizen_name)}</td>
             <td style="font-size:.75rem;color:#94a3b8;">${formatDate(r.created_at)}</td>
             <td><span class="badge ${RATING_STATUS_BADGE[r.status] || 'badge-spike'}">${RATING_STATUS_LABELS[r.status] || r.status}</span></td>
             <td><button class="btn-secondary btn-compact" onclick="openRatingDetailModal(${r.id})">View Details</button></td>
@@ -4341,47 +4384,23 @@ async function openRatingDetailModal(id) {
       <div style="display:flex;flex-direction:column;gap:14px;">
         <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;">
           <span class="badge ${RATING_STATUS_BADGE[r.status] || 'badge-spike'}">${RATING_STATUS_LABELS[r.status] || r.status}</span>
+          ${Number(r.is_anonymous) === 1 ? '<span class="badge badge-flagged">Posted anonymously — name hidden from the public</span>' : ''}
           <span style="font-size:1.1rem;">${'★'.repeat(Number(r.rating))}${'☆'.repeat(5 - Number(r.rating))}</span>
         </div>
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">
           <div><p class="modal-label">PROJECT</p><p class="modal-val">${escapeHtml(r.project_code)} — ${escapeHtml(r.project_name)}</p></div>
           <div><p class="modal-label">CITIZEN</p><p class="modal-val">${escapeHtml(r.citizen_name)}</p></div>
           <div><p class="modal-label">SUBMITTED</p><p class="modal-val">${formatDate(r.created_at)}</p></div>
-          ${r.moderated_at ? `<div><p class="modal-label">MODERATED</p><p class="modal-val">${escapeHtml(r.moderated_by_name || 'Staff')} on ${formatDate(r.moderated_at)}</p></div>` : ''}
         </div>
         <div>
           <p class="modal-label">REVIEW</p>
           <p class="modal-val" style="font-weight:400;white-space:pre-wrap;">${r.comment ? escapeHtml(r.comment) : '<span style="color:#94a3b8;">No written review.</span>'}</p>
         </div>
-        ${r.decision_remarks ? `<div><p class="modal-label">MODERATION REMARKS</p><p class="modal-val" style="font-weight:400;">${escapeHtml(r.decision_remarks)}</p></div>` : ''}
-        <div class="form-actions">
-          <button class="btn-secondary" onclick="moderateReview(${r.id}, 'approved')" ${r.status === 'approved' ? 'disabled' : ''}>Approve</button>
-          <button class="btn-secondary" onclick="moderateReview(${r.id}, 'rejected')" ${r.status === 'rejected' ? 'disabled' : ''}>Reject</button>
-          <button class="btn-secondary" onclick="moderateReview(${r.id}, 'flagged')" ${r.status === 'flagged' ? 'disabled' : ''}>Flag</button>
-          <button class="btn-secondary" onclick="moderateReview(${r.id}, 'archived')" ${r.status === 'archived' ? 'disabled' : ''}>Archive</button>
-        </div>
+        <p style="font-size:.78rem;color:var(--text-muted);margin:0;">This is a read-only view. Reviews are public as soon as citizens submit them and cannot be approved, rejected, or hidden here.</p>
       </div>
     `);
   } catch {
     toast('Failed to load review', 'error');
-  }
-}
-
-async function moderateReview(id, status) {
-  let decision_remarks = '';
-  if (status === 'rejected' || status === 'flagged') {
-    decision_remarks = window.prompt('Optional note (shown to the citizen if rejecting; internal-only if flagging):', '') || '';
-  }
-  const confirmed = await showConfirm(REVIEW_STATUS_CONFIRM[status]);
-  if (!confirmed) return;
-  try {
-    const res = await postAction(API.projectRatings, 'moderate', { id, status, decision_remarks });
-    if (!res.success) { toast(res.message || 'Update failed', 'error'); return; }
-    toast(`Review marked as ${RATING_STATUS_LABELS[status]}`);
-    closeModal();
-    fetchCitizenRatings();
-  } catch {
-    toast('Update failed', 'error');
   }
 }
 
@@ -4417,11 +4436,27 @@ async function loadQcBoundaryGeoJson() {
 }
 let gisMapInstance = null;
 let gisMarkers = [];
-let gisFilterState = { status: '', contractor_id: '', search: '', min_budget: '', max_budget: '' };
+// Same active-workflow status set the Dashboard's "Live Project Map" widget
+// uses (api/dashboard.php) — kept as the GIS Map page's default filter so
+// the two maps agree on what "the map" shows unless the admin deliberately
+// broadens it via the status filter below.
+const GIS_ACTIVE_STATUSES = ['approved', 'bidding', 'awarded', 'assigned', 'active', 'delayed', 'on_hold', 'completion_inspection'];
+let gisFilterState = { status: '__active__', contractor_id: '', search: '', min_budget: '', max_budget: '' };
 
 async function loadGisMapPage() {
   const container = document.getElementById('page-gis-map');
   if (!container) return;
+
+  // This page rebuilds its own HTML (below) every time it's navigated to,
+  // which throws away the #gisMapContainer DOM node #gisMapInstance was
+  // bound to. Without this, renderGisMap()'s `if (!gisMapInstance)` guard
+  // sees the stale instance and skips creating a new one, leaving a blank
+  // map bound to a detached element on every second+ visit.
+  if (gisMapInstance) {
+    gisMapInstance.remove();
+    gisMapInstance = null;
+    gisMarkers = [];
+  }
 
   let contractors = [];
   try {
@@ -4436,12 +4471,13 @@ async function loadGisMapPage() {
     <div class="filter-bar" style="flex-wrap:wrap;">
       <input class="filter-input" id="gisSearchInput" placeholder="Search location or project name...">
       <select class="filter-select" id="gisStatusInput">
-        <option value="">All Statuses</option>
-        <option value="active">Active</option>
-        <option value="delayed">Delayed</option>
-        <option value="completed">Completed</option>
-        <option value="turnover">Turned Over</option>
-        <option value="cancelled">Cancelled</option>
+        <option value="__active__" ${gisFilterState.status === '__active__' ? 'selected' : ''}>Active Projects (matches Dashboard)</option>
+        <option value="" ${gisFilterState.status === '' ? 'selected' : ''}>All Statuses (incl. draft, completed, cancelled)</option>
+        <option value="active" ${gisFilterState.status === 'active' ? 'selected' : ''}>Active</option>
+        <option value="delayed" ${gisFilterState.status === 'delayed' ? 'selected' : ''}>Delayed</option>
+        <option value="completed" ${gisFilterState.status === 'completed' ? 'selected' : ''}>Completed</option>
+        <option value="turnover" ${gisFilterState.status === 'turnover' ? 'selected' : ''}>Turned Over</option>
+        <option value="cancelled" ${gisFilterState.status === 'cancelled' ? 'selected' : ''}>Cancelled</option>
       </select>
       <select class="filter-select" id="gisContractorInput">
         <option value="">All Contractors</option>
@@ -4451,6 +4487,11 @@ async function loadGisMapPage() {
       <input class="filter-input" id="gisMaxBudget" type="number" placeholder="Max budget (₱)" style="max-width:150px;">
       <button class="btn-secondary btn-compact" id="gisApplyFilters" type="button">Apply</button>
     </div>
+    <p class="gis-scope-note" style="font-size:.82rem;color:var(--text-muted,#64748b);margin:-4px 0 8px;">
+      ${gisFilterState.status === '__active__'
+        ? 'Showing active-workflow projects only — the same set as the Dashboard\'s Live Project Map. Pick "All Statuses" to also see draft, completed, turned-over, and cancelled projects.'
+        : 'Showing a broader/filtered set of projects than the Dashboard\'s Live Project Map, which only shows active-workflow projects.'}
+    </p>
     <div class="gis-legend">
       <span class="gis-legend-item"><span class="gis-legend-dot" style="background:${GIS_DEFAULT_COLOR};"></span>Active / In Progress</span>
       <span class="gis-legend-item"><span class="gis-legend-dot" style="background:${GIS_STATUS_COLORS.delayed};"></span>Delayed</span>
@@ -4470,6 +4511,12 @@ async function loadGisMapPage() {
       min_budget: document.getElementById('gisMinBudget').value,
       max_budget: document.getElementById('gisMaxBudget').value,
     };
+    const note = document.querySelector('.gis-scope-note');
+    if (note) {
+      note.textContent = gisFilterState.status === '__active__'
+        ? 'Showing active-workflow projects only — the same set as the Dashboard\'s Live Project Map. Pick "All Statuses" to also see draft, completed, turned-over, and cancelled projects.'
+        : 'Showing a broader/filtered set of projects than the Dashboard\'s Live Project Map, which only shows active-workflow projects.';
+    }
     fetchGisProjects();
   });
 
@@ -4479,7 +4526,18 @@ async function loadGisMapPage() {
 async function fetchGisProjects() {
   const emptyState = document.getElementById('gisEmptyState');
   try {
-    const result = await get(API.projects, { ...gisFilterState, has_coordinates: 1, _limit: 100 });
+    // The "__active__" sentinel isn't a real project status — it means "use
+    // the same active-workflow set as the Dashboard map" (GIS_ACTIVE_STATUSES),
+    // sent as status_in rather than a single status= value.
+    const { status, ...rest } = gisFilterState;
+    const queryParams = { ...rest, has_coordinates: 1, _limit: 100 };
+    if (status === '__active__') {
+      queryParams.status_in = GIS_ACTIVE_STATUSES.join(',');
+    } else if (status) {
+      queryParams.status = status;
+    }
+
+    const result = await get(API.projects, queryParams);
     await renderGisMap(result.data || []);
     emptyState.style.display = (result.data || []).length ? 'none' : 'block';
   } catch {
@@ -5640,9 +5698,13 @@ const modalOverlay = document.getElementById('modalOverlay');
 const modalTitle   = document.getElementById('modalTitle');
 const modalBody    = document.getElementById('modalBody');
 
-function openModal(title, html) {
+function openModal(title, html, sizeClass) {
   modalTitle.textContent = title;
   modalBody.innerHTML = html;
+  // Reset to the default width every time — otherwise a previous 'modal-lg'
+  // open (e.g. New Project) would leak into the next, unrelated modal.
+  document.getElementById('modal')?.classList.remove('modal-lg');
+  if (sizeClass) document.getElementById('modal')?.classList.add(sizeClass);
   modalOverlay.classList.add('open');
 }
 

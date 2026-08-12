@@ -2276,6 +2276,59 @@ body {
     z-index: 0; /* keep Leaflet panes under the sidebar/topbar */
 }
 
+.tf-map-card {
+    background: var(--card-bg, #ffffff);
+    border: 1px solid var(--border, #dbe4ef);
+    border-radius: var(--radius, 8px);
+    box-shadow: var(--card-shadow, 0 14px 34px rgba(15,23,42,.07));
+    overflow: hidden;
+    margin-bottom: 1.25rem;
+}
+
+.tf-map-head {
+    padding: 1rem 1.25rem;
+    border-bottom: 1px solid var(--border, #dbe4ef);
+}
+
+.tf-map-title {
+    font-size: 1rem;
+    font-weight: 700;
+    margin: 0 0 .2rem;
+}
+
+.tf-map-sub {
+    font-size: .82rem;
+    color: var(--text-muted, #64748b);
+    margin: 0;
+}
+
+.tf-map-card .qc-map {
+    border-radius: 0;
+}
+
+.tf-map-legend {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 14px;
+    padding: .65rem 1.25rem;
+    border-top: 1px solid var(--border, #dbe4ef);
+    font-size: .78rem;
+    color: var(--text-muted, #64748b);
+}
+
+.tf-legend-item {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.tf-legend-dot {
+    width: 9px;
+    height: 9px;
+    border-radius: 50%;
+    display: inline-block;
+}
+
 .qc-map-loading {
     position: absolute;
     inset: 0;

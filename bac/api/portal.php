@@ -9,6 +9,7 @@ require_once __DIR__ . '/../../includes/db.php';
 require_once __DIR__ . '/../../includes/auth.php';
 require_once __DIR__ . '/../../includes/workflow.php';
 require_once __DIR__ . '/../../includes/ContractorScoring.php';
+require_once __DIR__ . '/../../includes/ContractorRecommendation.php';
 require_once __DIR__ . '/../../includes/Validator.php';
 require_once __DIR__ . '/../../includes/Pagination.php';
 require_once __DIR__ . '/../../includes/Notifications.php';
@@ -361,9 +362,12 @@ function bacListCandidateBids(PDO $db): array
 {
     // Excludes both 'recommended' (already in front of HOPE) and 'rejected'
     // (HOPE already turned this one down) — only a live, undecided bid
-    // belongs in the recommendation queue.
+    // belongs in the recommendation queue. performance_score/credibility_score
+    // are pulled in here (not re-queried per row) to feed the advisory
+    // recommendation score in bacPortalMapBidRow() below.
     return $db->query("
-        SELECT b.*, p.project_code, p.name AS project_name, p.budget, c.name AS contractor_name
+        SELECT b.*, p.project_code, p.name AS project_name, p.budget, c.name AS contractor_name,
+               c.performance_score, c.credibility_score
         FROM bac_bid_submissions b
         INNER JOIN projects p ON p.id = b.project_id
         INNER JOIN contractors c ON c.id = b.contractor_id
@@ -434,7 +438,13 @@ if ($method === 'GET') {
     }
 
     if ($action === 'list_candidate_bids') {
-        respond(['data' => array_map('bacPortalMapBidRow', bacListCandidateBids($db))]);
+        $candidateRows = bacListCandidateBids($db);
+        $data = array_map(function (array $row) use ($db) {
+            $mapped = bacPortalMapBidRow($row);
+            $mapped['recommendation'] = bacCalculateBidRecommendationScore($db, $row);
+            return $mapped;
+        }, $candidateRows);
+        respond(['data' => $data]);
     }
 
     if ($action === 'list_contractor_applications') {

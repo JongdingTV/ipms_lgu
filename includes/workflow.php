@@ -909,10 +909,12 @@ function projectGallerySetCover(PDO $db, int $projectId, int $photoId): void
 }
 
 // Citizen star + text ratings on a project — one per (project, citizen),
-// edit-in-place via upsert (citizen/api/project-rating.php). Admin gets a
-// read-only view (api/project-ratings.php) with no mutation route at all —
-// deliberately NOT following api/feedback.php's admin-PUT/DELETE precedent
-// for the general complaint system.
+// edit-in-place via upsert (citizen/api/project-rating.php). Reviews are
+// public the moment they're submitted (status is set to 'approved' at
+// insert time) — admin/superadmin (api/project-ratings.php) is read-only,
+// with no route that can hide, reject, or otherwise control a citizen's
+// review. The status/moderated_* columns are kept for the historical rows
+// created back when a moderation gate existed, not for new writes.
 function projectRatingsEnsureSchema(PDO $db): void
 {
     try {
@@ -933,20 +935,21 @@ function projectRatingsEnsureSchema(PDO $db): void
             ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
         ");
 
-        // Moderation: reviews start 'pending' and only ever become publicly
-        // visible / count toward the aggregate once 'approved' (see
-        // api/project-ratings.php's action=moderate — the only place these
-        // columns are ever written after initial insert, and it structurally
-        // never touches rating/comment). No FK on moderated_by: every other
-        // self-healed ADD COLUMN in this file is FK-less too, since a FK
-        // added after the original CREATE TABLE has no IF NOT EXISTS form in
-        // MySQL and would throw (aborting the rest of this try block) on
-        // every request after the first.
+        // status/moderated_* are legacy columns from a retired moderation gate,
+        // kept only so old rows still read correctly — nothing writes 'pending'
+        // any more. No FK on moderated_by: every other self-healed ADD COLUMN
+        // in this file is FK-less too, since a FK added after the original
+        // CREATE TABLE has no IF NOT EXISTS form in MySQL and would throw
+        // (aborting the rest of this try block) on every request after the first.
         $db->exec("ALTER TABLE project_ratings ADD COLUMN IF NOT EXISTS status ENUM('pending','approved','rejected','flagged','archived') NOT NULL DEFAULT 'pending' AFTER comment");
         $db->exec("ALTER TABLE project_ratings ADD COLUMN IF NOT EXISTS moderated_by INT NULL AFTER status");
         $db->exec("ALTER TABLE project_ratings ADD COLUMN IF NOT EXISTS moderated_at DATETIME NULL AFTER moderated_by");
         $db->exec("ALTER TABLE project_ratings ADD COLUMN IF NOT EXISTS decision_remarks TEXT NULL AFTER moderated_at");
         $db->exec("ALTER TABLE project_ratings ADD INDEX IF NOT EXISTS idx_project_ratings_status (status)");
+        // Citizen's choice to display their name (first name + last-initial) or
+        // post as "Anonymous" — set at submission time, shown wherever a review
+        // is rendered publicly (transparency.php, citizen project-details.php).
+        $db->exec("ALTER TABLE project_ratings ADD COLUMN IF NOT EXISTS is_anonymous TINYINT(1) NOT NULL DEFAULT 0 AFTER comment");
     } catch (Throwable $e) {
     }
 }

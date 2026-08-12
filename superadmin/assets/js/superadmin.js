@@ -452,7 +452,7 @@ async function saLoadUsersTable() {
                   <button class="btn-secondary btn-compact" type="button" onclick="saOpenStatusConfirm(${u.id})">
                     ${u.status === 'active' ? 'Deactivate' : 'Activate'}
                   </button>
-                  <button class="btn-secondary btn-compact" type="button" onclick="saOpenRoleForm(${u.id})">Change Role</button>
+                  ${u.role !== 'citizen' ? `<button class="btn-secondary btn-compact" type="button" onclick="saOpenRoleForm(${u.id})">Change Role</button>` : ''}
                   ${u.role === 'engineer' ? `<button class="btn-secondary btn-compact" type="button" onclick="saOpenDistrictForm(${u.id})">${u.district ? saEscape(u.district) : 'Set District'}</button>` : ''}
                   <button class="btn-secondary btn-compact" type="button" onclick="saOpenResetPasswordConfirm(${u.id})">Reset Password</button>
                 `}
@@ -700,13 +700,17 @@ function saOpenRoleForm(userId) {
     saToast('User not found.', 'error');
     return;
   }
+  if (user.role === 'citizen') {
+    saToast('Citizen accounts cannot be reassigned to a staff role from here.', 'error');
+    return;
+  }
 
   saOpenModal('Change Role', `
     <form id="saRoleForm">
       <div class="form-group">
         <label>${saEscape(user.full_name)} - current role: ${saEscape(saRoleLabel(user.role))}</label>
         <select class="form-input" name="role" required>
-          ${Object.entries(SA_ROLE_LABELS).map(([value, label]) => `
+          ${Object.entries(SA_ROLE_LABELS).filter(([value]) => value !== 'citizen').map(([value, label]) => `
             <option value="${value}" ${value === user.role ? 'selected' : ''}>${saEscape(label)}</option>
           `).join('')}
         </select>
