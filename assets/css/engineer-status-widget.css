@@ -25,6 +25,43 @@
 .eng-status-launcher:hover { transform: translateY(-2px); box-shadow: 0 14px 32px rgba(15, 118, 110, 0.42); }
 .eng-status-launcher svg { width: 26px; height: 26px; }
 
+/* Minimized: slides off the right edge only (same height it normally floats
+   at — bottom stays untouched), just enough peeking out to grab and pull
+   back. Click restores it (see JS — a minimized launcher never opens the
+   panel on click, only un-minimizes). */
+.eng-status-launcher.is-minimized {
+  right: -34px;
+  width: 58px;
+  height: 58px;
+  opacity: 0.55;
+  box-shadow: 0 6px 16px rgba(15, 118, 110, 0.25);
+}
+.eng-status-launcher.is-minimized:hover { opacity: 1; transform: none; right: -22px; }
+.eng-status-launcher.is-minimized .eng-status-hide-btn { display: none; }
+
+.eng-status-hide-btn {
+  position: absolute;
+  top: -4px;
+  left: -4px;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: #fff;
+  color: #64748b;
+  border: 1px solid #e2e8f0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 13px;
+  line-height: 1;
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.15s ease;
+  box-shadow: 0 2px 6px rgba(15, 23, 42, 0.15);
+}
+.eng-status-launcher:hover .eng-status-hide-btn { opacity: 1; }
+.eng-status-hide-btn:hover { background: #f1f5f9; color: #334155; }
+
 .eng-status-presence-dot {
   position: absolute;
   bottom: 2px;

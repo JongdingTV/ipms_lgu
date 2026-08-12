@@ -36,6 +36,8 @@
     return d.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' });
   }
 
+  var MINIMIZED_KEY = 'engStatusWidgetMinimized';
+
   function buildWidget() {
     var launcher = document.createElement('button');
     launcher.type = 'button';
@@ -44,7 +46,8 @@
     launcher.innerHTML =
       '<svg viewBox="0 0 20 20" fill="currentColor"><path d="M9 6a3 3 0 11-6 0 3 3 0 016 0zM17 6a3 3 0 11-6 0 3 3 0 016 0zM12.93 17c.046-.327.07-.66.07-1a6.97 6.97 0 00-1.5-4.33A5 5 0 0119 16v1h-6.07zM6 11a5 5 0 015 5v1H1v-1a5 5 0 015-5z"/></svg>' +
       '<span class="eng-status-presence-dot"></span>' +
-      '<span class="eng-status-alert-dot"></span>';
+      '<span class="eng-status-alert-dot"></span>' +
+      '<span class="eng-status-hide-btn" role="button" aria-label="Tuck away to the corner" title="Tuck away to the corner">&times;</span>';
 
     var panel = document.createElement('div');
     panel.className = 'eng-status-panel';
@@ -65,6 +68,7 @@
     var summaryEl = panel.querySelector('#engStatusSummary');
     var closeBtn = panel.querySelector('.eng-status-head-close');
     var presenceDot = launcher.querySelector('.eng-status-presence-dot');
+    var hideBtn = launcher.querySelector('.eng-status-hide-btn');
 
     var lastData = null;
     var expandedId = null;
@@ -75,7 +79,29 @@
     }
     function closePanel() { panel.classList.remove('is-open'); }
 
-    launcher.addEventListener('click', togglePanel);
+    function isMinimized() { return launcher.classList.contains('is-minimized'); }
+    function minimize() {
+      launcher.classList.add('is-minimized');
+      closePanel();
+      try { localStorage.setItem(MINIMIZED_KEY, '1'); } catch (e) { /* private mode, etc — just won't persist */ }
+    }
+    function restore() {
+      launcher.classList.remove('is-minimized');
+      try { localStorage.removeItem(MINIMIZED_KEY); } catch (e) { /* ignore */ }
+    }
+    try {
+      if (localStorage.getItem(MINIMIZED_KEY) === '1') minimize();
+    } catch (e) { /* ignore */ }
+
+    launcher.addEventListener('click', function (e) {
+      if (e.target.closest('.eng-status-hide-btn')) return; // own handler below
+      if (isMinimized()) { restore(); return; } // first click just brings it back
+      togglePanel();
+    });
+    hideBtn.addEventListener('click', function (e) {
+      e.stopPropagation();
+      minimize();
+    });
     closeBtn.addEventListener('click', closePanel);
 
     function renderSummary(summary) {
