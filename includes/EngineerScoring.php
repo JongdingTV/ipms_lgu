@@ -26,11 +26,9 @@ function engineerCalculatePerformanceScore(PDO $db, int $engineerId): int
 }
 
 // contractor_reports rows on this engineer's ACTIVE assigned projects that
-// still need an inspection — mirrors engineer/api/portal.php's own
-// action=pending_inspections query byte-for-byte (LEFT JOIN inspections +
-// "no inspection yet OR the report itself is still submitted/under_review"),
-// the established pattern in this codebase, since the inspections table
-// itself has no pending/scheduled state of its own.
+// still need an inspection — mirrors engineer/api/mobile-inspection.php's
+// own action=my_inspections query (LEFT JOIN inspections + "no submitted
+// inspection yet, and no in-progress session already covering it").
 function engineerPendingInspectionCount(PDO $db, int $engineerId): int
 {
     $stmt = $db->prepare("
@@ -41,7 +39,7 @@ function engineerPendingInspectionCount(PDO $db, int $engineerId): int
         LEFT JOIN inspections i ON i.progress_report_id = r.id
         WHERE a.engineer_id = ?
           AND a.status = 'active'
-          AND (i.id IS NULL OR r.status IN ('submitted', 'under_review'))
+          AND (i.id IS NULL OR (i.status = 'submitted' AND r.status IN ('submitted', 'under_review')))
     ");
     $stmt->execute([$engineerId]);
     return (int) $stmt->fetchColumn();
@@ -70,7 +68,7 @@ function engineerCalculatePerformanceScoreBreakdown(PDO $db, int $engineerId): a
     $inspectionStmt = $db->prepare("
         SELECT COUNT(*) AS total, SUM(CASE WHEN recommendation = 'approved' THEN 1 ELSE 0 END) AS approved
         FROM inspections
-        WHERE engineer_id = ?
+        WHERE engineer_id = ? AND status = 'submitted'
     ");
     $inspectionStmt->execute([$engineerId]);
     $inspectionRow = $inspectionStmt->fetch();

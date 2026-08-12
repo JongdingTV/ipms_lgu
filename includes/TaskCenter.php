@@ -87,9 +87,17 @@ function taskCenterForEngineer(PDO $db, int $userId): array
 {
     $tasks = [];
 
-    // Inspection to conduct — same predicate as engineer/api/portal.php's
-    // action=pending_inspections: a contractor progress report with no
-    // matching inspection yet, or still submitted/under_review.
+    // Mobile Inspection extended the native `inspections` table with
+    // status/inspection_type/follow_up_of_inspection_id — self-healing ALTERs
+    // this function's own predicates below now depend on, so make sure they
+    // exist regardless of whether the engineer has ever opened the
+    // Inspections page yet (Task Center can run first, e.g. the dashboard widget).
+    projectWorkflowEnsureRoleConnectionTables($db);
+
+    // Inspection to conduct — not yet started: same predicate as
+    // engineer/api/mobile-inspection.php's action=my_inspections, a
+    // contractor progress report with no inspection session yet (or one
+    // still submitted/under_review with no session covering it).
     $stmt = $db->prepare("
         SELECT r.id, r.project_id, r.report_date, r.status, r.created_at,
                p.project_code, p.name AS project_name
@@ -97,7 +105,7 @@ function taskCenterForEngineer(PDO $db, int $userId): array
         INNER JOIN engineer_project_assignments a ON a.project_id = r.project_id AND a.engineer_id = ? AND a.status = 'active'
         INNER JOIN projects p ON p.id = r.project_id
         LEFT JOIN inspections i ON i.progress_report_id = r.id
-        WHERE i.id IS NULL OR r.status IN ('submitted', 'under_review')
+        WHERE i.id IS NULL OR (i.status = 'submitted' AND r.status IN ('submitted', 'under_review'))
         ORDER BY r.report_date ASC
     ");
     $stmt->execute([$userId]);
@@ -109,6 +117,57 @@ function taskCenterForEngineer(PDO $db, int $userId): array
             'description' => 'Contractor progress report (' . htmlspecialchars($r['report_date']) . ') awaiting your inspection.',
             'project_id' => (int) $r['project_id'], 'project_name' => $r['project_code'] . ' — ' . $r['project_name'],
             'module' => 'Inspections', 'priority' => $priority, 'due_date' => null, 'created_date' => $r['created_at'],
+            'status' => 'pending', 'link_page' => 'inspection-review', 'link_params' => ['project_id' => (int) $r['project_id']],
+        ];
+    }
+
+    // Resume Inspection — the engineer's own in-progress mobile field
+    // sessions (Save Draft / left mid-wizard). Gentler priority than a fresh
+    // "not started" candidate — it's already underway, just unfinished.
+    $stmt = $db->prepare("
+        SELECT i.id, i.project_id, i.created_at, i.draft_saved_at,
+               p.project_code, p.name AS project_name
+        FROM inspections i
+        INNER JOIN projects p ON p.id = i.project_id
+        WHERE i.engineer_id = ? AND i.status = 'in_progress'
+        ORDER BY COALESCE(i.draft_saved_at, i.created_at) ASC
+    ");
+    $stmt->execute([$userId]);
+    foreach ($stmt->fetchAll() as $r) {
+        $priority = taskCenterPriorityBucket(null, (string) ($r['draft_saved_at'] ?? $r['created_at']), 5);
+        $tasks[] = [
+            'key' => 'inspection_resume:' . $r['id'],
+            'title' => 'Resume Inspection',
+            'description' => 'Field inspection in progress' . ($r['draft_saved_at'] ? ' — last saved ' . htmlspecialchars($r['draft_saved_at']) : '') . '.',
+            'project_id' => (int) $r['project_id'], 'project_name' => $r['project_code'] . ' — ' . $r['project_name'],
+            'module' => 'Inspections', 'priority' => $priority, 'due_date' => null, 'created_date' => $r['created_at'],
+            'status' => 'in_progress', 'link_page' => 'inspection-review', 'link_params' => ['project_id' => (int) $r['project_id']],
+        ];
+    }
+
+    // Reinspection Required — a submitted inspection whose site assessment
+    // came back needs_correction/for_reinspection and no follow-up visit has
+    // been started against it yet (see inspections.follow_up_of_inspection_id).
+    $stmt = $db->prepare("
+        SELECT i.id, i.project_id, i.inspection_date, i.recommendation,
+               p.project_code, p.name AS project_name
+        FROM inspections i
+        INNER JOIN projects p ON p.id = i.project_id
+        WHERE i.engineer_id = ?
+          AND i.status = 'submitted'
+          AND i.recommendation IN ('needs_correction', 'for_reinspection')
+          AND NOT EXISTS (SELECT 1 FROM inspections f WHERE f.follow_up_of_inspection_id = i.id)
+        ORDER BY i.inspection_date ASC
+    ");
+    $stmt->execute([$userId]);
+    foreach ($stmt->fetchAll() as $r) {
+        $priority = taskCenterPriorityBucket(null, (string) $r['inspection_date'], 3);
+        $tasks[] = [
+            'key' => 'inspection_reinspect:' . $r['id'],
+            'title' => 'Reinspection Required',
+            'description' => 'Last inspected ' . htmlspecialchars((string) $r['inspection_date']) . ' — ' . str_replace('_', ' ', $r['recommendation']) . '.',
+            'project_id' => (int) $r['project_id'], 'project_name' => $r['project_code'] . ' — ' . $r['project_name'],
+            'module' => 'Inspections', 'priority' => $priority, 'due_date' => null, 'created_date' => (string) $r['inspection_date'],
             'status' => 'pending', 'link_page' => 'inspection-review', 'link_params' => ['project_id' => (int) $r['project_id']],
         ];
     }

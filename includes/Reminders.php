@@ -208,7 +208,7 @@ function remindersEscalationSweep(PDO $db, bool $force = false, int $escalationT
         INNER JOIN engineer_project_assignments a ON a.project_id = r.project_id AND a.status = 'active'
         LEFT JOIN inspections i ON i.progress_report_id = r.id
         INNER JOIN reminder_log rl ON rl.user_id = a.engineer_id AND rl.reminder_key = CONCAT('inspection_pending:', r.id, ':urgent')
-        WHERE (i.id IS NULL OR r.status IN ('submitted','under_review'))
+        WHERE (i.id IS NULL OR (i.status = 'submitted' AND r.status IN ('submitted','under_review')))
           AND rl.created_at <= (NOW() - INTERVAL ? DAY)
     ");
     $stmt->execute([$escalationThresholdDays]);

@@ -567,6 +567,53 @@ function projectWorkflowEnsureRoleConnectionTables(PDO $db): void
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
     ");
 
+    // Mobile Inspection — extends the native inspections table in place (self-healing,
+    // same convention as the rest of this file) rather than a parallel table. `status` is
+    // pure session/workflow state (in_progress vs submitted); the outcome decision stays
+    // exclusively on the existing `recommendation` column. See includes/InspectionChecklist.php
+    // for the checklist catalog and engineer/api/mobile-inspection.php for the wizard API.
+    try {
+        $db->exec("ALTER TABLE inspections ADD COLUMN IF NOT EXISTS status ENUM('in_progress','submitted') NOT NULL DEFAULT 'submitted' AFTER recommendation");
+        $db->exec("ALTER TABLE inspections ADD COLUMN IF NOT EXISTS inspection_type ENUM('progress','reinspection','special') NOT NULL DEFAULT 'progress' AFTER progress_report_id");
+        $db->exec("ALTER TABLE inspections ADD COLUMN IF NOT EXISTS follow_up_of_inspection_id INT NULL AFTER inspection_type");
+        $db->exec("ALTER TABLE inspections ADD CONSTRAINT fk_inspections_follow_up FOREIGN KEY IF NOT EXISTS (follow_up_of_inspection_id) REFERENCES inspections(id) ON DELETE SET NULL");
+        $db->exec("ALTER TABLE inspections ADD UNIQUE KEY IF NOT EXISTS idx_inspections_follow_up (follow_up_of_inspection_id)");
+        $db->exec("ALTER TABLE inspections ADD COLUMN IF NOT EXISTS inspection_time TIME NULL AFTER inspection_date");
+        $db->exec("ALTER TABLE inspections ADD COLUMN IF NOT EXISTS checklist_answers TEXT NULL COMMENT 'JSON array of {key,category,label,answer}'");
+        $db->exec("ALTER TABLE inspections ADD COLUMN IF NOT EXISTS recommendation_notes TEXT NULL COMMENT 'JSON array of free-text recommendation strings, distinct from the recommendation decision enum'");
+        $db->exec("ALTER TABLE inspections ADD COLUMN IF NOT EXISTS gps_latitude DECIMAL(10,7) NULL");
+        $db->exec("ALTER TABLE inspections ADD COLUMN IF NOT EXISTS gps_longitude DECIMAL(10,7) NULL");
+        $db->exec("ALTER TABLE inspections ADD COLUMN IF NOT EXISTS gps_accuracy_meters DECIMAL(6,1) NULL");
+        $db->exec("ALTER TABLE inspections ADD COLUMN IF NOT EXISTS gps_captured_at TIMESTAMP NULL");
+        $db->exec("ALTER TABLE inspections ADD COLUMN IF NOT EXISTS draft_saved_at TIMESTAMP NULL");
+        $db->exec("ALTER TABLE inspections ADD COLUMN IF NOT EXISTS submitted_at TIMESTAMP NULL");
+    } catch (Throwable $e) {
+    }
+
+    // One-per-report uniqueness doubles as the race-safe duplicate-start guard for
+    // action=inspection_start (engineer/api/mobile-inspection.php). Kept as its own
+    // try/catch so a pre-existing duplicate in old data (which would make this ALTER
+    // fail) never blocks the ALTERs above it from applying.
+    try {
+        $db->exec("ALTER TABLE inspections ADD UNIQUE KEY IF NOT EXISTS idx_inspections_one_per_report (progress_report_id)");
+    } catch (Throwable $e) {
+    }
+
+    $db->exec("
+        CREATE TABLE IF NOT EXISTS inspection_findings (
+          id INT AUTO_INCREMENT PRIMARY KEY,
+          inspection_id INT NOT NULL,
+          finding_type VARCHAR(80) NOT NULL DEFAULT 'Other',
+          description TEXT NOT NULL,
+          severity ENUM('low','medium','high','critical') NOT NULL DEFAULT 'medium',
+          affected_area VARCHAR(200) NULL,
+          recommended_action TEXT NULL,
+          created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+          INDEX idx_inspection_findings_inspection (inspection_id),
+          CONSTRAINT fk_inspection_findings_inspection FOREIGN KEY (inspection_id) REFERENCES inspections(id) ON DELETE CASCADE
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+    ");
+
     $db->exec("
         CREATE TABLE IF NOT EXISTS payment_requests (
           id INT AUTO_INCREMENT PRIMARY KEY,

@@ -99,7 +99,7 @@ function calendarFetchInspectionEvents(PDO $db, string $start, string $end): arr
         SELECT i.id, i.inspection_date, i.recommendation, p.id AS project_id, p.name AS project_name
         FROM inspections i
         JOIN projects p ON p.id = i.project_id
-        WHERE i.inspection_date BETWEEN ? AND ?
+        WHERE i.inspection_date BETWEEN ? AND ? AND i.status = 'submitted'
     ");
     $stmt->execute([$start, $end]);
 

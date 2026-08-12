@@ -146,7 +146,12 @@ function documentChecklistForProject(PDO $db, int $projectId): array
         'info_only' => false,
     ];
 
-    $stmt = $db->prepare("SELECT * FROM inspections WHERE project_id = ? ORDER BY id DESC LIMIT 1");
+    // Mobile Inspection (includes/workflow.php) added a status column so a
+    // field session can sit in_progress before the engineer actually
+    // decides a recommendation — status='submitted' is what "latest
+    // inspection" has always meant here, an in-progress draft isn't a real
+    // outcome yet and its `recommendation` is still just a placeholder default.
+    $stmt = $db->prepare("SELECT * FROM inspections WHERE project_id = ? AND status = 'submitted' ORDER BY id DESC LIMIT 1");
     $stmt->execute([$projectId]);
     $inspection = $stmt->fetch();
     $items[] = [

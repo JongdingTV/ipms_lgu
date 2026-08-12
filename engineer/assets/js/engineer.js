@@ -10,18 +10,18 @@ let engineerState = {
   summary: null,
   projects: [],
   milestones: [],
-  pendingInspections: [],
   paymentRequests: [],
   budgetWatch: [],
 };
 
-/* photos/delays/issues/inspections accumulate over time, so they're fetched
-   paginated, per-page, rather than bulk-loaded like the small/bounded lists above. */
+/* photos/delays/issues accumulate over time, so they're fetched paginated,
+   per-page, rather than bulk-loaded like the small/bounded lists above.
+   (Mobile Inspection's own paginated lists use miListState, defined near its
+   other code, not this one — see engineerRenderInspectionPage() and friends.) */
 let engineerListState = {
   photos: { page: 1, perPage: 12 },
   delays: { page: 1, perPage: 10 },
   issues: { page: 1, perPage: 10 },
-  inspections: { page: 1, perPage: 10 },
 };
 
 function engineerEscape(value) {
@@ -785,103 +785,885 @@ async function engineerWorkflowPost(action, body) {
   return data;
 }
 
-function engineerInspectionOptions() {
-  const rows = engineerState.pendingInspections;
-  if (!rows.length) {
-    return '<option value="">No contractor reports pending inspection</option>';
-  }
+/* ============================================================
+   Mobile Inspection — extends this same "Inspection Review" sidebar entry
+   (data-page="inspection-review" is unchanged) into a small in-page tab bar:
+   My Inspections / Start-Continue / Inspection Review / Returned / History.
+   Backed by engineer/api/mobile-inspection.php, which reads/writes the same
+   native `inspections` table the old single-shot form used — this is a
+   richer, resumable way to reach the same submission, not a parallel system.
+   ============================================================ */
+const ENGINEER_MI_API = window.BASE_PATH + 'engineer/api/mobile-inspection.php';
 
-  return rows.map(row => `
-    <option value="${row.report_id}">
-      ${engineerEscape(row.project_code)} - ${engineerDate(row.report_date)} - ${Number(row.progress_percent || 0)}%
-    </option>
-  `).join('');
+async function engineerMiGet(action, params = {}) {
+  const qs = new URLSearchParams({ action, ...params }).toString();
+  const response = await fetch(`${ENGINEER_MI_API}?${qs}`);
+  const data = await response.json();
+  if (!response.ok || data.error) throw engineerErrorFrom(data, response);
+  return data;
 }
+
+async function engineerMiPostJson(action, body) {
+  const response = await fetch(`${ENGINEER_MI_API}?action=${encodeURIComponent(action)}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...ENGINEER_CSRF_HEADERS },
+    body: JSON.stringify(body),
+  });
+  const data = await response.json();
+  if (!response.ok || data.error) throw engineerErrorFrom(data, response);
+  return data;
+}
+
+async function engineerMiPostForm(action, formData) {
+  const response = await fetch(`${ENGINEER_MI_API}?action=${encodeURIComponent(action)}`, {
+    method: 'POST',
+    headers: { ...ENGINEER_CSRF_HEADERS },
+    body: formData,
+  });
+  const data = await response.json();
+  if (!response.ok || data.error) throw engineerErrorFrom(data, response);
+  return data;
+}
+
+function miTimeLabel(value) {
+  if (!value) return '';
+  const d = new Date(String(value).replace(' ', 'T'));
+  if (isNaN(d.getTime())) return '';
+  return d.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' });
+}
+
+/* ---- Tab shell -------------------------------------------------------- */
 
 function engineerRenderInspectionPage() {
   const page = document.getElementById('page-inspection-review');
   page.innerHTML = `
     <div class="page-header">
       <div>
-        <h1 class="page-title">Inspection Review</h1>
-        <p class="engineer-scope-note">Validate contractor progress reports for assigned projects.</p>
+        <h1 class="page-title">Inspections</h1>
+        <p class="engineer-scope-note">Start a field inspection from your phone at the site, or review what's already been submitted for your assigned projects.</p>
       </div>
     </div>
-    <section class="engineer-layout">
-      <article class="engineer-form-card">
-        <h2>New Inspection</h2>
-        <form id="engineerInspectionForm" enctype="multipart/form-data">
-          <div class="form-group">
-            <label>Contractor Report</label>
-            <select class="form-input" name="progress_report_id" required>${engineerInspectionOptions()}</select>
-          </div>
-          <div class="form-grid" style="margin-top:12px;">
-            <div class="form-group">
-              <label>Inspection Date</label>
-              <input class="form-input" type="date" name="inspection_date" required value="${new Date().toISOString().slice(0, 10)}">
-            </div>
-            <div class="form-group">
-              <label>Actual Progress Percent</label>
-              <input class="form-input" type="number" min="0" max="100" name="actual_progress_percent" required placeholder="0">
-            </div>
-          </div>
-          <div class="form-group" style="margin-top:12px;">
-            <label>Recommendation</label>
-            <select class="form-input" name="recommendation">
-              <option value="approved">Approved</option>
-              <option value="needs_correction">Needs Correction</option>
-              <option value="for_reinspection">For Reinspection</option>
-            </select>
-          </div>
-          <div class="form-group" style="margin-top:12px;">
-            <label>Findings</label>
-            <textarea class="form-input" name="findings" rows="4" required placeholder="Inspection findings and validation notes"></textarea>
-          </div>
-          <div class="doc-section" style="margin-top:12px;">
-            <label>Site Photos (optional)</label>
-            <div class="doc-rows" id="engineerInspectionPhotoRows">${engineerPhotoRowHtml(0)}</div>
-            <button type="button" class="doc-add-btn" id="engineerInspectionPhotoAddBtn">+ Add another photo</button>
-          </div>
-          <div class="form-actions">
-            <button class="btn-primary" type="submit">Save Inspection</button>
-          </div>
-        </form>
-      </article>
-      <article class="engineer-history-card">
-        <h2>Contractor Reports</h2>
-        <div class="engineer-mini-list" id="engineerInspectionsList"><p class="empty-state">Loading...</p></div>
-        <div class="pagination-wrap" id="engineerInspectionsPager"></div>
-      </article>
-    </section>
+    <div class="mi-tabbar" role="tablist">
+      <button type="button" class="mi-tab" data-mi-tab="my-inspections">My Inspections</button>
+      <button type="button" class="mi-tab" data-mi-tab="wizard">Start / Continue</button>
+      <button type="button" class="mi-tab" data-mi-tab="review">Inspection Review</button>
+      <button type="button" class="mi-tab" data-mi-tab="returned">Returned</button>
+      <button type="button" class="mi-tab" data-mi-tab="history">History</button>
+    </div>
+    <div id="miTabBody"></div>
   `;
 
-  engineerWirePhotoRows(document.getElementById('engineerInspectionPhotoRows'), document.getElementById('engineerInspectionPhotoAddBtn'));
-  document.getElementById('engineerInspectionForm').addEventListener('submit', engineerSubmitInspection);
-  engineerLoadInspectionsList();
+  page.querySelectorAll('.mi-tab').forEach(btn => {
+    btn.addEventListener('click', () => miShowTab(btn.dataset.miTab));
+  });
+
+  miShowTab('my-inspections');
 }
 
-async function engineerLoadInspectionsList() {
-  const container = document.getElementById('engineerInspectionsList');
-  const pager = document.getElementById('engineerInspectionsPager');
-  if (!container) return;
-  const state = engineerListState.inspections;
+let miActiveTab = 'my-inspections';
 
+function miShowTab(tab) {
+  miActiveTab = tab;
+  document.querySelectorAll('#page-inspection-review .mi-tab').forEach(btn => {
+    btn.classList.toggle('active', btn.dataset.miTab === tab);
+  });
+
+  const body = document.getElementById('miTabBody');
+  if (!body) return;
+
+  if (tab === 'my-inspections') return miRenderMyInspections(body);
+  if (tab === 'wizard') return miRenderWizardTab(body);
+  if (tab === 'review') return miRenderSubmittedList(body, 'review', 'No reviewed inspections yet.');
+  if (tab === 'returned') return miRenderReturnedList(body);
+  if (tab === 'history') return miRenderSubmittedList(body, 'history', 'No inspection history yet.');
+}
+
+/* ---- My Inspections: Overdue/Today/Upcoming + Resume ------------------ */
+
+async function miRenderMyInspections(container) {
+  container.innerHTML = '<p class="empty-state">Loading...</p>';
   try {
-    const result = await engineerGet('inspections', { page: state.page, per_page: state.perPage });
+    const data = await engineerMiGet('my_inspections');
+    const buckets = data.buckets || { overdue: [], today: [], upcoming: [] };
+    const inProgress = data.in_progress || [];
 
-    container.innerHTML = result.data.length ? result.data.map(row => `
-      <div class="engineer-mini-row">
-        <span>${engineerEscape(row.project_code)} - ${engineerEscape(row.contractor_name)} - ${engineerDate(row.report_date)}</span>
-        <strong>${engineerBadge(row.recommendation || row.report_status, row.recommendation ? engineerStatus(row.recommendation) : engineerStatus(row.report_status))}</strong>
-      </div>
-    `).join('') : '<p class="empty-state">No contractor reports submitted yet.</p>';
+    container.innerHTML = `
+      ${inProgress.length ? `
+        <section class="mi-section">
+          <h2 class="mi-section-title">Resume</h2>
+          <div class="mi-card-list">${inProgress.map(miResumeCardHtml).join('')}</div>
+        </section>
+      ` : ''}
+      <section class="mi-section">
+        <div class="mi-section-title-row">
+          <h2 class="mi-section-title">My Inspections</h2>
+          <button type="button" class="btn-secondary btn-compact" id="miAdHocBtn">+ New Inspection</button>
+        </div>
+        <div class="mi-bucket-grid">
+          ${miBucketColumnHtml('🔴 Overdue', buckets.overdue)}
+          ${miBucketColumnHtml('🟠 Today', buckets.today)}
+          ${miBucketColumnHtml('🟢 Upcoming', buckets.upcoming)}
+        </div>
+      </section>
+    `;
 
-    renderPagination(pager, {
-      page: result.page, lastPage: result.last_page, total: result.total, perPage: result.per_page,
-      onPageChange: nextPage => { engineerListState.inspections.page = nextPage; engineerLoadInspectionsList(); },
+    document.getElementById('miAdHocBtn')?.addEventListener('click', miOpenAdHocPicker);
+    container.querySelectorAll('[data-mi-start-report]').forEach(btn => {
+      btn.addEventListener('click', () => miStartInspection({ progress_report_id: btn.dataset.miStartReport }));
+    });
+    container.querySelectorAll('[data-mi-resume]').forEach(btn => {
+      btn.addEventListener('click', () => miOpenWizard(Number(btn.dataset.miResume)));
     });
   } catch (error) {
-    container.innerHTML = '<p class="empty-state">Unable to load contractor reports.</p>';
+    container.innerHTML = '<p class="empty-state">Unable to load your inspections.</p>';
+    engineerToast(error.message, 'error');
+  }
+}
+
+function miBucketColumnHtml(label, items) {
+  return `
+    <div class="mi-bucket-col">
+      <div class="mi-bucket-head">${label} <span class="mi-bucket-count">${items.length}</span></div>
+      ${items.length ? items.map(miCandidateCardHtml).join('') : '<p class="empty-state">Nothing here.</p>'}
+    </div>
+  `;
+}
+
+function miCandidateCardHtml(item) {
+  return `
+    <article class="mi-card">
+      <div class="mi-card-title">${engineerEscape(item.project_name)}</div>
+      <div class="mi-card-code">${engineerEscape(item.project_code)}</div>
+      <div class="mi-card-loc">📍 ${engineerEscape(item.location || 'No location set')}</div>
+      <div class="mi-card-meta">Report: ${engineerDate(item.report_date)} · Target: ${engineerDate(item.target_date)}</div>
+      <div class="mi-card-foot">
+        ${engineerBadge('progress', 'Progress Inspection')}
+        <button type="button" class="btn-primary btn-compact" data-mi-start-report="${item.progress_report_id}">Start Inspection</button>
+      </div>
+    </article>
+  `;
+}
+
+function miResumeCardHtml(item) {
+  const typeLabel = item.inspection_type === 'reinspection' ? 'Reinspection' : item.inspection_type === 'special' ? 'Ad-hoc Visit' : 'Progress Inspection';
+  return `
+    <article class="mi-card mi-card-resume">
+      <div class="mi-card-title">${engineerEscape(item.project_name)}</div>
+      <div class="mi-card-code">${engineerEscape(item.project_code)}</div>
+      <div class="mi-card-loc">📍 ${engineerEscape(item.location || 'No location set')}</div>
+      <div class="mi-card-meta">${engineerEscape(typeLabel)} · Started ${engineerDate(item.created_at)}${item.draft_saved_at ? ` · Last saved ${miTimeLabel(item.draft_saved_at)}` : ''}</div>
+      <div class="mi-card-foot">
+        ${engineerBadge('in_progress', 'In Progress')}
+        <button type="button" class="btn-primary btn-compact" data-mi-resume="${item.id}">Continue</button>
+      </div>
+    </article>
+  `;
+}
+
+function miOpenAdHocPicker() {
+  engineerOpenModal('Start a New Inspection', `
+    <div class="form-group">
+      <label>Project</label>
+      <select class="form-input" id="miAdHocProject">${engineerProjectOptions()}</select>
+    </div>
+    <div class="form-actions">
+      <button class="btn-primary" type="button" id="miAdHocStartBtn">Start Inspection</button>
+    </div>
+  `);
+  document.getElementById('miAdHocStartBtn').addEventListener('click', () => {
+    const projectId = document.getElementById('miAdHocProject').value;
+    if (!projectId) { engineerToast('Choose a project first.', 'error'); return; }
+    engineerCloseModal();
+    miStartInspection({ project_id: projectId });
+  });
+}
+
+async function miStartInspection(payload) {
+  try {
+    const result = await engineerMiPostJson('inspection_start', payload);
+    if (result.status === 'submitted') {
+      engineerToast('This inspection was already submitted — opening it for review.');
+      miShowTab('review');
+      return;
+    }
+    miOpenWizard(result.id);
+  } catch (error) {
+    engineerToast(error.message, 'error');
+  }
+}
+
+/* ---- Start / Continue: the 7-step wizard ------------------------------- */
+
+const MI_STEPS = ['project-info', 'gis', 'checklist', 'findings', 'photos', 'remarks', 'review'];
+const MI_STEP_LABELS = {
+  'project-info': 'Project Information',
+  'gis': 'GIS Location',
+  'checklist': 'Checklist',
+  'findings': 'Findings',
+  'photos': 'Photos',
+  'remarks': 'Remarks & Recommendations',
+  'review': 'Review & Submit',
+};
+
+let miWizardState = null;
+
+async function miOpenWizard(id) {
+  miShowTab('wizard');
+  const body = document.getElementById('miTabBody');
+  body.innerHTML = '<p class="empty-state">Loading inspection...</p>';
+
+  try {
+    const detail = await engineerMiGet('detail', { id });
+    const inspection = detail.data;
+    const [checklist, projectInfo] = await Promise.all([
+      engineerMiGet('checklist', { project_id: inspection.project_id }),
+      engineerMiGet('project_info', { project_id: inspection.project_id }),
+    ]);
+
+    miWizardState = {
+      id: inspection.id,
+      stepIndex: 0,
+      project: projectInfo.data,
+      inspection,
+      checklistGrouped: checklist.grouped,
+      answers: inspection.checklist_answers || {},
+      findings: inspection.findings || '',
+      itemizedFindings: inspection.itemized_findings || [],
+      recommendationNotes: inspection.recommendation_notes || [],
+      photos: inspection.photos || [],
+      gps: { lat: inspection.gps_latitude, lng: inspection.gps_longitude, accuracy: inspection.gps_accuracy_meters },
+      actualProgress: Number(inspection.actual_progress_percent || 0),
+      recommendation: inspection.recommendation || 'approved',
+      draftSavedAt: inspection.draft_saved_at,
+    };
+
+    miRenderWizardStep();
+  } catch (error) {
+    body.innerHTML = '<p class="empty-state">Unable to load this inspection.</p>';
+    engineerToast(error.message, 'error');
+  }
+}
+
+function miRenderWizardTab(container) {
+  if (miWizardState) {
+    miRenderWizardStep();
+    return;
+  }
+  container.innerHTML = `
+    <div class="mi-empty-wizard">
+      <p class="empty-state">No inspection in progress. Choose one from "My Inspections" to begin.</p>
+      <button type="button" class="btn-primary btn-compact" onclick="miShowTab('my-inspections')">Go to My Inspections</button>
+    </div>
+  `;
+}
+
+function miRenderWizardStep() {
+  const body = document.getElementById('miTabBody');
+  if (!body || !miWizardState) return;
+
+  const stepKey = MI_STEPS[miWizardState.stepIndex];
+  const stepNum = miWizardState.stepIndex + 1;
+
+  body.innerHTML = `
+    <div class="mi-wizard">
+      <div class="mi-stepper">
+        <div class="mi-stepper-label">Step ${stepNum} of ${MI_STEPS.length} — ${MI_STEP_LABELS[stepKey]}</div>
+        <div class="mi-stepper-track"><div class="mi-stepper-fill" style="width:${(stepNum / MI_STEPS.length) * 100}%"></div></div>
+      </div>
+      <div class="mi-step-body" id="miStepBody"></div>
+      <div class="mi-step-nav">
+        <button type="button" class="btn-secondary btn-compact" id="miBackBtn" ${miWizardState.stepIndex === 0 ? 'disabled' : ''}>Back</button>
+        <span class="mi-draft-status" id="miDraftStatus">${miWizardState.draftSavedAt ? 'Draft saved · Last saved ' + miTimeLabel(miWizardState.draftSavedAt) : ''}</span>
+        <button type="button" class="btn-secondary btn-compact" id="miSaveDraftBtn">Save Draft</button>
+        ${stepKey === 'review'
+          ? '<button type="button" class="btn-primary btn-compact" id="miSubmitBtn">Submit Inspection</button>'
+          : '<button type="button" class="btn-primary btn-compact" id="miNextBtn">Next</button>'}
+      </div>
+    </div>
+  `;
+
+  miRenderStepBody(stepKey);
+
+  document.getElementById('miBackBtn').addEventListener('click', () => miGoStep(-1));
+  document.getElementById('miNextBtn')?.addEventListener('click', () => miGoStep(1));
+  document.getElementById('miSaveDraftBtn').addEventListener('click', miSaveDraft);
+  document.getElementById('miSubmitBtn')?.addEventListener('click', miSubmitInspection);
+}
+
+function miRenderStepBody(stepKey) {
+  const el = document.getElementById('miStepBody');
+  if (!el) return;
+
+  if (stepKey === 'project-info') return miStepProjectInfo(el);
+  if (stepKey === 'gis') return miStepGis(el);
+  if (stepKey === 'checklist') return miStepChecklist(el);
+  if (stepKey === 'findings') return miStepFindings(el);
+  if (stepKey === 'photos') return miStepPhotos(el);
+  if (stepKey === 'remarks') return miStepRemarks(el);
+  if (stepKey === 'review') return miStepReview(el);
+}
+
+function miCollectStepInputs() {
+  const stepKey = MI_STEPS[miWizardState.stepIndex];
+  if (stepKey === 'remarks') {
+    const input = document.getElementById('miRemarksInput');
+    if (input) miWizardState.findings = input.value;
+  }
+  if (stepKey === 'review') {
+    const progress = document.getElementById('miActualProgress');
+    const reco = document.getElementById('miRecommendation');
+    if (progress) miWizardState.actualProgress = Number(progress.value) || 0;
+    if (reco) miWizardState.recommendation = reco.value;
+  }
+}
+
+function miGoStep(delta) {
+  miCollectStepInputs();
+  const nextIndex = miWizardState.stepIndex + delta;
+  if (nextIndex < 0 || nextIndex >= MI_STEPS.length) return;
+  miWizardState.stepIndex = nextIndex;
+  miRenderWizardStep();
+}
+
+async function miSaveDraft() {
+  miCollectStepInputs();
+  try {
+    const result = await engineerMiPostJson('inspection_draft', {
+      id: miWizardState.id,
+      checklist_answers: miWizardState.answers,
+      findings: miWizardState.findings,
+      recommendation_notes: miWizardState.recommendationNotes,
+      actual_progress_percent: miWizardState.actualProgress,
+      gps_latitude: miWizardState.gps?.lat ?? null,
+      gps_longitude: miWizardState.gps?.lng ?? null,
+      gps_accuracy_meters: miWizardState.gps?.accuracy ?? null,
+    });
+    miWizardState.draftSavedAt = result.draft_saved_at;
+    const statusEl = document.getElementById('miDraftStatus');
+    if (statusEl) statusEl.textContent = 'Draft saved · Last saved ' + miTimeLabel(result.draft_saved_at);
+    engineerToast('Draft saved.');
+  } catch (error) {
+    engineerToast(error.message, 'error');
+  }
+}
+
+async function miSubmitInspection() {
+  miCollectStepInputs();
+  if (!miWizardState.findings || miWizardState.findings.trim().length < 3) {
+    engineerToast('Please add remarks (at least a short summary) before submitting.', 'error');
+    miWizardState.stepIndex = MI_STEPS.indexOf('remarks');
+    miRenderWizardStep();
+    return;
+  }
+
+  try {
+    await engineerMiPostJson('inspection_draft', {
+      id: miWizardState.id,
+      checklist_answers: miWizardState.answers,
+      findings: miWizardState.findings,
+      recommendation_notes: miWizardState.recommendationNotes,
+    });
+    await engineerMiPostJson('inspection_submit', {
+      id: miWizardState.id,
+      actual_progress_percent: miWizardState.actualProgress,
+      recommendation: miWizardState.recommendation,
+      findings: miWizardState.findings,
+    });
+    engineerToast('Inspection submitted.');
+    miWizardState = null;
+    await engineerRefreshData();
+    miShowTab('review');
+  } catch (error) {
+    engineerToast(error.message, 'error');
+  }
+}
+
+/* Step 1: Project Information (read-only) */
+function miStepProjectInfo(el) {
+  const p = miWizardState.project || {};
+  el.innerHTML = `
+    <div class="mi-info-grid">
+      <div class="mi-info-item"><span>Project Name</span><strong>${engineerEscape(p.name)}</strong></div>
+      <div class="mi-info-item"><span>Project ID</span><strong>${engineerEscape(p.project_code)}</strong></div>
+      <div class="mi-info-item"><span>Category</span><strong>${engineerEscape(p.category || '-')}</strong></div>
+      <div class="mi-info-item"><span>Location</span><strong>${engineerEscape(p.location || '-')}</strong></div>
+      <div class="mi-info-item"><span>Budget</span><strong>${engineerMoney(p.budget)}</strong></div>
+      <div class="mi-info-item"><span>Contractor</span><strong>${engineerEscape(p.contractor_name || '-')}</strong></div>
+      <div class="mi-info-item"><span>Start Date</span><strong>${engineerDate(p.start_date)}</strong></div>
+      <div class="mi-info-item"><span>Expected Completion</span><strong>${engineerDate(p.end_date)}</strong></div>
+      <div class="mi-info-item"><span>Current Status</span><strong>${engineerBadge(p.status)}</strong></div>
+      <div class="mi-info-item"><span>Current Progress</span><strong>${Number(p.progress || 0)}%</strong></div>
+      <div class="mi-info-item"><span>Assigned Engineer</span><strong>${engineerEscape(p.engineer_name || '-')}</strong></div>
+    </div>
+    ${p.description ? `<p class="mi-info-note">${engineerEscape(p.description)}</p>` : ''}
+    ${p.category === 'Roads and Bridges' ? `
+      <button type="button" class="btn-secondary btn-compact" onclick="miCompareRoadHistory('${engineerEscape((p.location || p.name || '').split(',')[0].trim())}')">Compare with Road Inspection History →</button>
+    ` : ''}
+  `;
+}
+
+/* Step 2: GIS Location — reuses engineerUpShowMap()'s exact map pattern for
+   the "Open Map" modal; the inline preview below uses the same Leaflet +
+   ProjectMap pin construction directly embedded in the step. */
+let miInlineMapInstance = null;
+
+function miInitInlineMap(lat, lng) {
+  const container = document.getElementById('miInlineMap');
+  if (!container || typeof L === 'undefined') return;
+  if (miInlineMapInstance) { miInlineMapInstance.remove(); miInlineMapInstance = null; }
+  miInlineMapInstance = L.map('miInlineMap').setView([lat, lng], 15);
+  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { attribution: '&copy; OpenStreetMap contributors' }).addTo(miInlineMapInstance);
+  const pinIcon = window.ProjectMap ? window.ProjectMap.pinIcon(null, { neutral: true }) : undefined;
+  L.marker([lat, lng], pinIcon ? { icon: pinIcon } : {}).addTo(miInlineMapInstance);
+  setTimeout(() => miInlineMapInstance.invalidateSize(), 50);
+}
+
+function miCompareRoadHistory(searchTerm) {
+  engineerShowPage('road-inspection-history');
+  engineerRenderRoadHistoryPage(searchTerm);
+}
+
+function miStepGis(el) {
+  const p = miWizardState.project || {};
+  const hasCoords = p.latitude != null && p.longitude != null;
+  const gps = miWizardState.gps || {};
+
+  el.innerHTML = `
+    <div class="mi-gis-map" id="miInlineMap">${hasCoords ? '' : '<p class="empty-state">No official coordinates on file for this project.</p>'}</div>
+    <div class="mi-info-grid" style="margin-top:12px;">
+      <div class="mi-info-item"><span>Latitude</span><strong>${hasCoords ? Number(p.latitude).toFixed(6) : '-'}</strong></div>
+      <div class="mi-info-item"><span>Longitude</span><strong>${hasCoords ? Number(p.longitude).toFixed(6) : '-'}</strong></div>
+    </div>
+    ${hasCoords ? `<button type="button" class="btn-secondary btn-compact" onclick="engineerUpShowMap(${Number(p.latitude)}, ${Number(p.longitude)}, '${engineerEscape(p.name)}')">Open Map</button>` : ''}
+    <div class="mi-gps-block">
+      <button type="button" class="btn-secondary btn-compact" id="miGpsBtn">Use My Current Location</button>
+      <p class="mi-gps-note">Supporting information only — GPS accuracy varies and this is not proof of physical presence.</p>
+      <div id="miGpsResult">${gps.lat ? `<span>📍 ${Number(gps.lat).toFixed(6)}, ${Number(gps.lng).toFixed(6)}${gps.accuracy ? ' (±' + Math.round(gps.accuracy) + 'm)' : ''}</span>` : ''}</div>
+    </div>
+  `;
+
+  if (hasCoords) {
+    setTimeout(() => miInitInlineMap(Number(p.latitude), Number(p.longitude)), 50);
+  }
+
+  document.getElementById('miGpsBtn').addEventListener('click', () => {
+    if (!navigator.geolocation) {
+      engineerToast('Location services are not available in this browser.', 'error');
+      return;
+    }
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        miWizardState.gps = { lat: pos.coords.latitude, lng: pos.coords.longitude, accuracy: pos.coords.accuracy };
+        document.getElementById('miGpsResult').innerHTML =
+          `<span>📍 ${pos.coords.latitude.toFixed(6)}, ${pos.coords.longitude.toFixed(6)} (±${Math.round(pos.coords.accuracy)}m)</span>`;
+      },
+      () => engineerToast('Could not get your location. This step is optional — you can continue without it.', 'error')
+    );
+  });
+}
+
+/* Step 3: Checklist — category-grouped, adapts to project category via
+   includes/InspectionChecklist.php's applies_to filter. */
+function miStepChecklist(el) {
+  const grouped = miWizardState.checklistGrouped || {};
+  el.innerHTML = Object.entries(grouped).map(([category, items]) => `
+    <div class="mi-checklist-group">
+      <h3 class="mi-checklist-cat">${engineerEscape(category)}</h3>
+      ${items.map(item => `
+        <label class="mi-checklist-item">
+          <input type="checkbox" data-mi-check="${item.key}" ${miWizardState.answers[item.key] ? 'checked' : ''}>
+          <span>${engineerEscape(item.label)}</span>
+        </label>
+      `).join('')}
+    </div>
+  `).join('');
+
+  el.querySelectorAll('[data-mi-check]').forEach(input => {
+    input.addEventListener('change', () => {
+      miWizardState.answers[input.dataset.miCheck] = input.checked;
+    });
+  });
+}
+
+/* Step 4: Findings — multiple structured items, own child-table CRUD so
+   add/remove take effect immediately rather than waiting for Save Draft. */
+function miRenderFindingsList(el) {
+  const findings = miWizardState.itemizedFindings || [];
+  el.innerHTML = `
+    <div class="mi-findings-count">Findings: ${findings.length}</div>
+    <div class="mi-finding-list">
+      ${findings.map(f => `
+        <div class="mi-finding-item">
+          <div class="mi-finding-head">
+            <strong>${engineerEscape(f.finding_type)}</strong>
+            ${engineerBadge(f.severity)}
+          </div>
+          <p>${engineerEscape(f.description)}</p>
+          ${f.affected_area ? `<p class="mi-finding-sub">Area: ${engineerEscape(f.affected_area)}</p>` : ''}
+          ${f.recommended_action ? `<p class="mi-finding-sub">Action: ${engineerEscape(f.recommended_action)}</p>` : ''}
+          <button type="button" class="doc-row-remove" data-mi-remove-finding="${f.id}">&times;</button>
+        </div>
+      `).join('') || '<p class="empty-state">No findings added yet.</p>'}
+    </div>
+    <button type="button" class="doc-add-btn" id="miAddFindingBtn">+ Add Finding</button>
+  `;
+
+  document.getElementById('miAddFindingBtn').addEventListener('click', miOpenAddFindingForm);
+  el.querySelectorAll('[data-mi-remove-finding]').forEach(btn => {
+    btn.addEventListener('click', () => miRemoveFinding(Number(btn.dataset.miRemoveFinding)));
+  });
+}
+
+function miStepFindings(el) {
+  miRenderFindingsList(el);
+}
+
+function miOpenAddFindingForm() {
+  engineerOpenModal('Add Finding', `
+    <form id="miFindingForm">
+      <div class="form-group">
+        <label>Finding Type</label>
+        <input class="form-input" type="text" name="finding_type" placeholder="e.g. Drainage, Pavement, Safety">
+      </div>
+      <div class="form-group" style="margin-top:12px;">
+        <label>Description</label>
+        <textarea class="form-input" name="description" rows="3" required placeholder="What did you observe?"></textarea>
+      </div>
+      <div class="form-grid" style="margin-top:12px;">
+        <div class="form-group">
+          <label>Severity</label>
+          <select class="form-input" name="severity">
+            <option value="low">Low</option>
+            <option value="medium" selected>Medium</option>
+            <option value="high">High</option>
+            <option value="critical">Critical</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>Affected Area</label>
+          <input class="form-input" type="text" name="affected_area" placeholder="e.g. Northbound lane, KM 3+200">
+        </div>
+      </div>
+      <div class="form-group" style="margin-top:12px;">
+        <label>Recommended Action</label>
+        <textarea class="form-input" name="recommended_action" rows="2" placeholder="Optional"></textarea>
+      </div>
+      <div class="form-actions">
+        <button class="btn-primary" type="submit">Add Finding</button>
+      </div>
+    </form>
+  `);
+  document.getElementById('miFindingForm').addEventListener('submit', miSubmitFinding);
+}
+
+async function miSubmitFinding(event) {
+  event.preventDefault();
+  const form = new FormData(event.target);
+  try {
+    const result = await engineerMiPostJson('inspection_finding_add', {
+      inspection_id: miWizardState.id,
+      finding_type: form.get('finding_type'),
+      description: form.get('description'),
+      severity: form.get('severity'),
+      affected_area: form.get('affected_area'),
+      recommended_action: form.get('recommended_action'),
+    });
+    miWizardState.itemizedFindings.push({
+      id: result.id,
+      finding_type: form.get('finding_type') || 'Other',
+      description: form.get('description'),
+      severity: form.get('severity'),
+      affected_area: form.get('affected_area'),
+      recommended_action: form.get('recommended_action'),
+    });
+    engineerCloseModal();
+    miRenderFindingsList(document.getElementById('miStepBody'));
+  } catch (error) {
+    engineerToast(error.message, 'error');
+  }
+}
+
+async function miRemoveFinding(findingId) {
+  try {
+    await engineerMiPostJson('inspection_finding_delete', { finding_id: findingId });
+    miWizardState.itemizedFindings = miWizardState.itemizedFindings.filter(f => Number(f.id) !== findingId);
+    miRenderFindingsList(document.getElementById('miStepBody'));
+  } catch (error) {
+    engineerToast(error.message, 'error');
+  }
+}
+
+/* Step 5: Photos — same photos[N][title]/[caption] + photo_files[N]
+   convention as engineerPhotoRowHtml(), plus a client-side preview before
+   upload, uploaded immediately per-row (not batched until submit). */
+function miPhotoRowHtml(index) {
+  return `
+    <div class="doc-row mi-photo-row" data-doc-index="${index}">
+      <input class="form-input" type="text" name="photos[${index}][title]" placeholder="Photo title">
+      <input class="form-input" type="text" name="photos[${index}][caption]" placeholder="Description (optional)">
+      <input class="form-input mi-photo-file" type="file" name="photo_files[${index}]" accept="image/*" capture="environment">
+      <button type="button" class="doc-row-remove" aria-label="Remove photo row">&times;</button>
+    </div>
+  `;
+}
+
+function miWirePhotoPreview(input) {
+  input.addEventListener('change', () => {
+    const row = input.closest('.doc-row');
+    row.querySelectorAll('.mi-photo-preview').forEach(p => p.remove());
+    const file = input.files?.[0];
+    if (!file) return;
+    const img = document.createElement('img');
+    img.className = 'mi-photo-preview';
+    img.src = URL.createObjectURL(file);
+    img.onload = () => URL.revokeObjectURL(img.src);
+    row.appendChild(img);
+  });
+}
+
+function miWirePhotoRows(container, addBtn) {
+  let nextIndex = 1;
+  addBtn.addEventListener('click', () => {
+    container.insertAdjacentHTML('beforeend', miPhotoRowHtml(nextIndex));
+    const newInput = container.querySelector(`[data-doc-index="${nextIndex}"] .mi-photo-file`);
+    if (newInput) miWirePhotoPreview(newInput);
+    nextIndex += 1;
+  });
+  container.addEventListener('click', event => {
+    if (event.target.classList.contains('doc-row-remove')) {
+      event.target.closest('.doc-row')?.remove();
+    }
+  });
+}
+
+function miStepPhotos(el) {
+  const photos = miWizardState.photos || [];
+  el.innerHTML = `
+    <div class="mi-photo-grid" id="miPhotoGrid">
+      ${photos.map(p => `
+        <figure class="mi-photo-thumb">
+          <img src="${window.BASE_PATH}${engineerEscape(p.file_path)}" alt="">
+          <figcaption>${engineerEscape(p.title)}</figcaption>
+        </figure>
+      `).join('') || '<p class="empty-state">No photos uploaded yet.</p>'}
+    </div>
+    <form id="miPhotoForm" enctype="multipart/form-data">
+      <div class="doc-rows" id="miPhotoRows">${miPhotoRowHtml(0)}</div>
+      <button type="button" class="doc-add-btn" id="miPhotoAddBtn">+ Add another photo</button>
+      <div class="form-actions">
+        <button class="btn-primary btn-compact" type="submit">Upload Photo(s)</button>
+      </div>
+    </form>
+  `;
+
+  miWirePhotoRows(document.getElementById('miPhotoRows'), document.getElementById('miPhotoAddBtn'));
+  miWirePhotoPreview(el.querySelector('.mi-photo-file'));
+  document.getElementById('miPhotoForm').addEventListener('submit', miUploadPhotos);
+}
+
+async function miUploadPhotos(event) {
+  event.preventDefault();
+  const form = new FormData(event.target);
+  form.set('inspection_id', miWizardState.id);
+  try {
+    await engineerMiPostForm('inspection_photo', form);
+    engineerToast('Photo(s) uploaded.');
+    const detail = await engineerMiGet('detail', { id: miWizardState.id });
+    miWizardState.photos = detail.data.photos || [];
+    miRenderStepBody('photos');
+  } catch (error) {
+    engineerToast(error.message, 'error');
+  }
+}
+
+/* Step 6: Remarks & Recommendations — Remarks writes into the same required
+   `inspections.findings` column the legacy form always used, so every
+   existing reader of that field (contractor notifications, etc.) keeps
+   working unchanged. */
+function miStepRemarks(el) {
+  const notes = miWizardState.recommendationNotes || [];
+  el.innerHTML = `
+    <div class="form-group">
+      <label>Remarks</label>
+      <textarea class="form-input" id="miRemarksInput" rows="4" placeholder="Additional observations not captured in the checklist or findings...">${engineerEscape(miWizardState.findings)}</textarea>
+    </div>
+    <div class="mi-reco-block" style="margin-top:16px;">
+      <div class="mi-findings-count">Recommendations: ${notes.length}</div>
+      <div class="mi-reco-list" id="miRecoList">
+        ${notes.map((n, i) => `
+          <div class="mi-reco-item">
+            <span>${engineerEscape(n)}</span>
+            <button type="button" class="doc-row-remove" data-mi-remove-reco="${i}">&times;</button>
+          </div>
+        `).join('') || '<p class="empty-state">No recommendations added yet.</p>'}
+      </div>
+      <div class="mi-reco-add">
+        <input class="form-input" type="text" id="miRecoInput" placeholder="e.g. Complete corrective drainage work before the next inspection">
+        <button type="button" class="btn-secondary btn-compact" id="miRecoAddBtn">+ Add Recommendation</button>
+      </div>
+    </div>
+  `;
+
+  document.getElementById('miRecoAddBtn').addEventListener('click', () => {
+    const input = document.getElementById('miRecoInput');
+    const value = input.value.trim();
+    if (!value) return;
+    const remarksInput = document.getElementById('miRemarksInput');
+    if (remarksInput) miWizardState.findings = remarksInput.value;
+    miWizardState.recommendationNotes.push(value);
+    miRenderStepBody('remarks');
+  });
+  el.querySelectorAll('[data-mi-remove-reco]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const remarksInput = document.getElementById('miRemarksInput');
+      if (remarksInput) miWizardState.findings = remarksInput.value;
+      miWizardState.recommendationNotes.splice(Number(btn.dataset.miRemoveReco), 1);
+      miRenderStepBody('remarks');
+    });
+  });
+}
+
+/* Step 7: Review & Submit */
+function miStepReview(el) {
+  const s = miWizardState;
+  const totalChecklist = Object.values(s.checklistGrouped || {}).flat().length;
+  const answeredChecklist = Object.keys(s.answers || {}).filter(k => s.answers[k]).length;
+
+  el.innerHTML = `
+    <div class="mi-review-grid">
+      <div class="mi-info-item"><span>Project</span><strong>${engineerEscape(s.project?.name)}</strong></div>
+      <div class="mi-info-item"><span>Engineer</span><strong>${engineerEscape(s.project?.engineer_name || '')}</strong></div>
+      <div class="mi-info-item"><span>Inspection Date</span><strong>${engineerDate(s.inspection.inspection_date)}</strong></div>
+      <div class="mi-info-item"><span>Checklist</span><strong>${answeredChecklist} / ${totalChecklist} Completed</strong></div>
+      <div class="mi-info-item"><span>Findings</span><strong>${s.itemizedFindings.length}</strong></div>
+      <div class="mi-info-item"><span>Photos</span><strong>${s.photos.length}</strong></div>
+      <div class="mi-info-item"><span>Recommendations</span><strong>${s.recommendationNotes.length}</strong></div>
+      <div class="mi-info-item"><span>Remarks</span><strong>${s.findings ? 'Available' : 'Not provided'}</strong></div>
+    </div>
+    <div class="form-grid" style="margin-top:16px;">
+      <div class="form-group">
+        <label>Actual Progress Percent</label>
+        <input class="form-input" type="number" id="miActualProgress" min="0" max="100" value="${s.actualProgress}">
+      </div>
+      <div class="form-group">
+        <label>Overall Recommendation</label>
+        <select class="form-input" id="miRecommendation">
+          <option value="approved" ${s.recommendation === 'approved' ? 'selected' : ''}>Approved</option>
+          <option value="needs_correction" ${s.recommendation === 'needs_correction' ? 'selected' : ''}>Needs Correction</option>
+          <option value="for_reinspection" ${s.recommendation === 'for_reinspection' ? 'selected' : ''}>For Reinspection</option>
+        </select>
+      </div>
+    </div>
+  `;
+}
+
+/* ---- Inspection Review / Returned / History tabs ----------------------- */
+
+let miListState = { review: { page: 1, perPage: 10 }, history: { page: 1, perPage: 10 } };
+
+async function miRenderSubmittedList(container, action, emptyText) {
+  container.innerHTML = `
+    <div id="miListBody"><p class="empty-state">Loading...</p></div>
+    <div class="pagination-wrap" id="miListPager"></div>
+  `;
+  await miLoadSubmittedList(action, emptyText);
+}
+
+async function miLoadSubmittedList(action, emptyText) {
+  const listBody = document.getElementById('miListBody');
+  const pager = document.getElementById('miListPager');
+  if (!listBody) return;
+  const state = miListState[action];
+
+  try {
+    const result = await engineerMiGet(action, { page: state.page, per_page: state.perPage });
+    listBody.innerHTML = result.data.length ? result.data.map(miSubmittedRowHtml).join('') : `<p class="empty-state">${emptyText}</p>`;
+    listBody.querySelectorAll('[data-mi-view]').forEach(btn => {
+      btn.addEventListener('click', () => miOpenSubmittedDetail(Number(btn.dataset.miView)));
+    });
+    renderPagination(pager, {
+      page: result.page, lastPage: result.last_page, total: result.total, perPage: result.per_page,
+      onPageChange: nextPage => { miListState[action].page = nextPage; miLoadSubmittedList(action, emptyText); },
+    });
+  } catch (error) {
+    listBody.innerHTML = '<p class="empty-state">Unable to load inspections.</p>';
+  }
+}
+
+function miSubmittedRowHtml(row) {
+  return `
+    <div class="engineer-mini-row">
+      <span>${engineerEscape(row.project_code)} - ${engineerEscape(row.project_name)} - ${engineerDate(row.inspection_date)}</span>
+      <span>
+        ${engineerBadge(row.recommendation)}
+        <button type="button" class="btn-secondary btn-compact" data-mi-view="${row.id}">View</button>
+      </span>
+    </div>
+  `;
+}
+
+async function miRenderReturnedList(container) {
+  container.innerHTML = '<p class="empty-state">Loading...</p>';
+  try {
+    const result = await engineerMiGet('returned');
+    const rows = result.data || [];
+    container.innerHTML = rows.length ? `
+      <div class="mi-card-list">
+        ${rows.map(row => `
+          <article class="mi-card">
+            <div class="mi-card-title">${engineerEscape(row.project_name)}</div>
+            <div class="mi-card-code">${engineerEscape(row.project_code)}</div>
+            <div class="mi-card-loc">📍 ${engineerEscape(row.location || 'No location set')}</div>
+            <div class="mi-card-meta">Last inspected ${engineerDate(row.inspection_date)} · ${engineerBadge(row.recommendation)}</div>
+            <p class="mi-finding-sub">${engineerEscape((row.findings || '').slice(0, 160))}</p>
+            <div class="mi-card-foot">
+              <button type="button" class="btn-secondary btn-compact" data-mi-view="${row.id}">View</button>
+              <button type="button" class="btn-primary btn-compact" data-mi-reinspect="${row.id}">Start Reinspection</button>
+            </div>
+          </article>
+        `).join('')}
+      </div>
+    ` : '<p class="empty-state">Nothing needs reinspection right now.</p>';
+
+    container.querySelectorAll('[data-mi-view]').forEach(btn => btn.addEventListener('click', () => miOpenSubmittedDetail(Number(btn.dataset.miView))));
+    container.querySelectorAll('[data-mi-reinspect]').forEach(btn => btn.addEventListener('click', () => miStartInspection({ follow_up_of_inspection_id: btn.dataset.miReinspect })));
+  } catch (error) {
+    container.innerHTML = '<p class="empty-state">Unable to load returned inspections.</p>';
+  }
+}
+
+async function miOpenSubmittedDetail(id) {
+  try {
+    const detail = await engineerMiGet('detail', { id });
+    const d = detail.data;
+    engineerOpenModal(`Inspection — ${d.project_name}`, `
+      <div class="mi-info-grid">
+        <div class="mi-info-item"><span>Project</span><strong>${engineerEscape(d.project_name)}</strong></div>
+        <div class="mi-info-item"><span>Date</span><strong>${engineerDate(d.inspection_date)}</strong></div>
+        <div class="mi-info-item"><span>Type</span><strong>${engineerEscape(d.inspection_type)}</strong></div>
+        <div class="mi-info-item"><span>Actual Progress</span><strong>${Number(d.actual_progress_percent || 0)}%</strong></div>
+        <div class="mi-info-item"><span>Recommendation</span><strong>${engineerBadge(d.recommendation)}</strong></div>
+      </div>
+      <h4 style="margin:16px 0 8px;">Remarks</h4>
+      <p>${engineerEscape(d.findings || '-')}</p>
+      <h4 style="margin:16px 0 8px;">Findings (${d.itemized_findings.length})</h4>
+      <div class="mi-finding-list">
+        ${d.itemized_findings.map(f => `
+          <div class="mi-finding-item">
+            <div class="mi-finding-head"><strong>${engineerEscape(f.finding_type)}</strong>${engineerBadge(f.severity)}</div>
+            <p>${engineerEscape(f.description)}</p>
+          </div>
+        `).join('') || '<p class="empty-state">No itemized findings.</p>'}
+      </div>
+      <h4 style="margin:16px 0 8px;">Recommendations (${(d.recommendation_notes || []).length})</h4>
+      <ul>${(d.recommendation_notes || []).map(n => `<li>${engineerEscape(n)}</li>`).join('') || '<li>None</li>'}</ul>
+      <h4 style="margin:16px 0 8px;">Photos (${d.photos.length})</h4>
+      <div class="mi-photo-grid">
+        ${d.photos.map(p => `<figure class="mi-photo-thumb"><img src="${window.BASE_PATH}${engineerEscape(p.file_path)}" alt=""><figcaption>${engineerEscape(p.title)}</figcaption></figure>`).join('') || '<p class="empty-state">No photos.</p>'}
+      </div>
+    `);
+  } catch (error) {
+    engineerToast(error.message, 'error');
   }
 }
 
@@ -1335,11 +2117,10 @@ async function engineerOpenProject(projectId) {
 }
 
 async function engineerRefreshData() {
-  const [summary, projects, milestones, pendingInspections, workflow, tracker] = await Promise.all([
+  const [summary, projects, milestones, workflow, tracker] = await Promise.all([
     engineerGet('summary'),
     engineerGet('projects'),
     engineerGet('milestones'),
-    engineerGet('pending_inspections'),
     engineerWorkflowGet('summary'),
     engineerGet('tracker'),
   ]);
@@ -1347,7 +2128,6 @@ async function engineerRefreshData() {
   engineerState.summary = summary;
   engineerState.projects = projects.data || [];
   engineerState.milestones = milestones.data || [];
-  engineerState.pendingInspections = pendingInspections.data || [];
   engineerState.paymentRequests = workflow.payment_requests || [];
   engineerState.budgetWatch = tracker.budget_watch || summary.budget_watch || [];
   engineerRenderDashboard();
@@ -1416,28 +2196,6 @@ async function engineerSubmitMilestone(event) {
     engineerToast('Milestone update saved.');
     await engineerRefreshData();
     engineerShowPage('milestone-update');
-  } catch (error) {
-    engineerShowFieldErrors(formEl, error.fieldErrors);
-    engineerToast(error.message, 'error');
-  }
-}
-
-async function engineerSubmitInspection(event) {
-  event.preventDefault();
-  const formEl = event.target;
-  engineerClearFieldErrors(formEl);
-  // multipart, not JSON — the form may carry site photos (photos[N][title]/
-  // caption + photo_files[N], same repeatable-row convention as the
-  // standalone Photos page) alongside the findings/progress fields.
-  const form = new FormData(formEl);
-
-  try {
-    await engineerPostForm('inspection', form);
-    engineerToast('Inspection saved.');
-    formEl.reset();
-    await engineerRefreshData();
-    engineerListState.inspections.page = 1;
-    engineerShowPage('inspection-review');
   } catch (error) {
     engineerShowFieldErrors(formEl, error.fieldErrors);
     engineerToast(error.message, 'error');
@@ -2005,7 +2763,7 @@ async function engineerUpSubmitInspection(event) {
 
 /* ---- Road Inspection History: read-only, search/filter/export/print ---- */
 
-function engineerRenderRoadHistoryPage() {
+function engineerRenderRoadHistoryPage(prefillSearch = '') {
   const page = document.getElementById('page-road-inspection-history');
   page.innerHTML = `
     <div class="page-header">
@@ -2015,7 +2773,7 @@ function engineerRenderRoadHistoryPage() {
       </div>
     </div>
     <div class="filter-bar" style="flex-wrap:wrap;">
-      <input class="filter-input" id="engineerUpSearch" placeholder="Search road, barangay, road ID...">
+      <input class="filter-input" id="engineerUpSearch" placeholder="Search road, barangay, road ID..." value="${engineerEscape(prefillSearch)}">
       <select class="filter-select" id="engineerUpStatusFilter">
         <option value="">All Statuses</option>
         <option value="completed">Completed</option>
@@ -2055,7 +2813,7 @@ function engineerRenderRoadHistoryPage() {
   });
   document.getElementById('engineerUpExportBtn').addEventListener('click', engineerUpExportHistoryCsv);
 
-  engineerUpHistoryState.page = 1;
+  engineerUpHistoryState = { ...engineerUpHistoryState, page: 1, search: prefillSearch };
   engineerLoadUpHistory();
 }
 

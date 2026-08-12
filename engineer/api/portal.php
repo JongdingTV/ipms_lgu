@@ -157,66 +157,10 @@ function engineerPortalProjectExtras(PDO $db, array $project, int $engineerId): 
     return $project;
 }
 
-const ENGINEER_PHOTO_MAX_SIZE = 8 * 1024 * 1024;
-const ENGINEER_PHOTO_EXTENSIONS = ['png', 'jpg', 'jpeg', 'webp'];
-
-/** Links progress photos taken during a field inspection back to that inspection record (mobile field-inspection feature). */
-function engineerInspectionEnsureSchema(PDO $db): void
-{
-    $db->exec("ALTER TABLE engineer_progress_photos ADD COLUMN IF NOT EXISTS inspection_id INT NULL AFTER engineer_id");
-    $db->exec("
-        ALTER TABLE engineer_progress_photos
-        ADD CONSTRAINT fk_engineer_photos_inspection FOREIGN KEY IF NOT EXISTS (inspection_id)
-        REFERENCES inspections(id) ON DELETE SET NULL
-    ");
-}
-
-/** Same dynamic-row convention used by superadmin/bac/contractor: photos[N][title]/[caption] + photo_files[N]. */
-function engineerCollectPhotoRows(array $textRows, array $filesField): array
-{
-    $indices = array_keys($textRows);
-    foreach (array_keys($filesField['name'] ?? []) as $idx) {
-        if (!in_array($idx, $indices, true)) {
-            $indices[] = $idx;
-        }
-    }
-
-    $rows = [];
-    foreach ($indices as $idx) {
-        $title = trim((string) ($textRows[$idx]['title'] ?? ''));
-        $caption = trim((string) ($textRows[$idx]['caption'] ?? ''));
-        $file = FileUpload::fromNestedFiles($filesField, (int) $idx);
-
-        if ($title === '' && $file === null) {
-            continue;
-        }
-
-        if ($title === '') {
-            $error = 'Title is required when a photo is attached.';
-        } else {
-            $error = FileUpload::validate($file, [
-                'required' => true,
-                'max_size' => ENGINEER_PHOTO_MAX_SIZE,
-                'extensions' => ENGINEER_PHOTO_EXTENSIONS,
-                'sniff_pdf' => false,
-            ]);
-        }
-
-        $rows[] = ['title' => $title, 'caption' => $caption, 'file' => $file, 'error' => $error];
-    }
-
-    return $rows;
-}
-
-function engineerCleanupFiles(array $relativePaths): void
-{
-    foreach ($relativePaths as $path) {
-        $full = dirname(__DIR__, 2) . '/' . $path;
-        if (is_file($full)) {
-            @unlink($full);
-        }
-    }
-}
+// ENGINEER_PHOTO_MAX_SIZE / ENGINEER_PHOTO_EXTENSIONS, engineerInspectionEnsureSchema(),
+// engineerCollectPhotoRows(), and engineerCleanupFiles() now live in
+// engineer/includes/scope.php (already require_once'd above) — shared with
+// engineer/api/mobile-inspection.php so neither file redefines them.
 
 if ($method === 'GET') {
     $projects = engineerPortalProjects($db, $engineerId);

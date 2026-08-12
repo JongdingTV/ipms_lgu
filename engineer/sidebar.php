@@ -37,7 +37,7 @@
       </a>
       <a href="#" class="nav-item" data-page="inspection-review">
         <span class="nav-icon"><svg viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M4 3a2 2 0 00-2 2v10a2 2 0 002 2h8.586A2 2 0 0014 16.414l3.414-3.414A2 2 0 0018 11.586V5a2 2 0 00-2-2H4zm4 4a1 1 0 000 2h4a1 1 0 100-2H8zm0 4a1 1 0 100 2h2a1 1 0 100-2H8z" clip-rule="evenodd"/></svg></span>
-        <span class="nav-label">Inspection Review</span>
+        <span class="nav-label">Inspections</span>
         <span class="nav-badge" data-badge="inspection-review"></span>
       </a>
       <a href="#" class="nav-item" data-page="payment-review">

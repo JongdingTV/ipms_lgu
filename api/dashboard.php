@@ -261,8 +261,10 @@ $out['upcoming_deadlines'] = $db->query("
 ")->fetchAll();
 
 // ── Today's Inspections — inspection_date is engineer-picked (can be a
-// future date), not always "today"; see engineer/api/portal.php's
-// inspection handler. This is exact-match on today, not a range. ──
+// future date), not always "today"; see engineer/api/mobile-inspection.php's
+// inspection_submit handler. This is exact-match on today, not a range.
+// Submitted only — an in-progress field session hasn't produced a real
+// recommendation yet (still just the placeholder default). ──
 $out['todays_inspections'] = $db->query("
     SELECT i.id, i.inspection_date, i.actual_progress_percent, i.recommendation,
            p.id AS project_id, p.project_code, p.name AS project_name,
@@ -270,7 +272,7 @@ $out['todays_inspections'] = $db->query("
     FROM inspections i
     INNER JOIN projects p ON p.id = i.project_id
     INNER JOIN users u ON u.id = i.engineer_id
-    WHERE i.inspection_date = CURDATE()
+    WHERE i.inspection_date = CURDATE() AND i.status = 'submitted'
     ORDER BY i.created_at DESC
 ")->fetchAll();
 
@@ -372,6 +374,7 @@ $out['recent_workflow'] = $db->query("
     FROM inspections i
     INNER JOIN projects p ON p.id = i.project_id
     INNER JOIN users u ON u.id = i.engineer_id
+    WHERE i.status = 'submitted'
     UNION ALL
     SELECT 'Payment Request' AS record_type,
            pr.submitted_at AS record_date,

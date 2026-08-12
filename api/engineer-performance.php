@@ -35,7 +35,7 @@ function engineerPerfInspectionStats(PDO $db, int $engineerId): array
     $stmt = $db->prepare("
         SELECT COUNT(*) AS total, SUM(CASE WHEN recommendation = 'approved' THEN 1 ELSE 0 END) AS approved
         FROM inspections
-        WHERE engineer_id = ?
+        WHERE engineer_id = ? AND status = 'submitted'
     ");
     $stmt->execute([$engineerId]);
     $row = $stmt->fetch();
@@ -55,7 +55,7 @@ function engineerPerfAvgInspectionDays(PDO $db, int $engineerId): ?float
         SELECT AVG(DATEDIFF(i.created_at, r.report_date)) AS avg_days
         FROM inspections i
         JOIN contractor_reports r ON r.id = i.progress_report_id
-        WHERE i.engineer_id = ? AND i.progress_report_id IS NOT NULL
+        WHERE i.engineer_id = ? AND i.progress_report_id IS NOT NULL AND i.status = 'submitted'
     ");
     $stmt->execute([$engineerId]);
     $avg = $stmt->fetchColumn();
@@ -141,7 +141,7 @@ function engineerPerfTrend(PDO $db, int $engineerId): array
     $stmt = $db->prepare("
         SELECT DATE_FORMAT(created_at, '%Y-%m') AS ym, COUNT(*) AS cnt
         FROM inspections
-        WHERE engineer_id = ? AND recommendation = 'approved' AND created_at >= ?
+        WHERE engineer_id = ? AND recommendation = 'approved' AND status = 'submitted' AND created_at >= ?
         GROUP BY ym
     ");
     $stmt->execute([$engineerId, $windowStart]);

@@ -241,13 +241,15 @@ function contractorPortalPostAwardStage(PDO $db, int $contractorId): array
     $deadline->execute([$contractorId]);
 
     // "Pending inspection" = a progress report with no inspection record at
-    // all yet. Once an engineer has logged any inspections row — even a
+    // all yet. Once an engineer has SUBMITTED any inspections row — even a
     // needs_correction one — the contractor has already been informed of the
-    // outcome, so it no longer counts as awaiting review.
+    // outcome, so it no longer counts as awaiting review. An in_progress
+    // mobile field session (started but not yet submitted) doesn't count as
+    // decided either — the contractor still has no answer yet.
     $pendingInspections = $db->prepare("
         SELECT COUNT(*) FROM contractor_reports cr
         WHERE cr.contractor_id = ?
-          AND NOT EXISTS (SELECT 1 FROM inspections i WHERE i.progress_report_id = cr.id)
+          AND NOT EXISTS (SELECT 1 FROM inspections i WHERE i.progress_report_id = cr.id AND i.status = 'submitted')
     ");
     $pendingInspections->execute([$contractorId]);
 

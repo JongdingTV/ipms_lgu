@@ -136,7 +136,7 @@ if ($action === 'list') {
             $milestone->execute([$row['id']]);
             $row['current_milestone'] = $milestone->fetch() ?: null;
 
-            $inspection = $db->prepare("SELECT recommendation, inspection_date FROM inspections WHERE project_id = ? ORDER BY inspection_date DESC LIMIT 1");
+            $inspection = $db->prepare("SELECT recommendation, inspection_date FROM inspections WHERE project_id = ? AND status = 'submitted' ORDER BY inspection_date DESC LIMIT 1");
             $inspection->execute([$row['id']]);
             $row['inspection_status'] = $inspection->fetch() ?: null;
 
@@ -208,7 +208,7 @@ if ($action === 'detail') {
     $spentStmt->execute([$id]);
     $project['total_spent'] = (float) $spentStmt->fetchColumn();
 
-    $inspectionsStmt = $db->prepare("SELECT inspection_date, actual_progress_percent, findings, recommendation FROM inspections WHERE project_id = ? ORDER BY inspection_date DESC");
+    $inspectionsStmt = $db->prepare("SELECT inspection_date, actual_progress_percent, findings, recommendation FROM inspections WHERE project_id = ? AND status = 'submitted' ORDER BY inspection_date DESC");
     $inspectionsStmt->execute([$id]);
     $project['inspection_history'] = $inspectionsStmt->fetchAll();
 

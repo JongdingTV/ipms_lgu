@@ -67,6 +67,8 @@ if ($method === 'GET') {
         ");
         $payments->execute($engineerParams);
 
+        // Submitted only — an in-progress mobile field session hasn't produced
+        // a real recommendation yet (still just the placeholder default).
         $inspections = $db->prepare("
             SELECT i.*, p.project_code, p.name AS project_name, u.full_name AS engineer_name,
                    cr.report_date, cr.progress_percent AS reported_progress
@@ -75,6 +77,7 @@ if ($method === 'GET') {
             INNER JOIN users u ON u.id = i.engineer_id
             LEFT JOIN contractor_reports cr ON cr.id = i.progress_report_id
             $engineerJoin
+            WHERE i.status = 'submitted'
             ORDER BY i.created_at DESC, i.id DESC
             LIMIT 20
         ");

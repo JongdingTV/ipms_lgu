@@ -154,8 +154,9 @@ function projectHealthRawRows(PDO $db, array $projectIds = []): array
             SELECT i1.project_id, i1.recommendation
             FROM inspections i1
             INNER JOIN (
-                SELECT project_id, MAX(created_at) AS max_created FROM inspections GROUP BY project_id
+                SELECT project_id, MAX(created_at) AS max_created FROM inspections WHERE status = 'submitted' GROUP BY project_id
             ) i2 ON i2.project_id = i1.project_id AND i2.max_created = i1.created_at
+            WHERE i1.status = 'submitted'
         ) li ON li.project_id = p.id
         LEFT JOIN (
             SELECT project_id, COUNT(*) AS complaint_count

@@ -179,9 +179,10 @@ function aiAssistantContractorSection(PDO $db): string
     return implode("\n", $lines);
 }
 
-// Mirrors engineer/api/portal.php's own action=pending_inspections query
-// (LEFT JOIN inspections + "no inspection yet OR report itself still
-// submitted/under_review"), narrowed to reports at least 7 days old.
+// Mirrors engineer/api/mobile-inspection.php's own action=my_inspections
+// query (LEFT JOIN inspections + "no submitted inspection yet, and no
+// in-progress session already covering it"), narrowed to reports at least
+// 7 days old.
 function aiAssistantOverdueInspectionsSection(PDO $db): string
 {
     $rows = $db->query("
@@ -194,7 +195,7 @@ function aiAssistantOverdueInspectionsSection(PDO $db): string
         LEFT JOIN inspections i ON i.progress_report_id = r.id
         LEFT JOIN engineer_project_assignments epa ON epa.project_id = p.id AND epa.status = 'active'
         LEFT JOIN users u ON u.id = epa.engineer_id
-        WHERE (i.id IS NULL OR r.status IN ('submitted', 'under_review'))
+        WHERE (i.id IS NULL OR (i.status = 'submitted' AND r.status IN ('submitted', 'under_review')))
           AND r.report_date <= DATE_SUB(CURDATE(), INTERVAL 7 DAY)
         GROUP BY r.id, p.project_code, p.name, r.report_date, cc.name
         ORDER BY days_pending DESC

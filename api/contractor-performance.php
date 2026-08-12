@@ -69,7 +69,7 @@ function contractorPerfInspectionStats(PDO $db, int $contractorId): array
         SELECT COUNT(*) AS total, SUM(CASE WHEN i.recommendation = 'approved' THEN 1 ELSE 0 END) AS approved
         FROM inspections i
         JOIN projects p ON p.id = i.project_id
-        WHERE p.contractor_id = ?
+        WHERE p.contractor_id = ? AND i.status = 'submitted'
     ");
     $stmt->execute([$contractorId]);
     $row = $stmt->fetch();

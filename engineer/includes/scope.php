@@ -1,5 +1,7 @@
 <?php
 
+require_once __DIR__ . '/../../includes/FileUpload.php';
+
 if (!function_exists('engineerScopeCurrentId')) {
     function engineerScopeCurrentId(): ?int
     {
@@ -170,5 +172,81 @@ if (!function_exists('engineerScopeHasAssignedProject')) {
         $stmt->execute([$engineerId, $projectId]);
 
         return (bool) $stmt->fetchColumn();
+    }
+}
+
+// ── Shared by both engineer/api/portal.php (legacy single-shot inspection
+// form + standalone photo upload) and engineer/api/mobile-inspection.php
+// (the field-inspection wizard) — relocated here so neither file has to
+// redefine them. ──────────────────────────────────────────────────────────
+
+if (!defined('ENGINEER_PHOTO_MAX_SIZE')) {
+    define('ENGINEER_PHOTO_MAX_SIZE', 8 * 1024 * 1024);
+}
+if (!defined('ENGINEER_PHOTO_EXTENSIONS')) {
+    define('ENGINEER_PHOTO_EXTENSIONS', ['png', 'jpg', 'jpeg', 'webp']);
+}
+
+if (!function_exists('engineerInspectionEnsureSchema')) {
+    /** Links progress photos taken during a field inspection back to that inspection record. */
+    function engineerInspectionEnsureSchema(PDO $db): void
+    {
+        $db->exec("ALTER TABLE engineer_progress_photos ADD COLUMN IF NOT EXISTS inspection_id INT NULL AFTER engineer_id");
+        $db->exec("
+            ALTER TABLE engineer_progress_photos
+            ADD CONSTRAINT fk_engineer_photos_inspection FOREIGN KEY IF NOT EXISTS (inspection_id)
+            REFERENCES inspections(id) ON DELETE SET NULL
+        ");
+    }
+}
+
+if (!function_exists('engineerCollectPhotoRows')) {
+    /** Same dynamic-row convention used by superadmin/bac/contractor: photos[N][title]/[caption] + photo_files[N]. */
+    function engineerCollectPhotoRows(array $textRows, array $filesField): array
+    {
+        $indices = array_keys($textRows);
+        foreach (array_keys($filesField['name'] ?? []) as $idx) {
+            if (!in_array($idx, $indices, true)) {
+                $indices[] = $idx;
+            }
+        }
+
+        $rows = [];
+        foreach ($indices as $idx) {
+            $title = trim((string) ($textRows[$idx]['title'] ?? ''));
+            $caption = trim((string) ($textRows[$idx]['caption'] ?? ''));
+            $file = FileUpload::fromNestedFiles($filesField, (int) $idx);
+
+            if ($title === '' && $file === null) {
+                continue;
+            }
+
+            if ($title === '') {
+                $error = 'Title is required when a photo is attached.';
+            } else {
+                $error = FileUpload::validate($file, [
+                    'required' => true,
+                    'max_size' => ENGINEER_PHOTO_MAX_SIZE,
+                    'extensions' => ENGINEER_PHOTO_EXTENSIONS,
+                    'sniff_pdf' => false,
+                ]);
+            }
+
+            $rows[] = ['title' => $title, 'caption' => $caption, 'file' => $file, 'error' => $error];
+        }
+
+        return $rows;
+    }
+}
+
+if (!function_exists('engineerCleanupFiles')) {
+    function engineerCleanupFiles(array $relativePaths): void
+    {
+        foreach ($relativePaths as $path) {
+            $full = dirname(__DIR__, 2) . '/' . $path;
+            if (is_file($full)) {
+                @unlink($full);
+            }
+        }
     }
 }
