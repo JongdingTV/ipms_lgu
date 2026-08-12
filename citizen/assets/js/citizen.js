@@ -8,7 +8,7 @@ function citizenUrl(path) {
 // "Project Status" used to be its own page; it's now the Cards view of the
 // merged Public Projects page. Old bookmarks/links to #project-status still
 // land somewhere real instead of silently doing nothing.
-const PAGE_HASH_ALIASES = { 'project-status': 'projects' };
+const PAGE_HASH_ALIASES = { 'project-status': 'projects', 'announcements': 'dashboard' };
 function resolvePageHash(page) {
     return PAGE_HASH_ALIASES[page] || page;
 }
@@ -17,6 +17,7 @@ document.addEventListener('DOMContentLoaded', function() {
     // Initialize the page
     loadDashboardData();
     loadProjectSlideshow();
+    loadAnnouncements();
     setupEventListeners();
 
     // Deep-linking: #projects, #profile, etc. restore the page on load…
@@ -1317,9 +1318,7 @@ function changePage(pageName) {
     });
 
     // Load page-specific data
-    if (pageName === 'announcements') {
-        loadAnnouncements();
-    } else if (pageName === 'projects') {
+    if (pageName === 'projects') {
         loadProjects();
     } else if (pageName === 'track-feedback') {
         loadTrackedFeedback();
@@ -1738,40 +1737,17 @@ function loadDashboardData() {
             displayRecentProjects(data.recent_projects || []);
             displayRecentFeedback(data.recent_feedback || []);
             displayLatestUpdates(data.recent_updates || []);
-            displayRecentAnnouncements(data.recent_announcements || []);
         })
         .catch(err => {
             console.error('Error loading dashboard:', err);
             // Swap the skeletons for a readable message instead of leaving
             // them shimmering forever.
             const failed = '<p class="empty-state">Could not load this section. Please refresh the page to try again.</p>';
-            ['recentProjectsContainer', 'recentFeedbackContainer', 'latestUpdatesContainer', 'recentAnnouncementsContainer'].forEach(id => {
+            ['recentProjectsContainer', 'recentFeedbackContainer', 'latestUpdatesContainer'].forEach(id => {
                 const el = document.getElementById(id);
                 if (el) el.innerHTML = failed;
             });
         });
-}
-
-// ===== Latest Announcements (home-tab preview widget) =====
-function displayRecentAnnouncements(announcements) {
-    const container = document.getElementById('recentAnnouncementsContainer');
-    if (!container) return;
-
-    if (!announcements.length) {
-        container.innerHTML = '<p class="empty-state">No announcements yet. Check back soon!</p>';
-        return;
-    }
-
-    // Seed listStates.announcements so clicking a card here — before the
-    // citizen has ever visited the full Announcements page — still resolves
-    // via openAnnouncementDetail's client-side lookup. Only seeds while that
-    // list is still empty, so it never clobbers the fuller dataset once the
-    // Announcements page itself has actually loaded.
-    if (listStates.announcements && listStates.announcements.data.length === 0) {
-        listStates.announcements.data = announcements;
-    }
-
-    container.innerHTML = announcements.map(createAnnouncementCard).join('');
 }
 
 // ===== Latest field updates (read-only feed of the engineers' status updates) =====
@@ -2115,8 +2091,9 @@ function createAnnouncementCard(a) {
     const excerpt = rawBody.length > 160 ? rawBody.slice(0, 160).trim() + '…' : rawBody;
     const isEvent = a.category === 'event' && a.event_date;
 
+    const pinned = Number(a.is_pinned) === 1;
     return `
-        <article class="announcement-card row-click" onclick="openAnnouncementDetail(${Number(a.id)})" title="View announcement">
+        <article class="announcement-card row-click${pinned ? ' announcement-card-pinned' : ''}" onclick="openAnnouncementDetail(${Number(a.id)})" title="View announcement">
             ${a.poster_path ? `<div class="announcement-card-poster"><img src="${citizenUrl(escapeHtml(a.poster_path))}" alt="" loading="lazy"></div>` : ''}
             <div class="announcement-card-body">
                 <div class="announcement-card-head">

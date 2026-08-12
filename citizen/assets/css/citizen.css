@@ -1106,10 +1106,6 @@ body {
     gap: 1.5rem;
 }
 
-.announcement-grid-preview {
-    grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
-}
-
 .announcement-card {
     display: flex;
     flex-direction: column;
@@ -1119,6 +1115,18 @@ body {
     overflow: hidden;
     cursor: pointer;
     transition: border-color .2s, box-shadow .2s, transform .2s;
+}
+
+/* Pinned announcements (server already sorts these first) get a warm
+   highlight so they read as "featured" at a glance, not just first-in-list. */
+.announcement-card-pinned {
+    border-color: #f4c979;
+    background: linear-gradient(180deg, rgba(251, 191, 36, .08), var(--card-bg, #ffffff) 60px);
+    box-shadow: 0 1px 0 rgba(180, 83, 9, .06) inset;
+}
+:root[data-theme="dark"] .announcement-card-pinned {
+    border-color: #b45309;
+    background: linear-gradient(180deg, rgba(180, 83, 9, .16), var(--card-bg, #1e293b) 60px);
 }
 
 /* .row-click is also on this element (for the shared card-click cursor/
@@ -1132,6 +1140,16 @@ body {
     border-color: var(--primary, #2563eb);
     box-shadow: 0 8px 24px rgba(37, 99, 235, .15);
     transform: translateY(-4px);
+    background: var(--card-bg, #ffffff);
+}
+
+/* Same specificity as the generic hover above (2 classes + :hover each) —
+   placed after it so pinned cards keep their gold hover instead of the
+   generic blue one winning by source order. */
+.announcement-card-pinned:hover,
+.announcement-card-pinned.row-click:hover {
+    border-color: #eab308;
+    box-shadow: 0 8px 24px rgba(180, 83, 9, .18);
     background: var(--card-bg, #ffffff);
 }
 

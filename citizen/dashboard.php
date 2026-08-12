@@ -162,15 +162,35 @@ $statusChip = [
         </article>
       </section>
 
-      <!-- Latest Announcements Section -->
+      <!-- Announcements Section (merged from the old standalone Announcements page:
+           full search/filter/pager over the complete list lives here now, not just
+           a small preview) -->
       <section class="dashboard-section reveal" style="transition-delay:.02s;">
         <div class="section-header">
-          <h2>Latest Announcements</h2>
-          <a href="#" class="view-all-link" onclick="changePage('announcements'); return false;">View All
-            <svg width="15" height="15" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M10.293 5.293a1 1 0 011.414 0l4 4a1 1 0 010 1.414l-4 4a1 1 0 01-1.414-1.414L12.586 11H5a1 1 0 110-2h7.586l-2.293-2.293a1 1 0 010-1.414z" clip-rule="evenodd"/></svg>
-          </a>
+          <div>
+            <h2>Announcements</h2>
+            <p class="citizen-scope-note">Events, new project spotlights, official notices, and posters from the city.</p>
+          </div>
         </div>
-        <div id="recentAnnouncementsContainer" class="announcement-grid announcement-grid-preview">
+        <div class="list-toolbar">
+          <div class="list-search">
+            <svg viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M8 4a4 4 0 100 8 4 4 0 000-8zM2 8a6 6 0 1110.89 3.476l4.817 4.817a1 1 0 01-1.414 1.414l-4.816-4.816A6 6 0 012 8z" clip-rule="evenodd"/></svg>
+            <input type="text" id="annSearch" placeholder="Search announcements">
+          </div>
+          <select id="annCategoryFilter" class="filter-select">
+            <option value="">All Categories</option>
+            <option value="event">Events</option>
+            <option value="new_project">New Projects</option>
+            <option value="notice">Notices</option>
+            <option value="general">General</option>
+          </select>
+          <div class="list-pager">
+            <span class="list-pager-info" id="annPagerInfo">0 of 0</span>
+            <button type="button" class="list-pager-btn" id="annPagerPrev" title="Previous page" aria-label="Previous page"><svg viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M12.707 5.293a1 1 0 010 1.414L9.414 10l3.293 3.293a1 1 0 01-1.414 1.414l-4-4a1 1 0 010-1.414l4-4a1 1 0 011.414 0z" clip-rule="evenodd"/></svg></button>
+            <button type="button" class="list-pager-btn" id="annPagerNext" title="Next page" aria-label="Next page"><svg viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M7.293 14.707a1 1 0 010-1.414L10.586 10 7.293 6.707a1 1 0 011.414-1.414l4 4a1 1 0 010 1.414l-4 4a1 1 0 01-1.414 0z" clip-rule="evenodd"/></svg></button>
+          </div>
+        </div>
+        <div id="announcementsBody" class="announcement-grid">
           <div class="skeleton-group"><div class="skeleton-row"></div><div class="skeleton-row"></div></div>
         </div>
       </section>
@@ -267,37 +287,6 @@ $statusChip = [
           <div class="skeleton-group"><div class="skeleton-row"></div><div class="skeleton-row"></div></div>
         </div>
       </section>
-    </section>
-
-    <!-- Announcements Page -->
-    <section id="page-announcements" class="page-section" style="display: none;">
-      <div class="page-header">
-        <div>
-          <h1 class="page-title">Announcements</h1>
-          <p class="citizen-scope-note">Events, new project spotlights, official notices, and posters from the city.</p>
-        </div>
-      </div>
-      <div class="list-toolbar">
-        <div class="list-search">
-          <svg viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M8 4a4 4 0 100 8 4 4 0 000-8zM2 8a6 6 0 1110.89 3.476l4.817 4.817a1 1 0 01-1.414 1.414l-4.816-4.816A6 6 0 012 8z" clip-rule="evenodd"/></svg>
-          <input type="text" id="annSearch" placeholder="Search announcements">
-        </div>
-        <select id="annCategoryFilter" class="filter-select">
-          <option value="">All Categories</option>
-          <option value="event">Events</option>
-          <option value="new_project">New Projects</option>
-          <option value="notice">Notices</option>
-          <option value="general">General</option>
-        </select>
-        <div class="list-pager">
-          <span class="list-pager-info" id="annPagerInfo">0 of 0</span>
-          <button type="button" class="list-pager-btn" id="annPagerPrev" title="Previous page" aria-label="Previous page"><svg viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M12.707 5.293a1 1 0 010 1.414L9.414 10l3.293 3.293a1 1 0 01-1.414 1.414l-4-4a1 1 0 010-1.414l4-4a1 1 0 011.414 0z" clip-rule="evenodd"/></svg></button>
-          <button type="button" class="list-pager-btn" id="annPagerNext" title="Next page" aria-label="Next page"><svg viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M7.293 14.707a1 1 0 010-1.414L10.586 10 7.293 6.707a1 1 0 011.414-1.414l4 4a1 1 0 010 1.414l-4 4a1 1 0 01-1.414 0z" clip-rule="evenodd"/></svg></button>
-        </div>
-      </div>
-      <div id="announcementsBody" class="announcement-grid">
-        <p class="empty-state">Loading announcements…</p>
-      </div>
     </section>
 
     <!-- Projects Page -->
