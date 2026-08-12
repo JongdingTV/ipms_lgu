@@ -825,13 +825,29 @@ if ($method === 'POST' && $action === 'request_edit') {
 
     // Road Geometry: validated now (so the admin gets immediate feedback on a
     // bad drawing) but only actually stored once HOPE approves.
+    //
+    // Geometry is only OPTIONAL on this action when the project is already
+    // 'Roads and Bridges' AND already has a geometry row that this edit
+    // simply isn't touching — never when category is newly becoming 'Roads
+    // and Bridges', since in that case no geometry row exists yet. Relying
+    // on array_key_exists('road_geometry', $b) alone (the previous check)
+    // let a category change to 'Roads and Bridges' sail through with no
+    // geometry whenever the caller's request body didn't happen to include
+    // that key — a project could reach HOPE approval, and then the live
+    // `projects` table, permanently missing geometry with no error anywhere.
     $proposedRoadGeometry = null;
     $effectiveCategory = $proposedFields['category'] ?? $project['category'] ?? null;
-    if ($effectiveCategory === 'Roads and Bridges' && array_key_exists('road_geometry', $b)) {
-        $roadGeometryError = null;
-        $proposedRoadGeometry = projectValidateRoadGeometry($b['road_geometry'], $roadGeometryError);
-        if ($proposedRoadGeometry === null) {
-            respond(['error' => $roadGeometryError], 422);
+    if ($effectiveCategory === 'Roads and Bridges') {
+        $hasGeomStmt = $db->prepare("SELECT 1 FROM project_road_geometry WHERE project_id = ?");
+        $hasGeomStmt->execute([$id]);
+        $hasExistingGeometry = (bool) $hasGeomStmt->fetchColumn();
+
+        if (array_key_exists('road_geometry', $b) || !$hasExistingGeometry) {
+            $roadGeometryError = null;
+            $proposedRoadGeometry = projectValidateRoadGeometry($b['road_geometry'] ?? null, $roadGeometryError);
+            if ($proposedRoadGeometry === null) {
+                respond(['error' => $roadGeometryError], 422);
+            }
         }
     }
 
@@ -1058,13 +1074,25 @@ if ($method === 'PUT') {
     // Road Geometry: only touched when the caller actually sends it, and only
     // ever stored when the (possibly just-changed) category is Roads and
     // Bridges — every other category's edit flow never looks at this field.
+    //
+    // Geometry is only OPTIONAL here when the project is already 'Roads and
+    // Bridges' and already has a geometry row this call isn't touching —
+    // never when category is newly becoming 'Roads and Bridges' (no row
+    // exists yet). See the identical fix + comment on action=request_edit
+    // above for why array_key_exists('road_geometry', $b) alone isn't safe.
     $roadGeometry = null;
     $effectiveCategory = array_key_exists('category', $b) ? $b['category'] : ($before['category'] ?? null);
-    if ($effectiveCategory === 'Roads and Bridges' && array_key_exists('road_geometry', $b)) {
-        $roadGeometryError = null;
-        $roadGeometry = projectValidateRoadGeometry($b['road_geometry'], $roadGeometryError);
-        if ($roadGeometry === null) {
-            respond(['error' => $roadGeometryError], 422);
+    if ($effectiveCategory === 'Roads and Bridges') {
+        $hasGeomStmt = $db->prepare("SELECT 1 FROM project_road_geometry WHERE project_id = ?");
+        $hasGeomStmt->execute([$id]);
+        $hasExistingGeometry = (bool) $hasGeomStmt->fetchColumn();
+
+        if (array_key_exists('road_geometry', $b) || !$hasExistingGeometry) {
+            $roadGeometryError = null;
+            $roadGeometry = projectValidateRoadGeometry($b['road_geometry'] ?? null, $roadGeometryError);
+            if ($roadGeometry === null) {
+                respond(['error' => $roadGeometryError], 422);
+            }
         }
     }
 

@@ -617,6 +617,29 @@ if ($action === 'decide_edit') {
         respond(['error' => 'This request has already been decided.'], 422);
     }
 
+    // Defense in depth, checked BEFORE anything is written: api/projects.php's
+    // request_edit action already requires geometry before a category-to-
+    // 'Roads and Bridges' change can even be submitted for approval, so this
+    // should be unreachable in normal operation — but never let an approval
+    // commit a project into 'Roads and Bridges' with no geometry anywhere
+    // (proposed or pre-existing), e.g. from a request that predates that fix.
+    // Checking this before the status UPDATE below matters: if it ran after,
+    // a rejected approval would still leave the request permanently marked
+    // 'approved' with nothing actually having happened, and no way to retry.
+    if ($decision === 'approve' && $request['project_id']) {
+        $payload = json_decode((string) $request['proposed_changes'], true) ?: [];
+        $fields = $payload['fields'] ?? [];
+        $roadGeometry = $payload['road_geometry'] ?? null;
+        $effectiveCategory = $fields['category'] ?? null;
+        if ($effectiveCategory === 'Roads and Bridges' && $roadGeometry === null) {
+            $hasGeomStmt = $db->prepare("SELECT 1 FROM project_road_geometry WHERE project_id = ?");
+            $hasGeomStmt->execute([(int) $request['project_id']]);
+            if (!$hasGeomStmt->fetchColumn()) {
+                respond(['error' => 'Cannot approve: this request would set the project to Roads and Bridges with no road geometry on file. Ask the requester to resubmit with the road drawn on the map.'], 422);
+            }
+        }
+    }
+
     $pastTense = ['approve' => 'approved', 'reject' => 'rejected'];
 
     $db->prepare("
