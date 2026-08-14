@@ -39,9 +39,34 @@ if ($_SERVER['REQUEST_METHOD'] !== 'GET') {
     exit;
 }
 
-$providedKey = $_SERVER['HTTP_X_API_KEY'] ?? '';
-if (ROAD_MONITORING_API_KEY === '' || !hash_equals(ROAD_MONITORING_API_KEY, $providedKey)) {
+function rm_feed_log(string $line): void
+{
+    $file = __DIR__ . '/feed_access.log';
+    $ts = date('Y-m-d H:i:s');
+    @file_put_contents($file, "{$ts} {$line}\n", FILE_APPEND | LOCK_EX);
+}
+
+// Accept API key from multiple header variants or a GET param for easy testing.
+$providedKey = '';
+if (!empty($_SERVER['HTTP_X_API_KEY'])) {
+    $providedKey = $_SERVER['HTTP_X_API_KEY'];
+} elseif (!empty($_SERVER['HTTP_X_APIKEY'])) {
+    $providedKey = $_SERVER['HTTP_X_APIKEY'];
+} elseif (!empty($_SERVER['HTTP_AUTHORIZATION'])) {
+    // Accept "Bearer <key>" or raw key in Authorization header.
+    $auth = trim($_SERVER['HTTP_AUTHORIZATION']);
+    if (str_starts_with($auth, 'Bearer ')) {
+        $providedKey = substr($auth, 7);
+    } else {
+        $providedKey = $auth;
+    }
+} elseif (!empty($_GET['api_key'])) {
+    $providedKey = $_GET['api_key'];
+}
+
+if (ROAD_MONITORING_API_KEY === '' || !hash_equals((string) ROAD_MONITORING_API_KEY, (string) $providedKey)) {
     http_response_code(401);
+    rm_feed_log(sprintf('AUTH_FAIL ip=%s path=%s provided=%s', $_SERVER['REMOTE_ADDR'] ?? 'unknown', $_SERVER['REQUEST_URI'] ?? '-', substr($providedKey, 0, 12)));
     echo json_encode(['success' => false, 'message' => 'Invalid or missing API key']);
     exit;
 }
@@ -73,16 +98,16 @@ const ROAD_MONITORING_STATUS_BUCKETS = [
 
 $placeholders = implode(',', array_fill(0, count(ROAD_MONITORING_FEED_STATUSES), '?'));
 $stmt = $db->prepare("
-    SELECT p.id AS project_id, p.name AS project_name, p.status AS project_status,
-           p.progress, p.start_date, p.end_date, p.budget,
-           g.road_name, g.road_type, g.road_status,
-           g.start_latitude, g.start_longitude, g.end_latitude, g.end_longitude,
-           g.polyline_coordinates, g.estimated_length_meters,
-           g.barangays_covered, g.districts_covered
-    FROM project_road_geometry g
-    INNER JOIN projects p ON p.id = g.project_id
-    WHERE p.category = 'Roads and Bridges' AND p.status IN ($placeholders)
-    ORDER BY p.start_date ASC, g.updated_at DESC
+        SELECT p.id AS project_id, p.name AS project_name, p.status AS project_status,
+            p.progress, p.start_date, p.end_date, p.budget,
+            g.road_name, g.road_type, g.road_status,
+            g.start_latitude, g.start_longitude, g.end_latitude, g.end_longitude,
+            g.polyline_coordinates, g.estimated_length_meters,
+            g.barangays_covered, g.districts_covered
+        FROM projects p
+        LEFT JOIN project_road_geometry g ON p.id = g.project_id
+        WHERE LOWER(TRIM(COALESCE(p.category, ''))) = 'roads and bridges' AND p.status IN ($placeholders)
+        ORDER BY p.start_date ASC, g.updated_at DESC
 ");
 $stmt->execute(ROAD_MONITORING_FEED_STATUSES);
 $rows = $stmt->fetchAll();
@@ -98,7 +123,7 @@ if ($rows !== []) {
         SELECT epa.project_id, u.full_name
         FROM engineer_project_assignments epa
         INNER JOIN users u ON u.id = epa.engineer_id
-        WHERE epa.status = 'active' AND epa.project_id IN ($idPlaceholders)
+        WHERE epa.status IN ('active','assigned') AND epa.project_id IN ($idPlaceholders)
         ORDER BY u.full_name ASC
     ");
     $engineerStmt->execute($projectIds);
@@ -131,3 +156,4 @@ $results = array_map(function (array $row) use ($engineersByProject): array {
 }, $rows);
 
 echo json_encode(['success' => true, 'count' => count($results), 'roads' => $results]);
+rm_feed_log(sprintf('OK ip=%s path=%s returned=%d', $_SERVER['REMOTE_ADDR'] ?? 'unknown', $_SERVER['REQUEST_URI'] ?? '-', count($results)));
