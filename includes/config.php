@@ -132,6 +132,17 @@ define('FACILITIES_RESERVATION_API_KEY', envValue('FACILITIES_RESERVATION_API_KE
 // Shared-secret model: both sides must set the same key.
 define('ROAD_MONITORING_API_KEY', envValue('ROAD_MONITORING_API_KEY', ''));
 
+// RGMap / LGU Road Project sync — outbound integration for Roads and Bridges
+// projects created or updated in IPMS. The receiving side is expected to be an
+// endpoint like:
+// https://rgmap.infragovservices.com/lgu_staff/pages/api/ipms-road-projects-pull.php?key=...
+// where the same shared secret must be configured on both sides.
+define('RGMAP_API_ENABLED', filter_var(envValue('RGMAP_API_ENABLED', '0'), FILTER_VALIDATE_BOOLEAN));
+define('RGMAP_API_URL', envValue('RGMAP_API_URL', 'https://rgmap.infragovservices.com/lgu_staff/pages/api/ipms-road-projects-pull.php'));
+define('RGMAP_API_KEY', envValue('RGMAP_API_KEY', ''));
+define('RGMAP_API_TIMEOUT', (int) envValue('RGMAP_API_TIMEOUT', '20'));
+define('RGMAP_SSL_VERIFY', filter_var(envValue('RGMAP_SSL_VERIFY', '1'), FILTER_VALIDATE_BOOLEAN));
+
 // AI Chatbot — landing page + citizen dashboard widget (api/chatbot.php,
 // includes/ChatbotClient.php). Free key (no credit card): https://aistudio.google.com/apikey
 define('GEMINI_API_KEY', envValue('GEMINI_API_KEY', ''));

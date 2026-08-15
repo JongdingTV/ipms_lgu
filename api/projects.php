@@ -12,6 +12,7 @@ require_once __DIR__ . '/../includes/Validator.php';
 require_once __DIR__ . '/../includes/ProjectHealth.php';
 require_once __DIR__ . '/../includes/RoadGeometry.php';
 require_once __DIR__ . '/../includes/DocumentChecklist.php';
+require_once __DIR__ . '/../includes/RgmapClient.php';
 apiHeaders();
 
 $method = $_SERVER['REQUEST_METHOD'];
@@ -998,6 +999,13 @@ if ($method === 'POST') {
         }
     }
 
+    if (($b['category'] ?? '') === 'Roads and Bridges') {
+        $syncResult = RgmapClient::syncProject($db, $newId);
+        if (!$syncResult['success']) {
+            error_log('RGMap sync failed for project ' . $newId . ': ' . ($syncResult['message'] ?? 'unknown error'));
+        }
+    }
+
     respond(['id' => $newId, 'project_code' => $code], 201);
 }
 
@@ -1175,6 +1183,14 @@ if ($method === 'PUT') {
 
         foreach (array_unique(array_filter($statusRecipients)) as $recipientId) {
             notifyUser($recipientId, 'info', 'Project status updated', $before['name'] . ' is now "' . $b['status'] . '".');
+        }
+    }
+
+    $shouldSyncRgmap = ($effectiveCategory === 'Roads and Bridges') || (isset($b['category']) && $b['category'] === 'Roads and Bridges') || (array_key_exists('road_geometry', $b) && $before['category'] === 'Roads and Bridges');
+    if ($shouldSyncRgmap) {
+        $syncResult = RgmapClient::syncProject($db, $id);
+        if (!$syncResult['success']) {
+            error_log('RGMap sync failed for project ' . $id . ': ' . ($syncResult['message'] ?? 'unknown error'));
         }
     }
     if (array_key_exists('contractor_id', $b) && (string) ($b['contractor_id'] ?? '') !== (string) ($before['contractor_id'] ?? '')) {
