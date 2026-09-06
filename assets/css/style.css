@@ -23,7 +23,7 @@
   --card-bg:          rgba(255,255,255,0.92);
   --input-bg:         #ffffff;
   --card-shadow:      0 14px 34px rgba(15,23,42,0.07);
-  --border:           #d8e3f2;
+  --border:           #c3d0df;
   --sidebar-border:   rgba(255,255,255,0.55);
   --radius:           12px;
   --radius-sm:        10px;
@@ -38,6 +38,12 @@
   --display-font: 'Sora', 'Plus Jakarta Sans', system-ui, sans-serif;
   --mono: 'DM Mono', monospace;
 }
+.table-card { background: #ffffff; border-color: #b8c7d8; }
+.data-table th,
+.data-table td { border-bottom-color: #c3d0df; }
+:root[data-theme="dark"] .table-card { background: #1e293b; border-color: #475569; }
+:root[data-theme="dark"] .data-table th,
+:root[data-theme="dark"] .data-table td { border-bottom-color: #475569; }
 
 /* ── Dark mode (see assets/js/theme-toggle.js) ──
    Same glass recipe over a near-black wash on the photo (body::after

@@ -634,3 +634,66 @@
 }
 .mi-reco-add { display: flex; gap: 8px; }
 .mi-reco-add .form-input { flex: 1; }
+
+/* Solid work surfaces keep field inspections readable over the photo backdrop. */
+.proposal-documents,
+.mi-tabbar,
+.mi-bucket-col,
+.mi-card,
+.mi-step-body,
+.mi-step-nav,
+.mi-finding-item,
+.mi-reco-item,
+.mi-photo-thumb {
+  background: #ffffff;
+}
+.proposal-documents {
+  border: 1px solid #b8c7d8;
+  box-shadow: 0 5px 16px rgba(15, 23, 42, .05);
+}
+.proposal-document-row {
+  padding: 9px;
+  border: 1px solid #c3d0df;
+  border-radius: 8px;
+  background: #f8fafc;
+}
+.mi-tabbar {
+  border: 1px solid #b8c7d8;
+  border-radius: 8px;
+  padding: 3px;
+  box-shadow: 0 4px 12px rgba(15, 23, 42, .05);
+}
+.mi-tab { border-radius: 6px 6px 0 0; }
+.mi-bucket-col {
+  padding: 12px;
+  border: 1px solid #c3d0df;
+  border-radius: 8px;
+}
+.mi-step-body,
+.mi-card,
+.mi-finding-item,
+.mi-reco-item,
+.mi-photo-thumb {
+  border-color: #b8c7d8;
+}
+.mi-step-nav {
+  border: 1px solid #c3d0df;
+  border-radius: 8px;
+  box-shadow: 0 -3px 12px rgba(15, 23, 42, .08);
+}
+.mi-checklist-item { background: #ffffff; }
+
+:root[data-theme="dark"] .proposal-documents,
+:root[data-theme="dark"] .mi-tabbar,
+:root[data-theme="dark"] .mi-bucket-col,
+:root[data-theme="dark"] .mi-card,
+:root[data-theme="dark"] .mi-step-body,
+:root[data-theme="dark"] .mi-step-nav,
+:root[data-theme="dark"] .mi-finding-item,
+:root[data-theme="dark"] .mi-reco-item,
+:root[data-theme="dark"] .mi-photo-thumb,
+:root[data-theme="dark"] .mi-checklist-item {
+  background: #1e293b;
+  border-color: #475569;
+}
+:root[data-theme="dark"] .proposal-document-row { background: #0f172a; border-color: #475569; }
