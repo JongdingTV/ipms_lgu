@@ -15,6 +15,11 @@ let engineerState = {
   budgetWatch: [],
 };
 let engineerProposalFeedbackState = { page: 1, lastPage: 1, selected: new Set() };
+let engineerProposalMap = null;
+let engineerProposalPin = null;
+let engineerProposalProjectMarkers = [];
+let engineerProposalBoundaryLayers = [];
+const ENGINEER_MAP_ACTIVE_STATUSES = ['approved', 'bidding', 'awarded', 'assigned', 'active', 'delayed', 'on_hold', 'completion_inspection'];
 
 /* photos/delays/issues accumulate over time, so they're fetched paginated,
    per-page, rather than bulk-loaded like the small/bounded lists above.
@@ -52,6 +57,15 @@ function engineerDate(value) {
 
 function engineerStatus(value) {
   return String(value || '').replaceAll('_', ' ');
+}
+
+function engineerProposalStatusLabel(value) {
+  return ({
+    draft: 'Draft',
+    submitted: 'Pending Review',
+    under_review: 'Under Review',
+    returned: 'Returned',
+  })[value] || engineerStatus(value);
 }
 
 function engineerBadge(value, label = null) {
@@ -204,12 +218,12 @@ async function engineerLoadProposalFeedback(page = 1) {
   if (selectedCount) selectedCount.textContent = `${engineerProposalFeedbackState.selected.size} selected`;
   target.innerHTML = data.data?.length ? data.data.map(feedback => `
     <label class="proposal-feedback-row">
-      <input type="checkbox" name="feedback_ids[]" value="${feedback.id}" ${engineerProposalFeedbackState.selected.has(String(feedback.id)) ? 'checked' : ''} onchange="engineerToggleProposalFeedback(this)">
+      <input type="checkbox" name="feedback_ids[]" value="${feedback.id}" data-feedback-district="${engineerEscape(feedback.district || '')}" data-feedback-barangay="${engineerEscape(feedback.barangay || '')}" data-feedback-location="${engineerEscape(feedback.location || '')}" data-feedback-latitude="${engineerEscape(feedback.latitude || '')}" data-feedback-longitude="${engineerEscape(feedback.longitude || '')}" ${engineerProposalFeedbackState.selected.has(String(feedback.id)) ? 'checked' : ''} onchange="engineerToggleProposalFeedback(this)">
       <span class="proposal-feedback-copy"><strong>FB-${String(feedback.id).padStart(4, '0')}</strong><span>${engineerEscape(feedback.message)}</span></span>
       <small><span>${engineerEscape(feedback.barangay || feedback.district || 'Area not specified')}</span><span>${engineerEscape(feedback.category || 'feedback')}</span><span>${engineerStatus(feedback.priority)}</span></small>
       <button type="button" class="btn-link" onclick="engineerOpenFeedback(${feedback.id}); event.preventDefault();">View</button>
     </label>
-  `).join('') : '<p class="empty-state">No relevant open feedback found.</p>';
+  `).join('') : `<div class="proposal-feedback-empty"><strong>No open feedback in ${engineerEscape(data.district || 'your assigned district')}</strong><span>Reports from other districts and reports without a district are hidden from this Engineer account.</span></div>`;
   document.getElementById('proposalFeedbackPager').innerHTML = engineerProposalPagerHtml(data.page, data.last_page, data.total);
 }
 
@@ -217,6 +231,34 @@ function engineerToggleProposalFeedback(input) {
   if (input.checked) engineerProposalFeedbackState.selected.add(String(input.value));
   else engineerProposalFeedbackState.selected.delete(String(input.value));
   document.getElementById('proposalFeedbackSelected').textContent = `${engineerProposalFeedbackState.selected.size} selected`;
+  if (input.checked) engineerApplyFeedbackLocation(input);
+}
+
+function engineerApplyFeedbackLocation(input) {
+  const district = input.dataset.feedbackDistrict || '';
+  const barangay = input.dataset.feedbackBarangay || '';
+  const location = input.dataset.feedbackLocation || '';
+  const latitude = Number(input.dataset.feedbackLatitude);
+  const longitude = Number(input.dataset.feedbackLongitude);
+  const districtInput = document.querySelector('#projectProposalForm [name="district"]');
+  const barangayInput = document.querySelector('#projectProposalForm [name="barangay"]');
+  const locationInput = document.querySelector('#projectProposalForm [name="location"]');
+  if (districtInput && district) districtInput.value = district.replace(/^District\s*/i, '');
+  if (barangayInput && barangay) barangayInput.value = barangay;
+  if (locationInput && (location || barangay)) locationInput.value = location || `Barangay ${barangay}, District ${district.replace(/^District\s*/i, '')}, Quezon City`;
+  if (Number.isFinite(latitude) && Number.isFinite(longitude) && latitude !== 0 && longitude !== 0) {
+    const latInput = document.getElementById('engineerProposalLatitude');
+    const lngInput = document.getElementById('engineerProposalLongitude');
+    if (latInput) latInput.value = latitude.toFixed(7);
+    if (lngInput) lngInput.value = longitude.toFixed(7);
+    if (engineerProposalMap) {
+      const latlng = L.latLng(latitude, longitude);
+      engineerProposalMap.flyTo(latlng, Math.max(engineerProposalMap.getZoom(), 15), { duration: 0.6 });
+      engineerPlaceProposalPin(latlng, false);
+    }
+  } else if (engineerProposalMap && district && barangay) {
+    engineerFocusProposalBarangay(`District ${district.replace(/^District\s*/i, '')}`, barangay);
+  }
 }
 
 function engineerProposalPagerHtml(page, lastPage, total) {
@@ -241,6 +283,8 @@ async function engineerOpenFeedback(id) {
 
 function engineerProposalFormHtml(proposal = {}) {
   const categories = ['Roads and Bridges', 'Drainage and Flood Control', 'Water Supply', 'Public Buildings and Facilities', 'Street Lighting', 'Parks and Recreation', 'Other'];
+  const districts = ['1', '2', '3', '4', '5', '6'];
+  const proposalDistrict = String(proposal.district || '').replace(/^District\s*/i, '').trim();
   return `<div class="proposal-form-shell"><div class="proposal-form-intro"><div><span class="proposal-form-eyebrow">Engineer workspace</span><h2>${proposal.id ? 'Continue Project Proposal' : 'New Project Proposal'}</h2><p>Describe the infrastructure need and provide the community context for Head Office review.</p></div><span class="proposal-form-status">${proposal.id ? engineerStatus(proposal.status || 'draft') : 'Draft'}</span></div><form id="projectProposalForm" class="proposal-form" onsubmit="engineerSubmitProposal(event)">
     <input type="hidden" name="id" value="${proposal.id || ''}">
     <div class="proposal-form-grid">
@@ -248,9 +292,9 @@ function engineerProposalFormHtml(proposal = {}) {
       <label>Project Category *<select class="form-input" name="category" required><option value="">Select category</option>${categories.map(value => `<option ${proposal.category === value ? 'selected' : ''}>${value}</option>`).join('')}</select></label>
       <label>Infrastructure Type<input class="form-input" name="infrastructure_type" value="${engineerEscape(proposal.infrastructure_type)}" placeholder="e.g. road rehabilitation"></label>
       <label>Priority *<select class="form-input" name="priority" required>${['low','medium','high','urgent'].map(value => `<option value="${value}" ${proposal.priority === value ? 'selected' : ''}>${value[0].toUpperCase() + value.slice(1)}</option>`).join('')}</select></label>
-      <label>District *<input class="form-input" name="district" required value="${engineerEscape(proposal.district)}"></label>
+      <label>District *<select class="form-input" name="district" required><option value="">Select district</option>${districts.map(value => `<option value="${value}" ${proposalDistrict === value ? 'selected' : ''}>${value}</option>`).join('')}</select></label>
       <label>Barangay *<input class="form-input" name="barangay" required value="${engineerEscape(proposal.barangay)}"></label>
-      <label class="proposal-form-wide">Location *<input class="form-input" name="location" required value="${engineerEscape(proposal.location)}" placeholder="Describe the project location"></label>
+      <div class="proposal-form-wide proposal-location-picker"><div class="proposal-location-heading"><strong>Project Location</strong><span>Click the map to place the project pin, then drag it to adjust.</span></div><div id="engineerProposalMap" class="proposal-location-map"></div><label>Location description *<input class="form-input" name="location" required value="${engineerEscape(proposal.location)}" placeholder="Describe the project location"></label><input type="hidden" name="latitude" id="engineerProposalLatitude" value="${engineerEscape(proposal.latitude)}"><input type="hidden" name="longitude" id="engineerProposalLongitude" value="${engineerEscape(proposal.longitude)}"></div>
       <label class="proposal-form-wide">Description *<textarea class="form-input" name="description" rows="3" required>${engineerEscape(proposal.description)}</textarea></label>
       <label class="proposal-form-wide">Project Need / Justification *<textarea class="form-input" name="justification" rows="3" required>${engineerEscape(proposal.justification)}</textarea></label>
       <label class="proposal-form-wide">Observed Problem<textarea class="form-input" name="observed_problem" rows="3">${engineerEscape(proposal.observed_problem)}</textarea></label>
@@ -290,15 +334,149 @@ async function engineerRenderProposalPage(editId = '', page = 1) {
   const data = await engineerProposalRequest(`${ENGINEER_PROPOSALS_API}${qs}`);
   const rows = editId ? [data.data] : (data.data || []);
     const proposalRows = rows.map(engineerProposalRowHtml).join('');
-    document.getElementById('proposalWorkspace').innerHTML = `<div class="engineer-panel"><div class="engineer-panel-head"><h2>My Project Proposals</h2>${proposalRows ? '<div class="proposal-filter-row"><input id="proposalListSearch" class="form-input" placeholder="Search proposals" oninput="engineerFilterProposalRows()"><select id="proposalListStatus" class="form-input" onchange="engineerFilterProposalRows()"><option value="">All statuses</option><option value="draft">Draft</option><option value="submitted">Submitted</option><option value="under_review">Under Review</option></select></div>' : ''}</div><div id="proposalRows" class="proposal-list">${proposalRows || '<div class="proposal-empty-state"><div class="proposal-empty-icon">+</div><h3>No Project Proposal Yet</h3><p>You have not created a proposal. Start one when you identify an infrastructure need in your assigned area.</p><button type="button" class="btn-primary" onclick="engineerRenderProposalForm()">Create Project Proposal</button></div>'}</div>${proposalRows && data.total > 8 ? `<div class="proposal-pagination"><span class="proposal-pager-count">${data.total} proposal${data.total === 1 ? '' : 's'}</span><button type="button" class="list-pager-btn" ${data.page <= 1 ? 'disabled' : ''} onclick="engineerRenderProposalPage('', ${data.page - 1})">Previous</button><span class="proposal-pager-page">Page ${data.page} of ${data.last_page}</span><button type="button" class="list-pager-btn" ${data.page >= data.last_page ? 'disabled' : ''} onclick="engineerRenderProposalPage('', ${data.page + 1})">Next</button></div>` : ''}</div>`;
+    document.getElementById('proposalWorkspace').innerHTML = `<div class="engineer-panel"><div class="engineer-panel-head"><h2>My Project Proposals</h2>${proposalRows ? '<div class="proposal-filter-row"><input id="proposalListSearch" class="form-input" placeholder="Search proposals" oninput="engineerFilterProposalRows()"><select id="proposalListStatus" class="form-input" onchange="engineerFilterProposalRows()"><option value="">All statuses</option><option value="draft">Draft</option><option value="submitted">Pending Review</option><option value="under_review">Under Review</option><option value="returned">Returned</option></select></div>' : ''}</div><div id="proposalRows" class="proposal-list">${proposalRows || '<div class="proposal-empty-state"><div class="proposal-empty-icon">+</div><h3>No Project Proposal Yet</h3><p>You have not created a proposal. Start one when you identify an infrastructure need in your assigned area.</p><button type="button" class="btn-primary" onclick="engineerRenderProposalForm()">Create Project Proposal</button></div>'}</div>${proposalRows && data.total > 8 ? `<div class="proposal-pagination"><span class="proposal-pager-count">${data.total} proposal${data.total === 1 ? '' : 's'}</span><button type="button" class="list-pager-btn" ${data.page <= 1 ? 'disabled' : ''} onclick="engineerRenderProposalPage('', ${data.page - 1})">Previous</button><span class="proposal-pager-page">Page ${data.page} of ${data.last_page}</span><button type="button" class="list-pager-btn" ${data.page >= data.last_page ? 'disabled' : ''} onclick="engineerRenderProposalPage('', ${data.page + 1})">Next</button></div>` : ''}</div>`;
+  const proposalStatusSelect = document.getElementById('proposalListStatus');
+  if (proposalStatusSelect && !proposalStatusSelect.querySelector('option[value="returned"]')) {
+    proposalStatusSelect.insertAdjacentHTML('beforeend', '<option value="returned">Returned</option>');
+  }
   if (editId) { engineerRenderProposalForm(data.data); return; }
 }
 
 function engineerProposalRowHtml(row) { return `<article class="proposal-row" data-search="${engineerEscape(`${row.proposal_code} ${row.title} ${row.barangay}`)}" data-status="${row.status}"><div><span class="engineer-project-code">${engineerEscape(row.proposal_code)}</span><h3>${engineerEscape(row.title)}</h3><p>${engineerEscape(row.barangay)}, ${engineerEscape(row.district)} · Based on ${row.feedback_count || 0} Citizen Reports</p></div><div>${engineerBadge(row.status)}<small>${engineerDate(row.submitted_at || row.created_at)}</small><button class="btn-secondary btn-compact" type="button" onclick="engineerViewProposal(${row.id})">View</button>${row.status === 'draft' ? `<button class="btn-secondary btn-compact" type="button" onclick="engineerRenderProposalFormById(${row.id})">Continue</button>` : ''}</div></article>`; }
+// A returned proposal is still owned by its Engineer and can be revised and
+// resubmitted; the API enforces that ownership/status rule server-side.
+function engineerProposalRowHtml(row) { return `<article class="proposal-row" data-search="${engineerEscape(`${row.proposal_code} ${row.title} ${row.barangay}`)}" data-status="${row.status}"><div><span class="engineer-project-code">${engineerEscape(row.proposal_code)}</span><h3>${engineerEscape(row.title)}</h3><p>${engineerEscape(row.barangay)}, ${engineerEscape(row.district)} &middot; Based on ${row.feedback_count || 0} Citizen Reports</p></div><div>${engineerBadge(row.status, engineerProposalStatusLabel(row.status))}<small>${engineerDate(row.submitted_at || row.created_at)}</small><button class="btn-secondary btn-compact" type="button" onclick="engineerViewProposal(${row.id})">View</button>${['draft', 'returned'].includes(row.status) ? `<button class="btn-secondary btn-compact" type="button" onclick="engineerRenderProposalFormById(${row.id})">${row.status === 'returned' ? 'Revise' : 'Continue'}</button>` : ''}</div></article>`; }
+async function engineerSetupProposalMap(proposal = {}) {
+  if (engineerProposalMap) { engineerProposalMap.remove(); engineerProposalMap = null; engineerProposalPin = null; engineerProposalProjectMarkers = []; engineerProposalBoundaryLayers = []; }
+  const container = document.getElementById('engineerProposalMap');
+  if (!container || typeof L === 'undefined' || !window.ProjectMap) return;
+  try {
+    const response = await fetch(window.QC_GEOJSON_URL);
+    const geojson = await response.json();
+    if (!document.getElementById('engineerProposalMap')) return;
+    engineerProposalMap = L.map(container, { minZoom: 11, maxZoom: 17 });
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { attribution: '&copy; OpenStreetMap contributors' }).addTo(engineerProposalMap);
+    const districts = window.QC_DISTRICTS || {};
+    const index = {};
+    Object.keys(districts).forEach(district => (districts[district] || []).forEach(entry => { index[entry.geo || entry.name] = district; }));
+    const layers = L.geoJSON(geojson, { style: feature => window.ProjectMap.districtStyle(feature, { light: true, index }), onEachFeature: (feature, layer) => layer.on('click', event => {
+      L.DomEvent.stopPropagation(event.originalEvent);
+      const district = index[feature.properties.adm4_en];
+      const districtSelect = document.querySelector('#projectProposalForm [name="district"]');
+      const area = (district && districts[district] || []).find(entry => (entry.geo || entry.name) === feature.properties.adm4_en);
+      if (district && districtSelect) districtSelect.value = district.replace(/^District\s*/i, '');
+      if (area) document.querySelector('#projectProposalForm [name="barangay"]').value = area.name;
+      engineerPlaceProposalPin(event.latlng, true);
+    }) }).addTo(engineerProposalMap);
+    engineerProposalBoundaryLayers = [];
+    layers.eachLayer(layer => engineerProposalBoundaryLayers.push(layer));
+    engineerProposalMap.setMaxBounds(layers.getBounds().pad(0.3));
+    const districtSelect = document.querySelector('#projectProposalForm [name="district"]');
+    districtSelect?.addEventListener('change', () => engineerFocusProposalDistrict(`District ${districtSelect.value}`));
+    const latitude = Number(document.getElementById('engineerProposalLatitude')?.value || proposal.latitude);
+    const longitude = Number(document.getElementById('engineerProposalLongitude')?.value || proposal.longitude);
+    if (Number.isFinite(latitude) && Number.isFinite(longitude) && latitude !== 0 && longitude !== 0) {
+      engineerProposalMap.setView([latitude, longitude], 15, { animate: false });
+      engineerPlaceProposalPin(L.latLng(latitude, longitude), false);
+    } else {
+      engineerProposalMap.fitBounds(layers.getBounds());
+      const district = document.querySelector('#projectProposalForm [name="district"]')?.value;
+      const barangay = document.querySelector('#projectProposalForm [name="barangay"]')?.value;
+      if (district && barangay) engineerFocusProposalBarangay(`District ${district}`, barangay);
+    }
+    engineerProposalMap.on('click', event => {
+      const layer = engineerProposalBoundaryLayers.find(candidate => candidate.getBounds().contains(event.latlng));
+      if (layer?.feature?.properties?.adm4_en) {
+        const district = index[layer.feature.properties.adm4_en];
+        const area = (districts[district] || []).find(entry => (entry.geo || entry.name) === layer.feature.properties.adm4_en);
+        const districtSelect = document.querySelector('#projectProposalForm [name="district"]');
+        const barangayInput = document.querySelector('#projectProposalForm [name="barangay"]');
+        if (districtSelect) districtSelect.value = district.replace(/^District\s*/i, '');
+        if (barangayInput && area) barangayInput.value = area.name;
+      }
+      engineerPlaceProposalPin(event.latlng);
+    });
+    engineerLoadProposalProjectMarkers();
+    setTimeout(() => engineerProposalMap?.invalidateSize(), 100);
+  } catch (error) {
+    container.insertAdjacentHTML('afterend', '<p class="proposal-map-note">Map unavailable. You can still provide a written location.</p>');
+  }
+}
+
+function engineerFocusProposalDistrict(district) {
+  if (!engineerProposalMap || !window.QC_DISTRICTS?.[district]) return;
+  const names = new Set(window.QC_DISTRICTS[district].map(entry => entry.geo || entry.name));
+  const districtLayers = [];
+  engineerProposalMap.eachLayer(layer => {
+    if (!layer.feature?.properties?.adm4_en) return;
+    const active = names.has(layer.feature.properties.adm4_en);
+    layer.setStyle({ fillOpacity: active ? 0.38 : 0.08, weight: active ? 2 : 1 });
+    if (active) districtLayers.push(layer);
+  });
+  if (districtLayers.length) engineerProposalMap.fitBounds(L.featureGroup(districtLayers).getBounds().pad(0.12), { maxZoom: 15 });
+}
+
+function engineerFocusProposalBarangay(district, barangay) {
+  if (!engineerProposalMap || !district || !barangay) return;
+  const entry = (window.QC_DISTRICTS?.[district] || []).find(item => item.name === barangay);
+  if (!entry) return;
+  const geoName = entry.geo || entry.name;
+  const layer = engineerProposalBoundaryLayers.find(candidate => candidate.feature?.properties?.adm4_en === geoName);
+  if (!layer) return;
+  const center = layer.getBounds().getCenter();
+  engineerProposalMap.flyTo(center, Math.max(engineerProposalMap.getZoom(), 15), { duration: 0.6 });
+  engineerPlaceProposalPin(center, false);
+}
+
+async function engineerLoadProposalProjectMarkers() {
+  if (!engineerProposalMap) return;
+  try {
+    const result = await engineerProposalRequest(`${ENGINEER_PROPOSALS_API}?resource=ongoing_projects`);
+    if (!engineerProposalMap) return;
+    (result.data || []).forEach(project => {
+      const latitude = Number(project.latitude);
+      const longitude = Number(project.longitude);
+      if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) return;
+      const marker = L.marker([latitude, longitude], { icon: window.ProjectMap.pinIcon(project.status) }).addTo(engineerProposalMap);
+      marker.bindPopup(window.ProjectMap.popupHtml({ ...project, status_label: engineerStatus(project.status), budget_label: engineerShortMoney(project.budget) }, window.BASE_PATH || ''));
+      marker.on('click', event => L.DomEvent.stopPropagation(event.originalEvent));
+      window.ProjectMap.bindPin(marker, project, engineerOpenProject);
+      engineerProposalProjectMarkers.push(marker);
+    });
+  } catch {
+    // Existing project markers are a helpful overlay, not a prerequisite for proposal submission.
+  }
+}
+
+function engineerPlaceProposalPin(latlng, preserveView = true) {
+  if (!engineerProposalMap) return;
+  const currentCenter = preserveView ? engineerProposalMap.getCenter() : null;
+  const currentZoom = preserveView ? engineerProposalMap.getZoom() : null;
+  if (!engineerProposalPin) {
+    engineerProposalPin = L.marker(latlng, { draggable: true, title: 'Exact project location', icon: window.ProjectMap.pinIcon(null, { neutral: true }) }).addTo(engineerProposalMap);
+    engineerProposalPin.on('dragend', () => engineerSetProposalCoordinates(engineerProposalPin.getLatLng()));
+  } else engineerProposalPin.setLatLng(latlng);
+  engineerSetProposalCoordinates(latlng);
+  if (preserveView && currentCenter) requestAnimationFrame(() => engineerProposalMap?.setView(currentCenter, currentZoom, { animate: false }));
+}
+
+function engineerSetProposalCoordinates(latlng) {
+  const latitude = document.getElementById('engineerProposalLatitude');
+  const longitude = document.getElementById('engineerProposalLongitude');
+  if (latitude) latitude.value = latlng.lat.toFixed(7);
+  if (longitude) longitude.value = latlng.lng.toFixed(7);
+  const location = document.querySelector('#projectProposalForm [name="location"]');
+  const district = document.querySelector('#projectProposalForm [name="district"]')?.value;
+  const barangay = document.querySelector('#projectProposalForm [name="barangay"]')?.value.trim();
+  if (location) location.value = [barangay ? `Barangay ${barangay}` : '', district ? `District ${district}` : '', 'Quezon City', `(${latlng.lat.toFixed(7)}, ${latlng.lng.toFixed(7)})`].filter(Boolean).join(', ');
+}
+
 function engineerFilterProposalRows() { const search = (document.getElementById('proposalListSearch')?.value || '').toLowerCase(); const status = document.getElementById('proposalListStatus')?.value || ''; document.querySelectorAll('.proposal-row').forEach(row => { row.style.display = (!search || row.dataset.search.toLowerCase().includes(search)) && (!status || row.dataset.status === status) ? '' : 'none'; }); }
 async function engineerRenderProposalFormById(id) { const data = await engineerProposalRequest(`${ENGINEER_PROPOSALS_API}?id=${id}`); engineerRenderProposalForm(data.data); }
-async function engineerRenderProposalForm(proposal = {}) { const workspace = document.getElementById('proposalWorkspace'); engineerProposalFeedbackState.selected = new Set((proposal.feedback_basis || []).map(row => String(row.id))); workspace.innerHTML = engineerProposalFormHtml(proposal); await engineerLoadProposalFeedback(); engineerToggleProposalFeedback({ checked: false, value: '' }); }
+async function engineerRenderProposalForm(proposal = {}) { const workspace = document.getElementById('proposalWorkspace'); engineerProposalFeedbackState.selected = new Set((proposal.feedback_basis || []).map(row => String(row.id))); workspace.innerHTML = engineerProposalFormHtml(proposal); engineerSetupProposalMap(proposal); await engineerLoadProposalFeedback(); engineerToggleProposalFeedback({ checked: false, value: '' }); }
 async function engineerViewProposal(id) { const data = await engineerProposalRequest(`${ENGINEER_PROPOSALS_API}?id=${id}`); const proposal = data.data; engineerOpenModal(`${engineerEscape(proposal.proposal_code)} Proposal`, `<div class="engineer-detail-grid"><div class="engineer-detail-box"><span>Status</span><strong>${engineerStatus(proposal.status)}</strong></div><div class="engineer-detail-box"><span>Category</span><strong>${engineerEscape(proposal.category)}</strong></div><div class="engineer-detail-box"><span>Location</span><strong>${engineerEscape(proposal.location)}</strong></div><div class="engineer-detail-box"><span>Priority</span><strong>${engineerEscape(proposal.priority)}</strong></div></div><h4>Description</h4><p class="proposal-detail-copy">${engineerEscape(proposal.description)}</p><h4>Need / Justification</h4><p class="proposal-detail-copy">${engineerEscape(proposal.justification)}</p><h4>Feedback Basis (${proposal.feedback_basis.length})</h4>${proposal.feedback_basis.map(row => `<p class="proposal-detail-copy"><strong>FB-${String(row.id).padStart(4, '0')}</strong> ${engineerEscape(row.message)}</p>`).join('') || '<p class="empty-state">No feedback linked.</p>'}`); }
+
+async function engineerViewProposal(id) { const data = await engineerProposalRequest(`${ENGINEER_PROPOSALS_API}?id=${id}`); const proposal = data.data; engineerOpenModal(`${engineerEscape(proposal.proposal_code)} Proposal`, `<div class="engineer-detail-grid"><div class="engineer-detail-box"><span>Status</span><strong>${engineerStatus(proposal.status)}</strong></div><div class="engineer-detail-box"><span>Category</span><strong>${engineerEscape(proposal.category)}</strong></div><div class="engineer-detail-box"><span>Location</span><strong>${engineerEscape(proposal.location)}</strong></div><div class="engineer-detail-box"><span>Priority</span><strong>${engineerEscape(proposal.priority)}</strong></div></div>${proposal.return_notes ? `<h4>Return Notes from Head Office</h4><p class="proposal-detail-copy">${engineerEscape(proposal.return_notes)}</p>` : ''}<h4>Description</h4><p class="proposal-detail-copy">${engineerEscape(proposal.description)}</p><h4>Need / Justification</h4><p class="proposal-detail-copy">${engineerEscape(proposal.justification)}</p><h4>Feedback Basis (${proposal.feedback_basis.length})</h4>${proposal.feedback_basis.map(row => `<p class="proposal-detail-copy"><strong>FB-${String(row.id).padStart(4, '0')}</strong> ${engineerEscape(row.message)}</p>`).join('') || '<p class="empty-state">No feedback linked.</p>'}`); }
 
 function engineerCloseModal() {
   document.getElementById('modalOverlay')?.classList.remove('open');

@@ -249,6 +249,26 @@ function taskCenterForAdmin(PDO $db, int $userId): array
 {
     $tasks = [];
 
+    // Project Proposals are an incoming Head Office review queue, not
+    // registered projects. Keep the task linked to the proposal module so a
+    // click cannot bypass the proposal-first workflow.
+    projectProposalEnsureSchema($db);
+    $stmt = $db->query("SELECT id, proposal_code, title, priority, submitted_at, created_at FROM project_proposals WHERE status = 'submitted' ORDER BY submitted_at ASC, id ASC");
+    foreach ($stmt->fetchAll() as $proposal) {
+        $tasks[] = [
+            'key' => 'project_proposal_review:' . $proposal['id'],
+            'title' => 'Project Proposal Awaiting Review',
+            'description' => $proposal['proposal_code'] . ' — ' . $proposal['title'],
+            'project_id' => null, 'project_name' => $proposal['proposal_code'] . ' — ' . $proposal['title'],
+            'module' => 'Project Proposal',
+            'priority' => in_array($proposal['priority'], ['urgent', 'high'], true)
+                ? taskCenterPriorityBucket(null, (string) ($proposal['submitted_at'] ?? $proposal['created_at']), 1)
+                : taskCenterPriorityBucket(null, (string) ($proposal['submitted_at'] ?? $proposal['created_at']), 5),
+            'due_date' => null, 'created_date' => $proposal['submitted_at'] ?? $proposal['created_at'], 'status' => 'pending',
+            'link_page' => 'project-proposals', 'link_params' => ['proposal_id' => (int) $proposal['id'], 'status' => 'submitted'],
+        ];
+    }
+
     $stmt = $db->query("SELECT id, project_code, name, status, created_at FROM projects WHERE status IN ('draft', 'returned') ORDER BY updated_at DESC");
     foreach ($stmt->fetchAll() as $p) {
         $isReturned = $p['status'] === 'returned';

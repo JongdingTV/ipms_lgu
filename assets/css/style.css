@@ -661,6 +661,79 @@ input.search-pill {
 .pager-btn:disabled { opacity: .4; cursor: not-allowed; }
 .pager-info { font-size: .8rem; color: var(--text-muted); font-variant-numeric: tabular-nums; }
 
+/* ── Project Proposal intake (Head Office) ─────────────────────── */
+.proposal-page-header { align-items:flex-start; }
+.proposal-page-note { max-width:680px; margin-top:4px; font-size:.82rem; color:var(--text-muted); }
+.proposal-kpi-grid { margin-bottom:18px; }
+.proposal-kpi-card { min-height:92px; }
+.proposal-management-card { background:var(--card-bg); border:1px solid var(--border); border-radius:var(--radius); padding:18px; box-shadow:var(--shadow-sm); }
+.proposal-management-head { display:flex; align-items:flex-start; justify-content:space-between; gap:16px; margin-bottom:14px; }
+.proposal-management-head h3 { margin:0; font-size:1rem; color:var(--text-primary); }
+.proposal-management-head p { margin:4px 0 0; font-size:.8rem; color:var(--text-muted); }
+.proposal-sort-label { display:flex; align-items:center; gap:7px; flex-shrink:0; font-size:.76rem; font-weight:700; color:var(--text-muted); }
+.proposal-filter-bar { margin-bottom:16px; padding:12px; border:1px solid var(--border); border-radius:10px; background:var(--bg-body); }
+.proposal-search { min-width:min(100%, 260px); }
+.proposal-date-field { display:flex; align-items:center; gap:5px; font-size:.73rem; font-weight:700; color:var(--text-muted); }
+.proposal-date-field .filter-input { width:135px; }
+.proposal-table-wrap { overflow-x:auto; }
+.proposal-data-table td small { color:var(--text-muted); font-size:.75rem; }
+.proposal-pagination-bar { display:flex; align-items:center; justify-content:space-between; gap:12px; min-height:44px; }
+.proposal-pagination-bar .pager { padding:0; }
+.proposal-count { font-size:.78rem; color:var(--text-muted); font-variant-numeric:tabular-nums; }
+.proposal-empty-state { padding:36px 18px; }
+.proposal-mobile-list { display:none; }
+.proposal-mobile-card { padding:14px; border-bottom:1px solid var(--border); display:flex; flex-direction:column; gap:10px; }
+.proposal-mobile-card:last-child { border-bottom:0; }
+.proposal-mobile-card h3 { margin:4px 0; font-size:.94rem; color:var(--text-primary); }
+.proposal-mobile-card p { margin:0; color:var(--text-muted); font-size:.78rem; }
+.proposal-mobile-meta, .proposal-mobile-actions { display:flex; align-items:center; justify-content:space-between; gap:8px; flex-wrap:wrap; color:var(--text-muted); font-size:.75rem; }
+.proposal-detail { display:flex; flex-direction:column; gap:13px; }
+.proposal-detail h4 { margin:7px 0 -3px; padding-top:13px; border-top:1px solid var(--border); color:var(--text-primary); font-size:.83rem; text-transform:uppercase; letter-spacing:.045em; }
+.proposal-detail-top { display:flex; align-items:flex-start; justify-content:space-between; gap:12px; padding:10px 12px; border-radius:9px; background:var(--bg-body); }
+.proposal-detail-top > div { display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
+.proposal-detail-top p { margin:0; max-width:290px; font-size:.76rem; color:var(--text-muted); text-align:right; }
+.proposal-detail-priority { font-size:.7rem; color:var(--text-muted); text-transform:capitalize; font-weight:700; }
+.proposal-detail-grid { display:grid; grid-template-columns:repeat(2, minmax(0, 1fr)); gap:10px 16px; }
+.proposal-detail-copy { padding:11px 12px; border:1px solid var(--border); border-radius:8px; background:var(--bg-body); }
+.proposal-detail-copy p:last-child { margin:0; white-space:pre-wrap; color:var(--text-primary); font-size:.84rem; font-weight:400; }
+.proposal-section-note { margin:0; font-size:.78rem; color:var(--text-muted); }
+.proposal-feedback-detail-list { border:1px solid var(--border); border-radius:8px; overflow:hidden; }
+.proposal-feedback-detail-row { display:flex; align-items:center; justify-content:space-between; gap:12px; padding:11px 12px; border-bottom:1px solid var(--border); }
+.proposal-feedback-detail-row:last-child { border-bottom:0; }
+.proposal-feedback-detail-row strong { font-family:var(--mono); font-size:.76rem; color:var(--accent); }
+.proposal-feedback-detail-row p { margin:3px 0; color:var(--text-primary); font-size:.82rem; }
+.proposal-feedback-detail-row small { color:var(--text-muted); }
+.proposal-gis-card { border:1px solid var(--border); border-radius:8px; padding:10px; }
+.proposal-location-map { height:260px; margin:9px 0; border:1px solid var(--border); border-radius:7px; overflow:hidden; }
+.proposal-gis-meta { padding:3px 2px; }
+.proposal-document-list { margin:0; padding:10px 12px 10px 30px; border:1px solid var(--border); border-radius:8px; color:var(--text-primary); font-size:.82rem; }
+.proposal-return-note { padding:11px 12px; border:1px solid #fdba74; border-radius:8px; background:#fff7ed; color:#9a3412; }
+.proposal-return-note p:last-child { margin:0; white-space:pre-wrap; font-size:.84rem; }
+.proposal-review-actions { display:flex; justify-content:flex-end; gap:8px; flex-wrap:wrap; padding-top:4px; }
+:root[data-theme="dark"] .proposal-filter-bar, :root[data-theme="dark"] .proposal-detail-top, :root[data-theme="dark"] .proposal-detail-copy { background:rgba(15,23,42,.35); }
+:root[data-theme="dark"] .proposal-return-note { background:rgba(154,52,18,.2); border-color:#9a3412; color:#fdba74; }
+
+@media (max-width: 900px) {
+  .proposal-management-head { flex-direction:column; }
+  .proposal-sort-label { width:100%; justify-content:space-between; }
+  .proposal-sort-label select { flex:1; }
+}
+@media (max-width: 700px) {
+  .proposal-management-card { padding:13px; }
+  .proposal-filter-bar { display:grid; grid-template-columns:1fr 1fr; }
+  .proposal-filter-bar > * { min-width:0; width:100%; }
+  .proposal-search, .proposal-filter-bar > button { grid-column:span 2; }
+  .proposal-date-field { width:auto; }
+  .proposal-date-field .filter-input { width:100%; }
+  .proposal-data-table { display:none; }
+  .proposal-mobile-list { display:block; }
+  .proposal-pagination-bar { align-items:flex-start; flex-direction:column; }
+  .proposal-detail-grid { grid-template-columns:1fr; }
+  .proposal-detail-top { flex-direction:column; }
+  .proposal-detail-top p { text-align:left; }
+  .proposal-feedback-detail-row { align-items:flex-start; flex-direction:column; }
+}
+
 /* ── Gmail-style list toolbar + pager (ported from the citizen portal) ──
    .list-toolbar rows hold a pill search box and the .list-pager pill that
    assets/js/pagination.js renders inside each .pagination-wrap. */

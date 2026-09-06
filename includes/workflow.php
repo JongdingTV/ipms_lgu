@@ -189,10 +189,15 @@ function projectProposalEnsureSchema(PDO $db): void
                 location VARCHAR(255) NOT NULL,
                 district VARCHAR(100) NOT NULL,
                 barangay VARCHAR(100) NOT NULL,
+                latitude DECIMAL(10,7) NULL,
+                longitude DECIMAL(10,7) NULL,
                 priority ENUM('low','medium','high','urgent') NOT NULL DEFAULT 'medium',
                 engineer_id INT NOT NULL,
-                status ENUM('draft','submitted','under_review') NOT NULL DEFAULT 'draft',
+                status ENUM('draft','submitted','under_review','returned') NOT NULL DEFAULT 'draft',
                 submitted_at DATETIME NULL,
+                reviewed_by INT NULL,
+                reviewed_at DATETIME NULL,
+                return_notes TEXT NULL,
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
                 INDEX idx_project_proposals_engineer (engineer_id),
@@ -209,6 +214,18 @@ function projectProposalEnsureSchema(PDO $db): void
                 CONSTRAINT fk_proposal_feedback_feedback FOREIGN KEY (feedback_id) REFERENCES feedback(id) ON DELETE CASCADE
             ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
         ");
+
+        // Phase 2 keeps proposals separate from official projects, but gives
+        // Head Office enough state to organize an incoming proposal and return
+        // it for correction.  These are deliberately proposal-only fields:
+        // no Mayor, HOPE, budget, or project-registration state is added here.
+        $db->exec("ALTER TABLE project_proposals MODIFY status ENUM('draft','submitted','under_review','returned') NOT NULL DEFAULT 'draft'");
+        $db->exec("ALTER TABLE project_proposals ADD COLUMN IF NOT EXISTS reviewed_by INT NULL AFTER submitted_at");
+        $db->exec("ALTER TABLE project_proposals ADD COLUMN IF NOT EXISTS reviewed_at DATETIME NULL AFTER reviewed_by");
+        $db->exec("ALTER TABLE project_proposals ADD COLUMN IF NOT EXISTS return_notes TEXT NULL AFTER reviewed_at");
+        $db->exec("ALTER TABLE project_proposals ADD COLUMN IF NOT EXISTS latitude DECIMAL(10,7) NULL AFTER barangay");
+        $db->exec("ALTER TABLE project_proposals ADD COLUMN IF NOT EXISTS longitude DECIMAL(10,7) NULL AFTER latitude");
+        $db->exec("ALTER TABLE project_proposals ADD INDEX IF NOT EXISTS idx_project_proposals_submitted_at (submitted_at)");
     } catch (Throwable $e) {
     }
 }

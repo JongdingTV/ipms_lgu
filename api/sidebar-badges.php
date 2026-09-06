@@ -167,6 +167,13 @@ function computeAdminBadges(PDO $db, int $userId, array $lv): array
 {
     $b = [];
 
+    // Incoming Engineer proposals have their own queue and remain separate
+    // from the legacy official-project registration records.
+    projectProposalEnsureSchema($db);
+    $stmt = $db->prepare("SELECT COUNT(*) FROM project_proposals WHERE status = 'submitted' AND submitted_at > ?");
+    $stmt->execute([lv($lv, 'project-proposals')]);
+    $b['project-proposals'] = ['type' => 'red', 'count' => (int) $stmt->fetchColumn()];
+
     $stmt = $db->prepare("SELECT COUNT(*) FROM projects WHERE status IN ('draft','returned') AND GREATEST(created_at, updated_at) > ?");
     $stmt->execute([lv($lv, 'project-registration')]);
     $b['project-registration'] = ['type' => 'red', 'count' => (int) $stmt->fetchColumn()];
@@ -241,7 +248,7 @@ function computeAdminBadges(PDO $db, int $userId, array $lv): array
     $b['my-tasks'] = ['type' => 'red', 'count' => $taskCount];
 
     $b['dashboard'] = ['type' => 'red', 'count' =>
-        $b['project-registration']['count'] + $b['project-approval']['count'] + $b['contractor-assignment']['count']
+        $b['project-proposals']['count'] + $b['project-registration']['count'] + $b['project-approval']['count'] + $b['contractor-assignment']['count']
         + $b['workflow-management']['count'] + $b['budget-monitoring']['count'] + $b['milestone-overview']['count']
         + $b['citizen-feedback']['count'] + $b['citizen-ratings']['count'] + $b['staff-requests']['count']];
 

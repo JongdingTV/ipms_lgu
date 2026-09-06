@@ -12,14 +12,20 @@ CREATE TABLE IF NOT EXISTS project_proposals (
     location VARCHAR(255) NOT NULL,
     district VARCHAR(100) NOT NULL,
     barangay VARCHAR(100) NOT NULL,
+    latitude DECIMAL(10,7) NULL,
+    longitude DECIMAL(10,7) NULL,
     priority ENUM('low','medium','high','urgent') NOT NULL DEFAULT 'medium',
     engineer_id INT NOT NULL,
-    status ENUM('draft','submitted','under_review') NOT NULL DEFAULT 'draft',
+    status ENUM('draft','submitted','under_review','returned') NOT NULL DEFAULT 'draft',
     submitted_at DATETIME NULL,
+    reviewed_by INT NULL,
+    reviewed_at DATETIME NULL,
+    return_notes TEXT NULL,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     INDEX idx_project_proposals_engineer (engineer_id),
     INDEX idx_project_proposals_status (status),
+    INDEX idx_project_proposals_submitted_at (submitted_at),
     CONSTRAINT fk_project_proposals_engineer FOREIGN KEY (engineer_id) REFERENCES users(id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 

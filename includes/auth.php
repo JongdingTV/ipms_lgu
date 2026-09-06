@@ -86,6 +86,7 @@ function auditLogModuleLabel(?string $targetType): string
         'system_settings' => 'System Settings',
         'login_attempts' => 'Login Security',
         'supporting_documents' => 'Documents',
+        'project_proposals' => 'Project Proposals',
     ];
 
     return $labels[$targetType ?? ''] ?? (string) ($targetType ?? '');

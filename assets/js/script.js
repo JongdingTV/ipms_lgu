@@ -32,6 +32,7 @@ const API = {
   announcements: window.BASE_PATH + 'api/announcements.php',
   projectGallery: window.BASE_PATH + 'api/project-gallery.php',
   projectRatings: window.BASE_PATH + 'api/project-ratings.php',
+  projectProposals: window.BASE_PATH + 'api/project-proposals.php',
 };
 
 const CSRF_HEADERS = window.CSRF_TOKEN ? { 'X-CSRF-Token': window.CSRF_TOKEN } : {};
@@ -230,7 +231,7 @@ let budgetChartInst   = null;
    ============================================================ */
 let currentPage = 'dashboard';
 
-function navigate(page) {
+function navigate(page, params = {}) {
   currentPage = page;
 
   // Update nav active state
@@ -251,6 +252,7 @@ function navigate(page) {
     dashboard: loadDashboard,
     'my-tasks': () => taskCenterInitPage('page-my-tasks'),
     'project-registration': () => loadProjectsPage('page-project-registration', 'Project Registration'),
+    'project-proposals': () => loadProjectProposalPage(params),
     'project-approval': loadProjectApprovalPage,
     'contractor-assignment': loadContractorAssignmentPage,
     'workflow-management': loadWorkflowManagementPage,
@@ -1046,6 +1048,308 @@ async function submitDocumentVersion(e, documentId) {
   } catch {
     toast('Failed to upload new version', 'error');
   }
+}
+
+/* ============================================================
+   PROJECT PROPOSALS — HEAD OFFICE INTAKE
+   This view deliberately calls api/project-proposals.php, never the
+   official-project CRUD endpoint. Viewing/reviewing a proposal cannot create
+   a project or enter the Mayor/HOPE/BAC workflow.
+   ============================================================ */
+const PROPOSAL_STATUS_META = {
+  draft: { label: 'Draft', className: 'badge-archived' },
+  submitted: { label: 'Submitted / Pending Review', className: 'badge-urgent' },
+  under_review: { label: 'Under Review', className: 'badge-highprio' },
+  returned: { label: 'Returned', className: 'badge-overbudget' },
+};
+
+let proposalState = {
+  page: 1, search: '', status: '', category: '', infrastructure_type: '',
+  district: '', barangay: '', engineer_id: '', priority: '', date_from: '',
+  date_to: '', sort: 'newest', selectedId: 0,
+};
+let proposalLocationMap = null;
+
+function proposalStatusBadge(status) {
+  const meta = PROPOSAL_STATUS_META[status] || { label: formatStatus(status), className: 'badge-archived' };
+  return `<span class="badge ${meta.className}">${escapeHtml(meta.label)}</span>`;
+}
+
+function proposalDate(value) {
+  if (!value) return '—';
+  const date = new Date(String(value).replace(' ', 'T'));
+  return Number.isNaN(date.getTime()) ? formatDate(value) : date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+}
+
+function proposalDateTime(value) {
+  if (!value) return '—';
+  const date = new Date(String(value).replace(' ', 'T'));
+  return Number.isNaN(date.getTime()) ? String(value) : date.toLocaleString('en-US', { month: 'long', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit' });
+}
+
+function proposalOptionMarkup(values, selected, labelKey = null) {
+  return (values || []).map(value => {
+    const optionValue = labelKey ? value.id : value;
+    const label = labelKey ? value[labelKey] : value;
+    return `<option value="${escapeHtml(optionValue)}" ${String(optionValue) === String(selected) ? 'selected' : ''}>${escapeHtml(label)}</option>`;
+  }).join('');
+}
+
+function proposalSetFilterOptions(id, values, selected, labelKey = null) {
+  const select = document.getElementById(id);
+  if (!select) return;
+  const allOption = select.querySelector('option')?.outerHTML || '<option value="">All</option>';
+  select.innerHTML = allOption + proposalOptionMarkup(values, selected, labelKey);
+  select.value = selected;
+}
+
+function proposalPopulateFilters(filters = {}) {
+  proposalSetFilterOptions('proposalCategory', filters.categories, proposalState.category);
+  proposalSetFilterOptions('proposalType', filters.infrastructure_types, proposalState.infrastructure_type);
+  proposalSetFilterOptions('proposalDistrict', filters.districts, proposalState.district);
+  proposalSetFilterOptions('proposalBarangay', filters.barangays, proposalState.barangay);
+  proposalSetFilterOptions('proposalEngineer', filters.engineers, proposalState.engineer_id, 'full_name');
+}
+
+function proposalRenderSummary(stats = {}) {
+  const cards = [
+    ['Total Proposals', stats.total || 0, 'kpi-blue'],
+    ['Pending Review', stats.pending_review || 0, 'kpi-orange'],
+    ['Under Review', stats.under_review || 0, 'kpi-teal'],
+    ['Returned', stats.returned_count || 0, 'kpi-red'],
+  ];
+  const wrap = document.getElementById('proposalSummaryCards');
+  if (!wrap) return;
+  wrap.innerHTML = cards.map(([label, value, tone]) => `
+    <article class="kpi-card proposal-kpi-card">
+      <div class="kpi-icon ${tone}"><span aria-hidden="true">${label === 'Returned' ? '↩' : '▣'}</span></div>
+      <div class="kpi-info"><span class="kpi-label">${label}</span><strong class="kpi-value">${Number(value)}</strong></div>
+    </article>
+  `).join('');
+}
+
+function proposalReadFilters() {
+  const inputs = {
+    search: 'proposalSearch', status: 'proposalStatus', category: 'proposalCategory', infrastructure_type: 'proposalType',
+    district: 'proposalDistrict', barangay: 'proposalBarangay', engineer_id: 'proposalEngineer', priority: 'proposalPriority',
+    date_from: 'proposalDateFrom', date_to: 'proposalDateTo', sort: 'proposalSort',
+  };
+  for (const [key, id] of Object.entries(inputs)) {
+    const input = document.getElementById(id);
+    if (input) proposalState[key] = input.value;
+  }
+}
+
+function proposalApplyFilters() {
+  proposalReadFilters();
+  proposalState.page = 1;
+  fetchProjectProposals();
+}
+
+function proposalClearFilters() {
+  proposalState = { ...proposalState, page: 1, search: '', status: '', category: '', infrastructure_type: '', district: '', barangay: '', engineer_id: '', priority: '', date_from: '', date_to: '', sort: 'newest' };
+  loadProjectProposalPage();
+}
+
+async function loadProjectProposalPage(params = {}) {
+  const container = document.getElementById('page-project-proposals');
+  if (!container) return;
+  if (params.status !== undefined) proposalState.status = params.status;
+  if (params.proposal_id) proposalState.selectedId = Number(params.proposal_id) || 0;
+
+  container.innerHTML = `
+    <div class="page-header proposal-page-header">
+      <div><h2 class="page-title">Project Proposals</h2><p class="proposal-page-note">Engineer-submitted proposals for Head Office organization and review. These records are not official projects.</p></div>
+    </div>
+    <section id="proposalSummaryCards" class="kpi-grid proposal-kpi-grid"><div class="empty-state">Loading proposal summary…</div></section>
+    <section class="proposal-management-card">
+      <div class="proposal-management-head"><div><h3>Project Proposals</h3><p>Search, organize, and review proposals submitted by Engineers.</p></div><label class="proposal-sort-label">Sort by <select id="proposalSort" class="filter-select"><option value="newest">Newest First</option><option value="oldest">Oldest First</option><option value="priority">Priority</option><option value="updated">Recently Updated</option><option value="category">Project Category</option><option value="engineer">Engineer</option></select></label></div>
+      <div class="filter-bar proposal-filter-bar">
+        <input id="proposalSearch" class="filter-input proposal-search" value="${escapeHtml(proposalState.search)}" placeholder="Search Project Proposals">
+        <select id="proposalStatus" class="filter-select"><option value="">All Statuses</option><option value="submitted">Pending Review</option><option value="under_review">Under Review</option><option value="returned">Returned</option></select>
+        <select id="proposalCategory" class="filter-select"><option value="">All Categories</option></select>
+        <select id="proposalType" class="filter-select"><option value="">All Types</option></select>
+        <select id="proposalDistrict" class="filter-select"><option value="">All Districts</option></select>
+        <select id="proposalBarangay" class="filter-select"><option value="">All Barangays</option></select>
+        <select id="proposalEngineer" class="filter-select"><option value="">All Engineers</option></select>
+        <select id="proposalPriority" class="filter-select"><option value="">All Priorities</option><option value="urgent">Urgent</option><option value="high">High</option><option value="medium">Medium</option><option value="low">Low</option></select>
+        <label class="proposal-date-field">From <input id="proposalDateFrom" class="filter-input" type="date" value="${escapeHtml(proposalState.date_from)}"></label>
+        <label class="proposal-date-field">To <input id="proposalDateTo" class="filter-input" type="date" value="${escapeHtml(proposalState.date_to)}"></label>
+        <button class="btn-primary btn-compact" type="button" onclick="proposalApplyFilters()">Apply Filters</button>
+        <button class="btn-secondary btn-compact" type="button" onclick="proposalClearFilters()">Clear Filters</button>
+      </div>
+      <div id="proposalTable" class="table-card proposal-table-wrap"></div>
+      <div class="proposal-pagination-bar"><span id="proposalCount" class="proposal-count"></span><div id="proposalPager" class="pager"></div></div>
+    </section>
+  `;
+  document.getElementById('proposalStatus').value = proposalState.status;
+  document.getElementById('proposalPriority').value = proposalState.priority;
+  document.getElementById('proposalSort').value = proposalState.sort;
+  document.getElementById('proposalSort').addEventListener('change', proposalApplyFilters);
+  document.getElementById('proposalSearch').addEventListener('keydown', event => { if (event.key === 'Enter') proposalApplyFilters(); });
+  await fetchProjectProposals();
+  if (proposalState.selectedId) {
+    const id = proposalState.selectedId;
+    proposalState.selectedId = 0;
+    viewProjectProposal(id);
+  }
+}
+
+async function fetchProjectProposals() {
+  const wrap = document.getElementById('proposalTable');
+  if (!wrap) return;
+  setLoading(wrap, true);
+  try {
+    const data = await get(API.projectProposals, { ...proposalState, per_page: 10 });
+    proposalRenderSummary(data.stats || {});
+    proposalPopulateFilters(data.filters || {});
+    renderProjectProposalRows(data.data || []);
+    const start = data.total ? ((data.page - 1) * data.per_page) + 1 : 0;
+    const end = data.total ? Math.min(data.page * data.per_page, data.total) : 0;
+    const count = document.getElementById('proposalCount');
+    if (count) count.textContent = `Showing ${start}–${end} of ${data.total || 0} proposal${Number(data.total) === 1 ? '' : 's'}`;
+    renderPager('proposalPager', data.page, data.last_page, page => { proposalState.page = page; fetchProjectProposals(); });
+  } catch (error) {
+    wrap.innerHTML = '<p class="empty-state">Failed to load project proposals.</p>';
+    console.error(error);
+  } finally {
+    setLoading(wrap, false);
+  }
+}
+
+function proposalRowMarkup(proposal) {
+  return `<tr>
+    <td><span class="proj-id">${escapeHtml(proposal.proposal_code)}</span></td>
+    <td><strong>${escapeHtml(proposal.title)}</strong><br><small>${escapeHtml(proposal.location || '—')}</small></td>
+    <td>${escapeHtml(proposal.category || '—')}</td>
+    <td>${escapeHtml([proposal.barangay, proposal.district].filter(Boolean).join(', ') || '—')}</td>
+    <td>${escapeHtml(proposal.engineer_name || '—')}</td>
+    <td>${proposalDate(proposal.submitted_at || proposal.created_at)}</td>
+    <td>${proposalStatusBadge(proposal.status)}</td>
+    <td><button class="btn-secondary btn-compact" type="button" onclick="viewProjectProposal(${Number(proposal.id)})">View</button></td>
+  </tr>`;
+}
+
+function proposalMobileCardMarkup(proposal) {
+  return `<article class="proposal-mobile-card">
+    <div><span class="proj-id">${escapeHtml(proposal.proposal_code)}</span><h3>${escapeHtml(proposal.title)}</h3><p>${escapeHtml([proposal.barangay, proposal.district].filter(Boolean).join(', ') || proposal.location || 'Location not specified')}</p></div>
+    <div class="proposal-mobile-meta"><span>Engineer: <strong>${escapeHtml(proposal.engineer_name || '—')}</strong></span><span>${proposalDate(proposal.submitted_at || proposal.created_at)}</span></div>
+    <div class="proposal-mobile-actions">${proposalStatusBadge(proposal.status)}<button class="btn-secondary btn-compact" type="button" onclick="viewProjectProposal(${Number(proposal.id)})">View Proposal</button></div>
+  </article>`;
+}
+
+function renderProjectProposalRows(rows) {
+  const wrap = document.getElementById('proposalTable');
+  if (!wrap) return;
+  if (!rows.length) {
+    wrap.innerHTML = '<p class="empty-state proposal-empty-state">No submitted project proposals match the selected filters.</p>';
+    return;
+  }
+  wrap.innerHTML = `<table class="data-table proposal-data-table"><thead><tr><th>Proposal ID</th><th>Project</th><th>Category</th><th>Location</th><th>Engineer</th><th>Date</th><th>Status</th><th>Action</th></tr></thead><tbody>${rows.map(proposalRowMarkup).join('')}</tbody></table><div class="proposal-mobile-list">${rows.map(proposalMobileCardMarkup).join('')}</div>`;
+}
+
+function proposalDetailItem(label, value) {
+  return `<div><p class="modal-label">${escapeHtml(label)}</p><p class="modal-val">${escapeHtml(value || '—')}</p></div>`;
+}
+
+function proposalFeedbackRows(feedback) {
+  if (!feedback.length) return '<p class="empty-state">No Citizen Feedback records were linked to this proposal.</p>';
+  return `<div class="proposal-feedback-detail-list">${feedback.map(row => `<div class="proposal-feedback-detail-row"><div><strong>FB-${String(row.id).padStart(4, '0')}</strong><p>${escapeHtml(row.message || '')}</p><small>${escapeHtml([row.barangay, row.district].filter(Boolean).join(', ') || 'Area not specified')}</small></div><button class="btn-secondary btn-compact" type="button" onclick="viewProposalFeedback(${Number(row.id)})">View Feedback</button></div>`).join('')}</div>`;
+}
+
+function proposalMapData(feedback) {
+  return (feedback || []).find(row => Number.isFinite(Number(row.latitude)) && Number.isFinite(Number(row.longitude)) && Number(row.latitude) !== 0 && Number(row.longitude) !== 0);
+}
+
+async function viewProjectProposal(id) {
+  try {
+    const result = await get(API.projectProposals, { id });
+    if (result.error) { toast(result.error, 'error'); return; }
+    const proposal = result.data;
+    const feedback = proposal.feedback_basis || [];
+    const mapRecord = Number.isFinite(Number(proposal.latitude)) && Number.isFinite(Number(proposal.longitude)) && Number(proposal.latitude) !== 0 && Number(proposal.longitude) !== 0
+      ? { latitude: proposal.latitude, longitude: proposal.longitude, barangay: proposal.barangay, district: proposal.district, source: 'proposal' }
+      : proposalMapData(feedback);
+    const documents = proposal.supporting_documents || [];
+    openModal(`${proposal.proposal_code} — Project Proposal`, `
+      <div class="proposal-detail">
+        <div class="proposal-detail-top"><div>${proposalStatusBadge(proposal.status)}<span class="proposal-detail-priority">${escapeHtml(proposal.priority || 'medium')} priority</span></div><p>This record remains a proposal. No official project is created at this stage.</p></div>
+        <h4>Proposal Information</h4>
+        <div class="proposal-detail-grid">
+          ${proposalDetailItem('Proposal ID', proposal.proposal_code)}${proposalDetailItem('Project Title', proposal.title)}${proposalDetailItem('Project Category', proposal.category)}${proposalDetailItem('Infrastructure Type', proposal.infrastructure_type)}${proposalDetailItem('Location', proposal.location)}${proposalDetailItem('District', proposal.district)}${proposalDetailItem('Barangay', proposal.barangay)}${proposalDetailItem('Priority', proposal.priority)}
+        </div>
+        <div class="proposal-detail-copy"><p class="modal-label">DESCRIPTION</p><p>${escapeHtml(proposal.description)}</p></div>
+        <div class="proposal-detail-copy"><p class="modal-label">PROJECT NEED / JUSTIFICATION</p><p>${escapeHtml(proposal.justification)}</p></div>
+        ${proposal.observed_problem ? `<div class="proposal-detail-copy"><p class="modal-label">OBSERVED PROBLEM</p><p>${escapeHtml(proposal.observed_problem)}</p></div>` : ''}
+        ${proposal.proposed_solution ? `<div class="proposal-detail-copy"><p class="modal-label">PROPOSED SOLUTION</p><p>${escapeHtml(proposal.proposed_solution)}</p></div>` : ''}
+        <h4>Proponent</h4>
+        <div class="proposal-detail-grid">${proposalDetailItem('Engineer Name', proposal.engineer_name)}${proposalDetailItem('Engineer ID', `ENG-${String(proposal.engineer_id).padStart(4, '0')}`)}${proposalDetailItem('Date Submitted', proposalDate(proposal.submitted_at))}${proposalDetailItem('Review Status', PROPOSAL_STATUS_META[proposal.status]?.label || proposal.status)}</div>
+        <h4>Community Need / Feedback Basis</h4>
+        <p class="proposal-section-note">${feedback.length} Citizen Feedback Record${feedback.length === 1 ? '' : 's'} linked by the proposing Engineer. The original records are displayed without duplication.</p>
+        ${proposalFeedbackRows(feedback)}
+        <h4>Project Location</h4>
+        ${mapRecord ? `<div class="proposal-gis-card"><p class="proposal-section-note">${mapRecord.source === 'proposal' ? 'Location captured from the Engineer proposal pin.' : 'Location information captured in linked Citizen Feedback.'}</p><div id="proposalLocationMap" class="proposal-location-map"></div><div class="proposal-detail-grid proposal-gis-meta">${proposalDetailItem('Latitude', mapRecord.latitude)}${proposalDetailItem('Longitude', mapRecord.longitude)}${proposalDetailItem('Barangay', mapRecord.barangay || proposal.barangay)}${proposalDetailItem('District', mapRecord.district || proposal.district)}</div></div>` : `<p class="empty-state">No GIS coordinates were submitted with this proposal or its linked feedback.</p>`}
+        <h4>Supporting Information</h4>
+        ${documents.length ? `<ul class="proposal-document-list">${documents.map(doc => `<li>${escapeHtml(doc.title || doc.original_name || 'Supporting document')}</li>`).join('')}</ul>` : '<p class="empty-state">No supporting documents have been attached to this proposal yet.</p>'}
+        <h4>Proposal Source</h4>
+        <div class="proposal-detail-grid">${proposalDetailItem('Proposed By', `Engineer ${proposal.engineer_name}`)}${proposalDetailItem('Office / Area', `Engineering Office${proposal.district ? ' — ' + proposal.district : ''}`)}${proposalDetailItem('Submitted', proposalDateTime(proposal.submitted_at || proposal.created_at))}${proposalDetailItem('Last Updated', proposalDateTime(proposal.updated_at))}</div>
+        ${proposal.return_notes ? `<div class="proposal-return-note"><p class="modal-label">RETURN NOTES</p><p>${escapeHtml(proposal.return_notes)}</p></div>` : ''}
+        <div class="proposal-review-actions">
+          ${proposal.status === 'submitted' ? `<button type="button" class="btn-primary btn-compact" onclick="proposalSetReviewStatus(${Number(proposal.id)}, 'under_review')">Start Review</button>` : ''}
+          ${['submitted', 'under_review'].includes(proposal.status) ? `<button type="button" class="btn-secondary btn-compact" onclick="proposalOpenReturnModal(${Number(proposal.id)}, '${escapeHtml(proposal.proposal_code)}')">Return to Engineer</button>` : ''}
+          <button type="button" class="btn-secondary btn-compact" onclick="closeModal()">Close</button>
+        </div>
+      </div>
+    `, 'modal-lg');
+    if (mapRecord) setTimeout(() => renderProposalLocationMap(mapRecord, proposal), 0);
+  } catch (error) {
+    toast('Failed to load the project proposal.', 'error');
+    console.error(error);
+  }
+}
+
+function renderProposalLocationMap(record, proposal) {
+  const target = document.getElementById('proposalLocationMap');
+  if (!target || typeof L === 'undefined') return;
+  if (proposalLocationMap) { proposalLocationMap.remove(); proposalLocationMap = null; }
+  const latitude = Number(record.latitude);
+  const longitude = Number(record.longitude);
+  proposalLocationMap = L.map(target, { zoomControl: true, scrollWheelZoom: false }).setView([latitude, longitude], 15);
+  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19, attribution: '&copy; OpenStreetMap contributors' }).addTo(proposalLocationMap);
+  L.marker([latitude, longitude]).addTo(proposalLocationMap).bindPopup(escapeHtml(proposal.title)).openPopup();
+  setTimeout(() => proposalLocationMap?.invalidateSize(), 60);
+}
+
+async function viewProposalFeedback(id) {
+  try {
+    const feedback = await get(API.feedback, { id });
+    if (feedback.error) { toast(feedback.error, 'error'); return; }
+    openModal(`FB-${String(id).padStart(4, '0')} — Citizen Feedback`, `
+      <div class="proposal-feedback-view"><div class="proposal-detail-grid">${proposalDetailItem('Category', feedback.category)}${proposalDetailItem('Infrastructure Type', feedback.infrastructure_type)}${proposalDetailItem('Priority', feedback.priority)}${proposalDetailItem('Status', feedback.status)}${proposalDetailItem('Location', [feedback.barangay, feedback.district].filter(Boolean).join(', ') || feedback.location)}${proposalDetailItem('Submitted', proposalDate(feedback.created_at))}</div><div class="proposal-detail-copy"><p class="modal-label">ORIGINAL FEEDBACK</p><p>${escapeHtml(feedback.message || '')}</p></div><p class="proposal-section-note">Read-only proposal context. Feedback management remains in the existing Citizen Feedback Review module.</p></div>
+    `);
+  } catch {
+    toast('Failed to load the original feedback record.', 'error');
+  }
+}
+
+async function proposalSetReviewStatus(id, status, returnNotes = '') {
+  try {
+    const result = await post(API.projectProposals, { action: 'set_status', id, status, return_notes: returnNotes });
+    if (result.error) { toast(result.error, 'error'); return; }
+    toast(status === 'returned' ? 'Proposal returned to the Engineer.' : 'Proposal marked under review.');
+    closeModal();
+    await fetchProjectProposals();
+  } catch {
+    toast('Unable to update the proposal review status.', 'error');
+  }
+}
+
+function proposalOpenReturnModal(id, code) {
+  openModal(`Return ${code} to Engineer`, `<form id="proposalReturnForm"><p class="proposal-section-note">Return this proposal for correction. This does not approve, reject, or create an official project.</p><div class="form-group"><label>Return Notes *</label><textarea class="form-input" name="return_notes" rows="4" required placeholder="Explain what the Engineer needs to revise"></textarea></div><div class="form-actions"><button type="button" class="btn-secondary" onclick="closeModal()">Cancel</button><button type="submit" class="btn-primary">Return Proposal</button></div></form>`);
+  document.getElementById('proposalReturnForm').addEventListener('submit', event => {
+    event.preventDefault();
+    proposalSetReviewStatus(id, 'returned', new FormData(event.target).get('return_notes'));
+  });
 }
 
 /* ============================================================
@@ -5849,6 +6153,7 @@ document.addEventListener('DOMContentLoaded', () => {
   contentEl.innerHTML = `
     <div id="page-dashboard" class="page-section">${dashHTML}</div>
     <div id="page-my-tasks" class="page-section" style="display:none;"></div>
+    <div id="page-project-proposals" class="page-section" style="display:none;"></div>
     <div id="page-project-registration" class="page-section" style="display:none;"></div>
     <div id="page-project-approval" class="page-section" style="display:none;"></div>
     <div id="page-contractor-assignment" class="page-section" style="display:none;"></div>
@@ -5876,7 +6181,15 @@ document.addEventListener('DOMContentLoaded', () => {
   // forever (all the dashboard's lower cards). Re-scan the new DOM.
   window.rescanScrollReveal?.();
 
-  loadDashboard();
+  const proposalId = Number(new URLSearchParams(window.location.search).get('proposal_id'));
+  if (proposalId > 0) {
+    const cleanUrl = new URL(window.location.href);
+    cleanUrl.searchParams.delete('proposal_id');
+    window.history.replaceState({}, '', cleanUrl);
+    navigate('project-proposals', { proposal_id: proposalId });
+  } else {
+    loadDashboard();
+  }
 });
 // Profile settings modal (already in topbar.php but with working implementation)
 async function showProfileSettings() {

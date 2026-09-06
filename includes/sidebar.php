@@ -16,10 +16,10 @@
         <span class="nav-label">Dashboard</span>
         <span class="nav-badge" data-badge="dashboard"></span>
       </a>
-      <a href="#" class="nav-item" data-page="project-registration">
+      <a href="#" class="nav-item" data-page="project-proposals">
         <span class="nav-icon"><svg viewBox="0 0 20 20" fill="currentColor"><path d="M2 6a2 2 0 012-2h5l2 2h5a2 2 0 012 2v6a2 2 0 01-2 2H4a2 2 0 01-2-2V6z"/></svg></span>
-        <span class="nav-label">Project Registration</span>
-        <span class="nav-badge" data-badge="project-registration"></span>
+        <span class="nav-label">Project Proposal</span>
+        <span class="nav-badge" data-badge="project-proposals"></span>
       </a>
       <a href="#" class="nav-item" data-page="project-approval">
         <span class="nav-icon"><svg viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 10-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd"/></svg></span>

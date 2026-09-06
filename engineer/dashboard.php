@@ -3,6 +3,7 @@ require_once __DIR__ . '/../auth/session.php';
 
 $user = requireLogin(['engineer']);
 $extraStylesheets = ['assets/css/pagination.css', 'assets/css/project-timeline.css', 'engineer/assets/css/engineer.css'];
+require_once __DIR__ . '/../citizen/includes/qc-locations.php';
 
 require_once __DIR__ . '/../includes/header.php';
 require_once __DIR__ . '/sidebar.php';
@@ -12,6 +13,7 @@ require_once __DIR__ . '/sidebar.php';
   <?php require_once __DIR__ . '/../includes/topbar.php'; ?>
 
   <main class="content engineer-content">
+    <script>window.QC_DISTRICTS = <?= json_encode(qcDistricts(), JSON_UNESCAPED_UNICODE) ?>; window.QC_GEOJSON_URL = <?= json_encode(appUrl('/citizen/assets/data/qc-barangays.geojson')) ?>;</script>
     <section id="page-dashboard" class="page-section">
       <div class="page-header">
         <div>
