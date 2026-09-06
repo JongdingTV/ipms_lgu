@@ -3,6 +3,7 @@ const ENGINEER_API = window.BASE_PATH + 'engineer/api/portal.php';
 const ENGINEER_WORKFLOW_API = window.BASE_PATH + 'api/workflow.php';
 const ENGINEER_USER_API = window.BASE_PATH + 'api/user.php';
 const ENGINEER_PROJECTS_API = window.BASE_PATH + 'api/projects.php';
+const ENGINEER_PROPOSALS_API = window.BASE_PATH + 'api/project-proposals.php';
 const ENGINEER_CSRF_HEADERS = window.CSRF_TOKEN ? { 'X-CSRF-Token': window.CSRF_TOKEN } : {};
 
 let engineerCurrentPage = 'dashboard';
@@ -13,6 +14,7 @@ let engineerState = {
   paymentRequests: [],
   budgetWatch: [],
 };
+let engineerProposalFeedbackState = { page: 1, lastPage: 1, selected: new Set() };
 
 /* photos/delays/issues accumulate over time, so they're fetched paginated,
    per-page, rather than bulk-loaded like the small/bounded lists above.
@@ -180,6 +182,123 @@ function engineerOpenModal(title, html) {
   document.getElementById('modalBody').innerHTML = html;
   document.getElementById('modalOverlay').classList.add('open');
 }
+
+async function engineerProposalRequest(url, options = {}) {
+  const response = await fetch(url, options);
+  const data = await response.json();
+  if (!response.ok || data.error) throw engineerErrorFrom(data, response);
+  return data;
+}
+
+async function engineerLoadProposalFeedback(page = 1) {
+  const search = document.getElementById('proposalFeedbackSearch')?.value || '';
+  const category = document.getElementById('proposalFeedbackCategory')?.value || '';
+  const priority = document.getElementById('proposalFeedbackPriority')?.value || '';
+  engineerProposalFeedbackState.page = page;
+  const qs = new URLSearchParams({ resource: 'feedback', search, category, priority, page, limit: 8 });
+  const data = await engineerProposalRequest(`${ENGINEER_PROPOSALS_API}?${qs}`);
+  engineerProposalFeedbackState.lastPage = data.last_page || 1;
+  const target = document.getElementById('proposalFeedbackList');
+  if (!target) return;
+  const selectedCount = document.getElementById('proposalFeedbackSelected');
+  if (selectedCount) selectedCount.textContent = `${engineerProposalFeedbackState.selected.size} selected`;
+  target.innerHTML = data.data?.length ? data.data.map(feedback => `
+    <label class="proposal-feedback-row">
+      <input type="checkbox" name="feedback_ids[]" value="${feedback.id}" ${engineerProposalFeedbackState.selected.has(String(feedback.id)) ? 'checked' : ''} onchange="engineerToggleProposalFeedback(this)">
+      <span class="proposal-feedback-copy"><strong>FB-${String(feedback.id).padStart(4, '0')}</strong><span>${engineerEscape(feedback.message)}</span></span>
+      <small><span>${engineerEscape(feedback.barangay || feedback.district || 'Area not specified')}</span><span>${engineerEscape(feedback.category || 'feedback')}</span><span>${engineerStatus(feedback.priority)}</span></small>
+      <button type="button" class="btn-link" onclick="engineerOpenFeedback(${feedback.id}); event.preventDefault();">View</button>
+    </label>
+  `).join('') : '<p class="empty-state">No relevant open feedback found.</p>';
+  document.getElementById('proposalFeedbackPager').innerHTML = engineerProposalPagerHtml(data.page, data.last_page, data.total);
+}
+
+function engineerToggleProposalFeedback(input) {
+  if (input.checked) engineerProposalFeedbackState.selected.add(String(input.value));
+  else engineerProposalFeedbackState.selected.delete(String(input.value));
+  document.getElementById('proposalFeedbackSelected').textContent = `${engineerProposalFeedbackState.selected.size} selected`;
+}
+
+function engineerProposalPagerHtml(page, lastPage, total) {
+  if (!total) return '';
+  return `<span class="proposal-pager-count">${total} feedback record${total === 1 ? '' : 's'}</span><button type="button" class="list-pager-btn" ${page <= 1 ? 'disabled' : ''} onclick="engineerLoadProposalFeedback(${page - 1})">Previous</button><span class="proposal-pager-page">Page ${page} of ${lastPage}</span><button type="button" class="list-pager-btn" ${page >= lastPage ? 'disabled' : ''} onclick="engineerLoadProposalFeedback(${page + 1})">Next</button>`;
+}
+
+async function engineerOpenFeedback(id) {
+  try {
+    const data = await engineerProposalRequest(`${ENGINEER_PROPOSALS_API}?resource=feedback&id=${id}`);
+    const feedback = data.data?.[0] || data.data;
+    engineerOpenModal(`FB-${String(id).padStart(4, '0')} Feedback`, `
+      <div class="engineer-detail-grid">
+        <div class="engineer-detail-box"><span>Category</span><strong>${engineerEscape(feedback.category || '-')}</strong></div>
+        <div class="engineer-detail-box"><span>Priority</span><strong>${engineerEscape(feedback.priority || '-')}</strong></div>
+        <div class="engineer-detail-box"><span>Area</span><strong>${engineerEscape([feedback.barangay, feedback.district].filter(Boolean).join(', ') || '-')}</strong></div>
+        <div class="engineer-detail-box"><span>Status</span><strong>${engineerEscape(feedback.status || '-')}</strong></div>
+      </div><p class="proposal-detail-copy">${engineerEscape(feedback.message || '')}</p>
+    `);
+  } catch (error) { engineerToast(error.message, 'error'); }
+}
+
+function engineerProposalFormHtml(proposal = {}) {
+  const categories = ['Roads and Bridges', 'Drainage and Flood Control', 'Water Supply', 'Public Buildings and Facilities', 'Street Lighting', 'Parks and Recreation', 'Other'];
+  return `<div class="proposal-form-shell"><div class="proposal-form-intro"><div><span class="proposal-form-eyebrow">Engineer workspace</span><h2>${proposal.id ? 'Continue Project Proposal' : 'New Project Proposal'}</h2><p>Describe the infrastructure need and provide the community context for Head Office review.</p></div><span class="proposal-form-status">${proposal.id ? engineerStatus(proposal.status || 'draft') : 'Draft'}</span></div><form id="projectProposalForm" class="proposal-form" onsubmit="engineerSubmitProposal(event)">
+    <input type="hidden" name="id" value="${proposal.id || ''}">
+    <div class="proposal-form-grid">
+      <label>Proposed Project Title *<input class="form-input" name="title" required value="${engineerEscape(proposal.title)}"></label>
+      <label>Project Category *<select class="form-input" name="category" required><option value="">Select category</option>${categories.map(value => `<option ${proposal.category === value ? 'selected' : ''}>${value}</option>`).join('')}</select></label>
+      <label>Infrastructure Type<input class="form-input" name="infrastructure_type" value="${engineerEscape(proposal.infrastructure_type)}" placeholder="e.g. road rehabilitation"></label>
+      <label>Priority *<select class="form-input" name="priority" required>${['low','medium','high','urgent'].map(value => `<option value="${value}" ${proposal.priority === value ? 'selected' : ''}>${value[0].toUpperCase() + value.slice(1)}</option>`).join('')}</select></label>
+      <label>District *<input class="form-input" name="district" required value="${engineerEscape(proposal.district)}"></label>
+      <label>Barangay *<input class="form-input" name="barangay" required value="${engineerEscape(proposal.barangay)}"></label>
+      <label class="proposal-form-wide">Location *<input class="form-input" name="location" required value="${engineerEscape(proposal.location)}" placeholder="Describe the project location"></label>
+      <label class="proposal-form-wide">Description *<textarea class="form-input" name="description" rows="3" required>${engineerEscape(proposal.description)}</textarea></label>
+      <label class="proposal-form-wide">Project Need / Justification *<textarea class="form-input" name="justification" rows="3" required>${engineerEscape(proposal.justification)}</textarea></label>
+      <label class="proposal-form-wide">Observed Problem<textarea class="form-input" name="observed_problem" rows="3">${engineerEscape(proposal.observed_problem)}</textarea></label>
+      <label class="proposal-form-wide">Proposed Solution<textarea class="form-input" name="proposed_solution" rows="3">${engineerEscape(proposal.proposed_solution)}</textarea></label>
+    </div>
+    <div class="proposal-feedback-picker"><div class="engineer-panel-head"><h3>Community Need / Feedback Basis</h3><span class="engineer-readonly-pill">Read-only records</span></div>
+      <div class="proposal-filter-row"><input id="proposalFeedbackSearch" class="form-input" placeholder="Search feedback"><select id="proposalFeedbackCategory" class="form-input"><option value="">All categories</option><option value="road_damage">Road damage</option><option value="drainage_flooding">Drainage / flooding</option><option value="streetlight">Streetlight</option><option value="complaint">Complaint</option><option value="suggestion">Suggestion</option><option value="inquiry">Inquiry</option></select><select id="proposalFeedbackPriority" class="form-input"><option value="">All priorities</option><option>urgent</option><option>high</option><option>medium</option><option>low</option></select><button type="button" class="btn-secondary" onclick="engineerLoadProposalFeedback(1)">Search</button></div>
+      <div class="proposal-feedback-summary"><span>Select relevant reports to support this proposal.</span><strong id="proposalFeedbackSelected">0 selected</strong></div>
+      <div id="proposalFeedbackList" class="proposal-feedback-list"></div>
+      <div id="proposalFeedbackPager" class="proposal-pagination"></div>
+    </div>
+    <div class="proposal-actions"><button type="button" class="btn-secondary" onclick="engineerSaveProposal('save_draft')">Save Draft</button><button type="button" class="btn-primary" onclick="engineerSaveProposal('submit')">Submit Proposal</button></div>
+  </form></div>`;
+}
+
+async function engineerSubmitProposal(event) { event.preventDefault(); await engineerSaveProposal('save_draft'); }
+
+async function engineerSaveProposal(action) {
+  const form = document.getElementById('projectProposalForm');
+  if (!form) return;
+  if (!form.reportValidity()) return;
+  const body = Object.fromEntries(new FormData(form).entries());
+  body.action = action;
+  body.feedback_ids = [...engineerProposalFeedbackState.selected];
+  try {
+    const data = await engineerProposalRequest(ENGINEER_PROPOSALS_API, { method: 'POST', headers: { 'Content-Type': 'application/json', ...ENGINEER_CSRF_HEADERS }, body: JSON.stringify(body) });
+    engineerToast(action === 'submit' ? 'Proposal submitted for Head Office review.' : 'Proposal draft saved.');
+    engineerRenderProposalPage(action === 'submit' ? '' : data.id);
+  } catch (error) { engineerToast(error.message, 'error'); }
+}
+
+async function engineerRenderProposalPage(editId = '', page = 1) {
+  engineerProposalFeedbackState = { page: 1, lastPage: 1, selected: new Set() };
+  const section = document.getElementById('page-project-proposal');
+  section.innerHTML = `<div class="page-header"><div><h1 class="page-title">Project Proposal</h1><p class="engineer-scope-note">Turn community needs into a proposal for Head Office consideration.</p></div><button class="btn-primary" type="button" onclick="engineerRenderProposalForm()">New Proposal</button></div><div id="proposalWorkspace"><div class="skeleton-group"><div class="skeleton-row"></div><div class="skeleton-row"></div></div></div>`;
+  const qs = editId ? `?id=${editId}` : `?page=${page}`;
+  const data = await engineerProposalRequest(`${ENGINEER_PROPOSALS_API}${qs}`);
+  const rows = editId ? [data.data] : (data.data || []);
+    const proposalRows = rows.map(engineerProposalRowHtml).join('');
+    document.getElementById('proposalWorkspace').innerHTML = `<div class="engineer-panel"><div class="engineer-panel-head"><h2>My Project Proposals</h2>${proposalRows ? '<div class="proposal-filter-row"><input id="proposalListSearch" class="form-input" placeholder="Search proposals" oninput="engineerFilterProposalRows()"><select id="proposalListStatus" class="form-input" onchange="engineerFilterProposalRows()"><option value="">All statuses</option><option value="draft">Draft</option><option value="submitted">Submitted</option><option value="under_review">Under Review</option></select></div>' : ''}</div><div id="proposalRows" class="proposal-list">${proposalRows || '<div class="proposal-empty-state"><div class="proposal-empty-icon">+</div><h3>No Project Proposal Yet</h3><p>You have not created a proposal. Start one when you identify an infrastructure need in your assigned area.</p><button type="button" class="btn-primary" onclick="engineerRenderProposalForm()">Create Project Proposal</button></div>'}</div>${proposalRows && data.total > 8 ? `<div class="proposal-pagination"><span class="proposal-pager-count">${data.total} proposal${data.total === 1 ? '' : 's'}</span><button type="button" class="list-pager-btn" ${data.page <= 1 ? 'disabled' : ''} onclick="engineerRenderProposalPage('', ${data.page - 1})">Previous</button><span class="proposal-pager-page">Page ${data.page} of ${data.last_page}</span><button type="button" class="list-pager-btn" ${data.page >= data.last_page ? 'disabled' : ''} onclick="engineerRenderProposalPage('', ${data.page + 1})">Next</button></div>` : ''}</div>`;
+  if (editId) { engineerRenderProposalForm(data.data); return; }
+}
+
+function engineerProposalRowHtml(row) { return `<article class="proposal-row" data-search="${engineerEscape(`${row.proposal_code} ${row.title} ${row.barangay}`)}" data-status="${row.status}"><div><span class="engineer-project-code">${engineerEscape(row.proposal_code)}</span><h3>${engineerEscape(row.title)}</h3><p>${engineerEscape(row.barangay)}, ${engineerEscape(row.district)} · Based on ${row.feedback_count || 0} Citizen Reports</p></div><div>${engineerBadge(row.status)}<small>${engineerDate(row.submitted_at || row.created_at)}</small><button class="btn-secondary btn-compact" type="button" onclick="engineerViewProposal(${row.id})">View</button>${row.status === 'draft' ? `<button class="btn-secondary btn-compact" type="button" onclick="engineerRenderProposalFormById(${row.id})">Continue</button>` : ''}</div></article>`; }
+function engineerFilterProposalRows() { const search = (document.getElementById('proposalListSearch')?.value || '').toLowerCase(); const status = document.getElementById('proposalListStatus')?.value || ''; document.querySelectorAll('.proposal-row').forEach(row => { row.style.display = (!search || row.dataset.search.toLowerCase().includes(search)) && (!status || row.dataset.status === status) ? '' : 'none'; }); }
+async function engineerRenderProposalFormById(id) { const data = await engineerProposalRequest(`${ENGINEER_PROPOSALS_API}?id=${id}`); engineerRenderProposalForm(data.data); }
+async function engineerRenderProposalForm(proposal = {}) { const workspace = document.getElementById('proposalWorkspace'); engineerProposalFeedbackState.selected = new Set((proposal.feedback_basis || []).map(row => String(row.id))); workspace.innerHTML = engineerProposalFormHtml(proposal); await engineerLoadProposalFeedback(); engineerToggleProposalFeedback({ checked: false, value: '' }); }
+async function engineerViewProposal(id) { const data = await engineerProposalRequest(`${ENGINEER_PROPOSALS_API}?id=${id}`); const proposal = data.data; engineerOpenModal(`${engineerEscape(proposal.proposal_code)} Proposal`, `<div class="engineer-detail-grid"><div class="engineer-detail-box"><span>Status</span><strong>${engineerStatus(proposal.status)}</strong></div><div class="engineer-detail-box"><span>Category</span><strong>${engineerEscape(proposal.category)}</strong></div><div class="engineer-detail-box"><span>Location</span><strong>${engineerEscape(proposal.location)}</strong></div><div class="engineer-detail-box"><span>Priority</span><strong>${engineerEscape(proposal.priority)}</strong></div></div><h4>Description</h4><p class="proposal-detail-copy">${engineerEscape(proposal.description)}</p><h4>Need / Justification</h4><p class="proposal-detail-copy">${engineerEscape(proposal.justification)}</p><h4>Feedback Basis (${proposal.feedback_basis.length})</h4>${proposal.feedback_basis.map(row => `<p class="proposal-detail-copy"><strong>FB-${String(row.id).padStart(4, '0')}</strong> ${engineerEscape(row.message)}</p>`).join('') || '<p class="empty-state">No feedback linked.</p>'}`); }
 
 function engineerCloseModal() {
   document.getElementById('modalOverlay')?.classList.remove('open');
@@ -2146,6 +2265,7 @@ function engineerShowPage(page, selectedProjectId = '') {
   if (page === 'my-tasks') taskCenterInitPage('page-my-tasks');
   if (page === 'assigned-projects') engineerRenderAssignedProjects();
   if (page === 'available-projects') engineerRenderAvailableProjects();
+  if (page === 'project-proposal') engineerRenderProposalPage();
   if (page === 'engineering-review') engineerRenderEngineeringReviewPage();
   if (page === 'milestone-update') engineerRenderMilestonePage();
   if (page === 'inspection-review') engineerRenderInspectionPage();

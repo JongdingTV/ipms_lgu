@@ -25,6 +25,11 @@
         <span class="nav-label">Available Projects</span>
         <span class="nav-badge" data-badge="available-projects"></span>
       </a>
+      <a href="#" class="nav-item" data-page="project-proposal">
+        <span class="nav-icon"><svg viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M4 2a2 2 0 00-2 2v12a2 2 0 002 2h12a2 2 0 002-2V4a2 2 0 00-2-2H4zm3 3a1 1 0 000 2h6a1 1 0 100-2H7zm0 4a1 1 0 100 2h6a1 1 0 100-2H7zm0 4a1 1 0 100 2h4a1 1 0 100-2H7z" clip-rule="evenodd"/></svg></span>
+        <span class="nav-label">Project Proposal</span>
+        <span class="nav-badge" data-badge="project-proposal"></span>
+      </a>
       <a href="#" class="nav-item" data-page="engineering-review">
         <span class="nav-icon"><svg viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M16.704 4.153a.75.75 0 01.143 1.052l-8 10.5a.75.75 0 01-1.127.075l-4.5-4.5a.75.75 0 011.06-1.06l3.894 3.893 7.48-9.817a.75.75 0 011.05-.143z" clip-rule="evenodd"/></svg></span>
         <span class="nav-label">Engineering Review</span>
