@@ -186,11 +186,19 @@ function projectProposalEnsureSchema(PDO $db): void
                 justification TEXT NOT NULL,
                 observed_problem TEXT NULL,
                 proposed_solution TEXT NULL,
+                implementing_office VARCHAR(180) NULL,
+                physical_target VARCHAR(255) NULL,
+                funding_source VARCHAR(100) NULL,
+                budget_estimate DECIMAL(15,2) NULL,
+                target_start_date DATE NULL,
+                target_end_date DATE NULL,
+                supporting_information TEXT NULL,
                 location VARCHAR(255) NOT NULL,
                 district VARCHAR(100) NOT NULL,
                 barangay VARCHAR(100) NOT NULL,
                 latitude DECIMAL(10,7) NULL,
                 longitude DECIMAL(10,7) NULL,
+                road_geometry LONGTEXT NULL,
                 priority ENUM('low','medium','high','urgent') NOT NULL DEFAULT 'medium',
                 engineer_id INT NOT NULL,
                 status ENUM('draft','submitted','under_review','returned') NOT NULL DEFAULT 'draft',
@@ -225,6 +233,14 @@ function projectProposalEnsureSchema(PDO $db): void
         $db->exec("ALTER TABLE project_proposals ADD COLUMN IF NOT EXISTS return_notes TEXT NULL AFTER reviewed_at");
         $db->exec("ALTER TABLE project_proposals ADD COLUMN IF NOT EXISTS latitude DECIMAL(10,7) NULL AFTER barangay");
         $db->exec("ALTER TABLE project_proposals ADD COLUMN IF NOT EXISTS longitude DECIMAL(10,7) NULL AFTER latitude");
+        $db->exec("ALTER TABLE project_proposals ADD COLUMN IF NOT EXISTS road_geometry LONGTEXT NULL AFTER longitude");
+        $db->exec("ALTER TABLE project_proposals ADD COLUMN IF NOT EXISTS implementing_office VARCHAR(180) NULL AFTER proposed_solution");
+        $db->exec("ALTER TABLE project_proposals ADD COLUMN IF NOT EXISTS physical_target VARCHAR(255) NULL AFTER implementing_office");
+        $db->exec("ALTER TABLE project_proposals ADD COLUMN IF NOT EXISTS funding_source VARCHAR(100) NULL AFTER physical_target");
+        $db->exec("ALTER TABLE project_proposals ADD COLUMN IF NOT EXISTS budget_estimate DECIMAL(15,2) NULL AFTER funding_source");
+        $db->exec("ALTER TABLE project_proposals ADD COLUMN IF NOT EXISTS target_start_date DATE NULL AFTER budget_estimate");
+        $db->exec("ALTER TABLE project_proposals ADD COLUMN IF NOT EXISTS target_end_date DATE NULL AFTER target_start_date");
+        $db->exec("ALTER TABLE project_proposals ADD COLUMN IF NOT EXISTS supporting_information TEXT NULL AFTER target_end_date");
         $db->exec("ALTER TABLE project_proposals ADD INDEX IF NOT EXISTS idx_project_proposals_submitted_at (submitted_at)");
     } catch (Throwable $e) {
     }

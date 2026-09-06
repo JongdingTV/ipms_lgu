@@ -19,6 +19,10 @@ let engineerProposalMap = null;
 let engineerProposalPin = null;
 let engineerProposalProjectMarkers = [];
 let engineerProposalBoundaryLayers = [];
+let engineerProposalRoadMap = null;
+let engineerProposalRoadPoints = [];
+let engineerProposalRoadMarkers = [];
+let engineerProposalRoadLine = null;
 const ENGINEER_MAP_ACTIVE_STATUSES = ['approved', 'bidding', 'awarded', 'assigned', 'active', 'delayed', 'on_hold', 'completion_inspection'];
 
 /* photos/delays/issues accumulate over time, so they're fetched paginated,
@@ -289,7 +293,7 @@ function engineerProposalFormHtml(proposal = {}) {
     <input type="hidden" name="id" value="${proposal.id || ''}">
     <div class="proposal-form-grid">
       <label>Proposed Project Title *<input class="form-input" name="title" required value="${engineerEscape(proposal.title)}"></label>
-      <label>Project Category *<select class="form-input" name="category" required><option value="">Select category</option>${categories.map(value => `<option ${proposal.category === value ? 'selected' : ''}>${value}</option>`).join('')}</select></label>
+      <label>Project Category *<select id="engineerProposalCategory" class="form-input" name="category" required><option value="">Select category</option>${categories.map(value => `<option ${proposal.category === value ? 'selected' : ''}>${value}</option>`).join('')}</select></label>
       <label>Infrastructure Type<input class="form-input" name="infrastructure_type" value="${engineerEscape(proposal.infrastructure_type)}" placeholder="e.g. road rehabilitation"></label>
       <label>Priority *<select class="form-input" name="priority" required>${['low','medium','high','urgent'].map(value => `<option value="${value}" ${proposal.priority === value ? 'selected' : ''}>${value[0].toUpperCase() + value.slice(1)}</option>`).join('')}</select></label>
       <label>District *<select class="form-input" name="district" required><option value="">Select district</option>${districts.map(value => `<option value="${value}" ${proposalDistrict === value ? 'selected' : ''}>${value}</option>`).join('')}</select></label>
@@ -299,7 +303,15 @@ function engineerProposalFormHtml(proposal = {}) {
       <label class="proposal-form-wide">Project Need / Justification *<textarea class="form-input" name="justification" rows="3" required>${engineerEscape(proposal.justification)}</textarea></label>
       <label class="proposal-form-wide">Observed Problem<textarea class="form-input" name="observed_problem" rows="3">${engineerEscape(proposal.observed_problem)}</textarea></label>
       <label class="proposal-form-wide">Proposed Solution<textarea class="form-input" name="proposed_solution" rows="3">${engineerEscape(proposal.proposed_solution)}</textarea></label>
+      <label>Implementing Office<input class="form-input" name="implementing_office" value="${engineerEscape(proposal.implementing_office)}" placeholder="e.g. City Engineering Office"></label>
+      <label>Physical Target / Scope<input class="form-input" name="physical_target" value="${engineerEscape(proposal.physical_target)}" placeholder="e.g. 2.5 km road rehabilitation"></label>
+      <label>Funding Source<select class="form-input" name="funding_source"><option value="">Select funding source</option>${['LGU General Fund','20% Development Fund','National Government Fund','Grant/Donor Fund','Special Education Fund','Other'].map(value => `<option ${proposal.funding_source === value ? 'selected' : ''}>${value}</option>`).join('')}</select></label>
+      <label>Preliminary Budget Estimate<input class="form-input" name="budget_estimate" type="number" min="0" step="0.01" value="${engineerEscape(proposal.budget_estimate)}" placeholder="Optional; no AI estimate"></label>
+      <label>Target Start Date<input class="form-input" name="target_start_date" type="date" value="${engineerEscape(proposal.target_start_date)}"></label>
+      <label>Target End Date<input class="form-input" name="target_end_date" type="date" value="${engineerEscape(proposal.target_end_date)}"></label>
+      <label class="proposal-form-wide">Supporting Information<textarea class="form-input" name="supporting_information" rows="3" placeholder="Site assessment, field findings, engineering recommendation, or other submitted context">${engineerEscape(proposal.supporting_information)}</textarea></label>
     </div>
+    <div id="engineerProposalRoadSection" class="proposal-road-section" style="display:none"><div class="proposal-location-heading"><strong>Road Geometry</strong><span>Required for Roads and Bridges. Click at least two points from start to end.</span></div><div class="proposal-road-grid"><label>Road Name *<input id="proposalRoadName" class="form-input" value="${engineerEscape(proposal.road_geometry?.road_name)}"></label><label>Road Type<select id="proposalRoadType" class="form-input"><option value="">Select road type</option>${['National Road','City Road','Barangay Road','Secondary Road','Bridge','Intersection'].map(value => `<option ${proposal.road_geometry?.road_type === value ? 'selected' : ''}>${value}</option>`).join('')}</select></label><label>Road Status<select id="proposalRoadStatus" class="form-input"><option value="">Select road status</option>${['Existing Road','Road Widening','New Road','Rehabilitation','Bridge Construction'].map(value => `<option ${proposal.road_geometry?.road_status === value ? 'selected' : ''}>${value}</option>`).join('')}</select></label><label>Road Width (m)<input id="proposalRoadWidth" type="number" min="0" step="0.1" class="form-input" value="${engineerEscape(proposal.road_geometry?.road_width)}"></label><label>Number of Lanes<input id="proposalRoadLanes" type="number" min="0" class="form-input" value="${engineerEscape(proposal.road_geometry?.num_lanes)}"></label><label>Road Surface<select id="proposalRoadSurface" class="form-input"><option value="">Select surface</option>${['Concrete','Asphalt','Gravel','Mixed'].map(value => `<option ${proposal.road_geometry?.road_surface === value ? 'selected' : ''}>${value}</option>`).join('')}</select></label></div><div id="engineerProposalRoadMap" class="proposal-location-map"></div><p id="proposalRoadReadout" class="proposal-map-note">No road points yet.</p><div class="proposal-road-toggles">${[['proposalRoadBridge','Bridge Included'],['proposalRoadDrainage','Drainage Included'],['proposalRoadBike','Bike Lane'],['proposalRoadSidewalk','Sidewalk'],['proposalRoadLights','Streetlights']].map(([id,label]) => `<label><input id="${id}" type="checkbox" ${proposal.road_geometry?.[id.replace('proposalRoad','').replace('Bridge','bridge_included').replace('Drainage','drainage_included').replace('Bike','bike_lane').replace('Sidewalk','sidewalk').replace('Lights','streetlights')] ? 'checked' : ''}> ${label}</label>`).join('')}</div><input type="hidden" name="road_geometry" id="engineerProposalRoadGeometry"></div>
     <div class="proposal-feedback-picker"><div class="engineer-panel-head"><h3>Community Need / Feedback Basis</h3><span class="engineer-readonly-pill">Read-only records</span></div>
       <div class="proposal-filter-row"><input id="proposalFeedbackSearch" class="form-input" placeholder="Search feedback"><select id="proposalFeedbackCategory" class="form-input"><option value="">All categories</option><option value="road_damage">Road damage</option><option value="drainage_flooding">Drainage / flooding</option><option value="streetlight">Streetlight</option><option value="complaint">Complaint</option><option value="suggestion">Suggestion</option><option value="inquiry">Inquiry</option></select><select id="proposalFeedbackPriority" class="form-input"><option value="">All priorities</option><option>urgent</option><option>high</option><option>medium</option><option>low</option></select><button type="button" class="btn-secondary" onclick="engineerLoadProposalFeedback(1)">Search</button></div>
       <div class="proposal-feedback-summary"><span>Select relevant reports to support this proposal.</span><strong id="proposalFeedbackSelected">0 selected</strong></div>
@@ -471,9 +483,88 @@ function engineerSetProposalCoordinates(latlng) {
   if (location) location.value = [barangay ? `Barangay ${barangay}` : '', district ? `District ${district}` : '', 'Quezon City', `(${latlng.lat.toFixed(7)}, ${latlng.lng.toFixed(7)})`].filter(Boolean).join(', ');
 }
 
+function engineerRoadPointInRing(lat, lng, ring) {
+  let inside = false;
+  for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
+    const xi = ring[i][0], yi = ring[i][1], xj = ring[j][0], yj = ring[j][1];
+    if (((yi > lat) !== (yj > lat)) && lng < (xj - xi) * (lat - yi) / (yj - yi) + xi) inside = !inside;
+  }
+  return inside;
+}
+
+function engineerRoadLocate(lat, lng) {
+  const districts = window.QC_DISTRICTS || {};
+  for (const layer of engineerProposalRoadMap?._layers ? Object.values(engineerProposalRoadMap._layers) : []) {
+    const geometry = layer.feature?.geometry;
+    const rings = geometry?.type === 'Polygon' ? [geometry.coordinates] : geometry?.type === 'MultiPolygon' ? geometry.coordinates : [];
+    if (rings.some(group => group.length && engineerRoadPointInRing(lat, lng, group[0]))) {
+      const geo = layer.feature.properties.adm4_en;
+      for (const [district, entries] of Object.entries(districts)) {
+        const entry = entries.find(item => (item.geo || item.name) === geo);
+        if (entry) return { district, barangay: entry.name };
+      }
+    }
+  }
+  return { district: '', barangay: '' };
+}
+
+function engineerRoadRefresh() {
+  const hidden = document.getElementById('engineerProposalRoadGeometry');
+  const readout = document.getElementById('proposalRoadReadout');
+  if (!hidden) return;
+  const start = engineerProposalRoadPoints[0];
+  const end = engineerProposalRoadPoints[engineerProposalRoadPoints.length - 1];
+  if (readout) readout.textContent = engineerProposalRoadPoints.length >= 2 ? `Start: ${start[0].toFixed(6)}, ${start[1].toFixed(6)} · End: ${end[0].toFixed(6)}, ${end[1].toFixed(6)} · ${engineerProposalRoadPoints.length - 1} segment(s)` : `${engineerProposalRoadPoints.length} point(s) — add a start and end point.`;
+  if (engineerProposalRoadPoints.length < 2) { hidden.value = ''; return; }
+  const startLoc = engineerRoadLocate(start[0], start[1]);
+  const endLoc = engineerRoadLocate(end[0], end[1]);
+  const geometry = {
+    road_name: document.getElementById('proposalRoadName')?.value.trim() || '', road_type: document.getElementById('proposalRoadType')?.value || '', road_status: document.getElementById('proposalRoadStatus')?.value || '', points: engineerProposalRoadPoints,
+    start: { lat: start[0], lng: start[1], address: `${start[0].toFixed(6)}, ${start[1].toFixed(6)}`, barangay: startLoc.barangay, district: startLoc.district },
+    end: { lat: end[0], lng: end[1], address: `${end[0].toFixed(6)}, ${end[1].toFixed(6)}`, barangay: endLoc.barangay, district: endLoc.district },
+    barangays_covered: [...new Set(engineerProposalRoadPoints.map(point => engineerRoadLocate(point[0], point[1]).barangay).filter(Boolean))], districts_covered: [...new Set(engineerProposalRoadPoints.map(point => engineerRoadLocate(point[0], point[1]).district).filter(Boolean))],
+    road_width: document.getElementById('proposalRoadWidth')?.value || null, num_lanes: document.getElementById('proposalRoadLanes')?.value || null, road_surface: document.getElementById('proposalRoadSurface')?.value || '',
+    bridge_included: !!document.getElementById('proposalRoadBridge')?.checked, drainage_included: !!document.getElementById('proposalRoadDrainage')?.checked, bike_lane: !!document.getElementById('proposalRoadBike')?.checked, sidewalk: !!document.getElementById('proposalRoadSidewalk')?.checked, streetlights: !!document.getElementById('proposalRoadLights')?.checked,
+  };
+  hidden.value = JSON.stringify(geometry);
+}
+
+function engineerRoadRender() {
+  if (!engineerProposalRoadMap) return;
+  if (engineerProposalRoadLine) engineerProposalRoadMap.removeLayer(engineerProposalRoadLine);
+  engineerProposalRoadLine = engineerProposalRoadPoints.length > 1 ? L.polyline(engineerProposalRoadPoints, { color: '#2563eb', weight: 5 }).addTo(engineerProposalRoadMap) : null;
+  engineerProposalRoadMarkers.forEach(marker => engineerProposalRoadMap.removeLayer(marker));
+  engineerProposalRoadMarkers = engineerProposalRoadPoints.map((point, index) => L.circleMarker(point, { radius: 6, color: index === 0 ? '#1e40af' : '#991b1b', fillColor: index === 0 ? '#3b82f6' : '#ef4444', fillOpacity: 1, weight: 2 }).bindTooltip(index === 0 ? 'Start' : index === engineerProposalRoadPoints.length - 1 ? 'End' : `Point ${index + 1}`).addTo(engineerProposalRoadMap));
+  engineerRoadRefresh();
+}
+
+async function engineerSetupRoadProposal(proposal = {}) {
+  const category = document.getElementById('engineerProposalCategory');
+  const section = document.getElementById('engineerProposalRoadSection');
+  if (!category || !section) return;
+  if (engineerProposalRoadMap) { engineerProposalRoadMap.remove(); engineerProposalRoadMap = null; engineerProposalRoadPoints = []; engineerProposalRoadMarkers = []; engineerProposalRoadLine = null; }
+  const toggle = async () => {
+    const visible = category.value === 'Roads and Bridges'; section.style.display = visible ? 'flex' : 'none';
+    if (!visible || engineerProposalRoadMap) return;
+    const container = document.getElementById('engineerProposalRoadMap');
+    try {
+      const response = await fetch(window.QC_GEOJSON_URL); const geojson = await response.json();
+      engineerProposalRoadMap = L.map(container, { minZoom: 11, maxZoom: 18 });
+      L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { attribution: '&copy; OpenStreetMap contributors' }).addTo(engineerProposalRoadMap);
+      const layer = L.geoJSON(geojson, { style: { color: '#94a3b8', weight: 1, fillOpacity: .06 } }).addTo(engineerProposalRoadMap); engineerProposalRoadMap.setMaxBounds(layer.getBounds().pad(.3)); engineerProposalRoadMap.fitBounds(layer.getBounds());
+      engineerProposalRoadMap.on('click', event => { engineerProposalRoadPoints.push([event.latlng.lat, event.latlng.lng]); engineerRoadRender(); });
+      const existing = proposal.road_geometry;
+      if (existing?.points?.length) { engineerProposalRoadPoints = existing.points.map(point => [Number(point[0]), Number(point[1])]); engineerRoadRender(); engineerProposalRoadMap.fitBounds(L.polyline(engineerProposalRoadPoints).getBounds().pad(.25)); }
+      ['proposalRoadName','proposalRoadType','proposalRoadStatus','proposalRoadWidth','proposalRoadLanes','proposalRoadSurface','proposalRoadBridge','proposalRoadDrainage','proposalRoadBike','proposalRoadSidewalk','proposalRoadLights'].forEach(id => document.getElementById(id)?.addEventListener('input', engineerRoadRefresh));
+      setTimeout(() => engineerProposalRoadMap?.invalidateSize(), 100);
+    } catch { container.insertAdjacentHTML('afterend', '<p class="proposal-map-note">Road map unavailable. Reload and try again.</p>'); }
+  };
+  category.addEventListener('change', toggle); await toggle();
+}
+
 function engineerFilterProposalRows() { const search = (document.getElementById('proposalListSearch')?.value || '').toLowerCase(); const status = document.getElementById('proposalListStatus')?.value || ''; document.querySelectorAll('.proposal-row').forEach(row => { row.style.display = (!search || row.dataset.search.toLowerCase().includes(search)) && (!status || row.dataset.status === status) ? '' : 'none'; }); }
 async function engineerRenderProposalFormById(id) { const data = await engineerProposalRequest(`${ENGINEER_PROPOSALS_API}?id=${id}`); engineerRenderProposalForm(data.data); }
-async function engineerRenderProposalForm(proposal = {}) { const workspace = document.getElementById('proposalWorkspace'); engineerProposalFeedbackState.selected = new Set((proposal.feedback_basis || []).map(row => String(row.id))); workspace.innerHTML = engineerProposalFormHtml(proposal); engineerSetupProposalMap(proposal); await engineerLoadProposalFeedback(); engineerToggleProposalFeedback({ checked: false, value: '' }); }
+async function engineerRenderProposalForm(proposal = {}) { const workspace = document.getElementById('proposalWorkspace'); engineerProposalFeedbackState.selected = new Set((proposal.feedback_basis || []).map(row => String(row.id))); workspace.innerHTML = engineerProposalFormHtml(proposal); engineerSetupProposalMap(proposal); engineerSetupRoadProposal(proposal); await engineerLoadProposalFeedback(); engineerToggleProposalFeedback({ checked: false, value: '' }); }
 async function engineerViewProposal(id) { const data = await engineerProposalRequest(`${ENGINEER_PROPOSALS_API}?id=${id}`); const proposal = data.data; engineerOpenModal(`${engineerEscape(proposal.proposal_code)} Proposal`, `<div class="engineer-detail-grid"><div class="engineer-detail-box"><span>Status</span><strong>${engineerStatus(proposal.status)}</strong></div><div class="engineer-detail-box"><span>Category</span><strong>${engineerEscape(proposal.category)}</strong></div><div class="engineer-detail-box"><span>Location</span><strong>${engineerEscape(proposal.location)}</strong></div><div class="engineer-detail-box"><span>Priority</span><strong>${engineerEscape(proposal.priority)}</strong></div></div><h4>Description</h4><p class="proposal-detail-copy">${engineerEscape(proposal.description)}</p><h4>Need / Justification</h4><p class="proposal-detail-copy">${engineerEscape(proposal.justification)}</p><h4>Feedback Basis (${proposal.feedback_basis.length})</h4>${proposal.feedback_basis.map(row => `<p class="proposal-detail-copy"><strong>FB-${String(row.id).padStart(4, '0')}</strong> ${engineerEscape(row.message)}</p>`).join('') || '<p class="empty-state">No feedback linked.</p>'}`); }
 
 async function engineerViewProposal(id) { const data = await engineerProposalRequest(`${ENGINEER_PROPOSALS_API}?id=${id}`); const proposal = data.data; engineerOpenModal(`${engineerEscape(proposal.proposal_code)} Proposal`, `<div class="engineer-detail-grid"><div class="engineer-detail-box"><span>Status</span><strong>${engineerStatus(proposal.status)}</strong></div><div class="engineer-detail-box"><span>Category</span><strong>${engineerEscape(proposal.category)}</strong></div><div class="engineer-detail-box"><span>Location</span><strong>${engineerEscape(proposal.location)}</strong></div><div class="engineer-detail-box"><span>Priority</span><strong>${engineerEscape(proposal.priority)}</strong></div></div>${proposal.return_notes ? `<h4>Return Notes from Head Office</h4><p class="proposal-detail-copy">${engineerEscape(proposal.return_notes)}</p>` : ''}<h4>Description</h4><p class="proposal-detail-copy">${engineerEscape(proposal.description)}</p><h4>Need / Justification</h4><p class="proposal-detail-copy">${engineerEscape(proposal.justification)}</p><h4>Feedback Basis (${proposal.feedback_basis.length})</h4>${proposal.feedback_basis.map(row => `<p class="proposal-detail-copy"><strong>FB-${String(row.id).padStart(4, '0')}</strong> ${engineerEscape(row.message)}</p>`).join('') || '<p class="empty-state">No feedback linked.</p>'}`); }

@@ -1267,8 +1267,11 @@ async function viewProjectProposal(id) {
     if (result.error) { toast(result.error, 'error'); return; }
     const proposal = result.data;
     const feedback = proposal.feedback_basis || [];
+    const roadStart = proposal.road_geometry?.start;
     const mapRecord = Number.isFinite(Number(proposal.latitude)) && Number.isFinite(Number(proposal.longitude)) && Number(proposal.latitude) !== 0 && Number(proposal.longitude) !== 0
       ? { latitude: proposal.latitude, longitude: proposal.longitude, barangay: proposal.barangay, district: proposal.district, source: 'proposal' }
+      : roadStart && Number.isFinite(Number(roadStart.lat)) && Number.isFinite(Number(roadStart.lng))
+        ? { latitude: roadStart.lat, longitude: roadStart.lng, barangay: roadStart.barangay || proposal.barangay, district: roadStart.district || proposal.district, source: 'road_geometry' }
       : proposalMapData(feedback);
     const documents = proposal.supporting_documents || [];
     openModal(`${proposal.proposal_code} — Project Proposal`, `
@@ -1282,8 +1285,10 @@ async function viewProjectProposal(id) {
         <div class="proposal-detail-copy"><p class="modal-label">PROJECT NEED / JUSTIFICATION</p><p>${escapeHtml(proposal.justification)}</p></div>
         ${proposal.observed_problem ? `<div class="proposal-detail-copy"><p class="modal-label">OBSERVED PROBLEM</p><p>${escapeHtml(proposal.observed_problem)}</p></div>` : ''}
         ${proposal.proposed_solution ? `<div class="proposal-detail-copy"><p class="modal-label">PROPOSED SOLUTION</p><p>${escapeHtml(proposal.proposed_solution)}</p></div>` : ''}
+        <h4>Supporting Project Information</h4><div class="proposal-detail-grid">${proposalDetailItem('Implementing Office', proposal.implementing_office)}${proposalDetailItem('Physical Target / Scope', proposal.physical_target)}${proposalDetailItem('Funding Source', proposal.funding_source)}${proposalDetailItem('Preliminary Budget Estimate', proposal.budget_estimate ? `PHP ${Number(proposal.budget_estimate).toLocaleString()}` : 'Not provided')}${proposalDetailItem('Target Start Date', proposal.target_start_date)}${proposalDetailItem('Target End Date', proposal.target_end_date)}</div>${proposal.supporting_information ? `<div class="proposal-detail-copy"><p class="modal-label">SUPPORTING INFORMATION</p><p>${escapeHtml(proposal.supporting_information)}</p></div>` : ''}
         <h4>Proponent</h4>
         <div class="proposal-detail-grid">${proposalDetailItem('Engineer Name', proposal.engineer_name)}${proposalDetailItem('Engineer ID', `ENG-${String(proposal.engineer_id).padStart(4, '0')}`)}${proposalDetailItem('Date Submitted', proposalDate(proposal.submitted_at))}${proposalDetailItem('Review Status', PROPOSAL_STATUS_META[proposal.status]?.label || proposal.status)}</div>
+        ${proposal.road_geometry ? `<h4>Road Geometry</h4><div class="proposal-detail-grid">${proposalDetailItem('Road Name', proposal.road_geometry.road_name)}${proposalDetailItem('Road Type', proposal.road_geometry.road_type)}${proposalDetailItem('Road Status', proposal.road_geometry.road_status)}${proposalDetailItem('Estimated Length', proposal.road_geometry.estimated_length_meters ? `${Number(proposal.road_geometry.estimated_length_meters).toLocaleString()} m` : '—')}${proposalDetailItem('Start', proposal.road_geometry.start?.address)}${proposalDetailItem('End', proposal.road_geometry.end?.address)}${proposalDetailItem('Barangays Covered', (proposal.road_geometry.barangays_covered || []).join(', '))}${proposalDetailItem('Districts Covered', (proposal.road_geometry.districts_covered || []).join(', '))}${proposalDetailItem('Road Surface', proposal.road_geometry.road_surface)}${proposalDetailItem('Number of Lanes', proposal.road_geometry.num_lanes)}</div><p class="proposal-section-note">Road start/end and drawn path are preserved with this proposal for Head Office review.</p>` : ''}
         <h4>Community Need / Feedback Basis</h4>
         <p class="proposal-section-note">${feedback.length} Citizen Feedback Record${feedback.length === 1 ? '' : 's'} linked by the proposing Engineer. The original records are displayed without duplication.</p>
         ${proposalFeedbackRows(feedback)}
@@ -1317,6 +1322,13 @@ function renderProposalLocationMap(record, proposal) {
   proposalLocationMap = L.map(target, { zoomControl: true, scrollWheelZoom: false }).setView([latitude, longitude], 15);
   L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19, attribution: '&copy; OpenStreetMap contributors' }).addTo(proposalLocationMap);
   L.marker([latitude, longitude]).addTo(proposalLocationMap).bindPopup(escapeHtml(proposal.title)).openPopup();
+  const roadPoints = proposal.road_geometry?.points || [];
+  if (roadPoints.length >= 2) {
+    const line = L.polyline(roadPoints.map(point => [Number(point[0]), Number(point[1])]), { color: '#2563eb', weight: 5 }).addTo(proposalLocationMap);
+    proposalLocationMap.fitBounds(line.getBounds().pad(0.2));
+    L.circleMarker(roadPoints[0], { radius: 7, color: '#1e40af', fillColor: '#3b82f6', fillOpacity: 1, weight: 2 }).addTo(proposalLocationMap).bindTooltip('Start');
+    L.circleMarker(roadPoints[roadPoints.length - 1], { radius: 7, color: '#991b1b', fillColor: '#ef4444', fillOpacity: 1, weight: 2 }).addTo(proposalLocationMap).bindTooltip('End');
+  }
   setTimeout(() => proposalLocationMap?.invalidateSize(), 60);
 }
 

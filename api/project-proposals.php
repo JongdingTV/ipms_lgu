@@ -4,6 +4,7 @@ require_once __DIR__ . '/../includes/db.php';
 require_once __DIR__ . '/../includes/auth.php';
 require_once __DIR__ . '/../includes/workflow.php';
 require_once __DIR__ . '/../includes/Notifications.php';
+require_once __DIR__ . '/../includes/RoadGeometry.php';
 
 apiHeaders();
 $user = currentUser();
@@ -132,6 +133,7 @@ function proposalOrderBy(string $sort): string
 
 function proposalResponse(PDO $db, array $row): array
 {
+    $row['road_geometry'] = $row['road_geometry'] ? json_decode((string) $row['road_geometry'], true) : null;
     $feedback = $db->prepare("SELECT f.id, f.citizen_name, f.message, f.category, f.infrastructure_type, f.concern_type, f.priority, f.status, f.location, f.district, f.barangay, f.latitude, f.longitude, f.created_at FROM feedback f INNER JOIN project_proposal_feedback ppf ON ppf.feedback_id = f.id WHERE ppf.proposal_id = ? ORDER BY f.created_at DESC");
     $feedback->execute([(int) $row['id']]);
     $row['feedback_basis'] = $feedback->fetchAll();
@@ -304,11 +306,19 @@ if ($method === 'POST' || $method === 'PUT') {
     $justification = trim((string) ($body['justification'] ?? ''));
     $observedProblem = trim((string) ($body['observed_problem'] ?? ''));
     $proposedSolution = trim((string) ($body['proposed_solution'] ?? ''));
+    $implementingOffice = trim((string) ($body['implementing_office'] ?? ''));
+    $physicalTarget = trim((string) ($body['physical_target'] ?? ''));
+    $fundingSource = trim((string) ($body['funding_source'] ?? ''));
+    $budgetEstimate = ($body['budget_estimate'] ?? '') !== '' ? (float) $body['budget_estimate'] : null;
+    $targetStartDate = trim((string) ($body['target_start_date'] ?? '')) ?: null;
+    $targetEndDate = trim((string) ($body['target_end_date'] ?? '')) ?: null;
+    $supportingInformation = trim((string) ($body['supporting_information'] ?? ''));
     $location = trim((string) ($body['location'] ?? ''));
     $district = proposalCanonicalDistrict((string) ($body['district'] ?? '')) ?? '';
     $barangay = trim((string) ($body['barangay'] ?? ''));
     $latitude = ($body['latitude'] ?? '') !== '' ? (float) $body['latitude'] : null;
     $longitude = ($body['longitude'] ?? '') !== '' ? (float) $body['longitude'] : null;
+    $roadGeometry = null;
     $priority = trim((string) ($body['priority'] ?? 'medium'));
     $feedbackIds = array_values(array_unique(array_filter(array_map('intval', (array) ($body['feedback_ids'] ?? [])))));
 
@@ -318,11 +328,24 @@ if ($method === 'POST' || $method === 'PUT') {
     if (!in_array($priority, ['low', 'medium', 'high', 'urgent'], true)) {
         respond(['error' => 'Invalid priority.'], 422);
     }
+    if ($budgetEstimate !== null && $budgetEstimate < 0) {
+        respond(['error' => 'Budget estimate cannot be negative.'], 422);
+    }
+    if ($targetStartDate !== null && $targetEndDate !== null && $targetEndDate < $targetStartDate) {
+        respond(['error' => 'Target end date cannot be before the target start date.'], 422);
+    }
     if (!preg_match('/^District [1-6]$/', $district)) {
         respond(['error' => 'District must be a number from 1 to 6.'], 422);
     }
     if (($latitude !== null && ($latitude < -90 || $latitude > 90)) || ($longitude !== null && ($longitude < -180 || $longitude > 180))) {
         respond(['error' => 'Invalid map coordinates.'], 422);
+    }
+    if ($category === 'Roads and Bridges') {
+        $roadGeometryError = null;
+        $roadGeometry = projectValidateRoadGeometry((string) ($body['road_geometry'] ?? ''), $roadGeometryError);
+        if ($roadGeometry === null) {
+            respond(['error' => $roadGeometryError ?: 'Road Geometry is required for Roads and Bridges proposals.'], 422);
+        }
     }
 
     $engineerDistrict = proposalEngineerDistrict($db, $userId);
@@ -348,11 +371,11 @@ if ($method === 'POST' || $method === 'PUT') {
     $db->beginTransaction();
     try {
         if ($existing) {
-            $db->prepare("UPDATE project_proposals SET title = ?, category = ?, infrastructure_type = ?, description = ?, justification = ?, observed_problem = ?, proposed_solution = ?, location = ?, district = ?, barangay = ?, latitude = ?, longitude = ?, priority = ?, status = ?, submitted_at = CASE WHEN ? = 'submitted' THEN CASE WHEN status = 'returned' THEN NOW() ELSE COALESCE(submitted_at, NOW()) END ELSE NULL END, return_notes = CASE WHEN ? = 'submitted' THEN NULL ELSE return_notes END, updated_at = NOW() WHERE id = ? AND engineer_id = ?")
-                ->execute([$title, $category, $infrastructureType ?: null, $description, $justification, $observedProblem ?: null, $proposedSolution ?: null, $location, $district, $barangay, $latitude, $longitude, $priority, $status, $status, $status, $id, $userId]);
+            $db->prepare("UPDATE project_proposals SET title = ?, category = ?, infrastructure_type = ?, description = ?, justification = ?, observed_problem = ?, proposed_solution = ?, implementing_office = ?, physical_target = ?, funding_source = ?, budget_estimate = ?, target_start_date = ?, target_end_date = ?, supporting_information = ?, location = ?, district = ?, barangay = ?, latitude = ?, longitude = ?, road_geometry = ?, priority = ?, status = ?, submitted_at = CASE WHEN ? = 'submitted' THEN CASE WHEN status = 'returned' THEN NOW() ELSE COALESCE(submitted_at, NOW()) END ELSE NULL END, return_notes = CASE WHEN ? = 'submitted' THEN NULL ELSE return_notes END, updated_at = NOW() WHERE id = ? AND engineer_id = ?")
+                ->execute([$title, $category, $infrastructureType ?: null, $description, $justification, $observedProblem ?: null, $proposedSolution ?: null, $implementingOffice ?: null, $physicalTarget ?: null, $fundingSource ?: null, $budgetEstimate, $targetStartDate, $targetEndDate, $supportingInformation ?: null, $location, $district, $barangay, $latitude, $longitude, $roadGeometry ? json_encode($roadGeometry, JSON_UNESCAPED_UNICODE) : null, $priority, $status, $status, $status, $id, $userId]);
         } else {
-            $db->prepare("INSERT INTO project_proposals (proposal_code, title, category, infrastructure_type, description, justification, observed_problem, proposed_solution, location, district, barangay, latitude, longitude, priority, engineer_id, status, submitted_at) VALUES ('PENDING', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CASE WHEN ? = 'submitted' THEN NOW() ELSE NULL END)")
-                ->execute([$title, $category, $infrastructureType ?: null, $description, $justification, $observedProblem ?: null, $proposedSolution ?: null, $location, $district, $barangay, $latitude, $longitude, $priority, $userId, $status, $status]);
+            $db->prepare("INSERT INTO project_proposals (proposal_code, title, category, infrastructure_type, description, justification, observed_problem, proposed_solution, implementing_office, physical_target, funding_source, budget_estimate, target_start_date, target_end_date, supporting_information, location, district, barangay, latitude, longitude, road_geometry, priority, engineer_id, status, submitted_at) VALUES ('PENDING', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CASE WHEN ? = 'submitted' THEN NOW() ELSE NULL END)")
+                ->execute([$title, $category, $infrastructureType ?: null, $description, $justification, $observedProblem ?: null, $proposedSolution ?: null, $implementingOffice ?: null, $physicalTarget ?: null, $fundingSource ?: null, $budgetEstimate, $targetStartDate, $targetEndDate, $supportingInformation ?: null, $location, $district, $barangay, $latitude, $longitude, $roadGeometry ? json_encode($roadGeometry, JSON_UNESCAPED_UNICODE) : null, $priority, $userId, $status, $status]);
             $id = (int) $db->lastInsertId();
             $code = 'PP-' . str_pad((string) $id, 5, '0', STR_PAD_LEFT);
             $db->prepare('UPDATE project_proposals SET proposal_code = ? WHERE id = ?')->execute([$code, $id]);
