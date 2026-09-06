@@ -310,7 +310,7 @@ function engineerProposalFormHtml(proposal = {}) {
       <label>Implementing Office<input class="form-input" name="implementing_office" value="${engineerEscape(proposal.implementing_office)}" placeholder="e.g. City Engineering Office"></label>
       <label>Physical Target / Scope<input class="form-input" name="physical_target" value="${engineerEscape(proposal.physical_target)}" placeholder="e.g. 2.5 km road rehabilitation"></label>
       <label>Funding Source<select class="form-input" name="funding_source"><option value="">Select funding source</option>${['LGU General Fund','20% Development Fund','National Government Fund','Grant/Donor Fund','Special Education Fund','Other'].map(value => `<option ${proposal.funding_source === value ? 'selected' : ''}>${value}</option>`).join('')}</select></label>
-      <label>Preliminary Budget Estimate<input class="form-input" name="budget_estimate" type="number" min="0" step="0.01" value="${engineerEscape(proposal.budget_estimate)}" placeholder="Optional; no AI estimate"></label>
+      <label>Preliminary Budget Estimate<input class="form-input" name="budget_estimate" type="number" min="0" step="0.01" value="${engineerEscape(proposal.budget_estimate)}" placeholder="Optional reference amount"></label>
       <label>Target Start Date<input class="form-input" name="target_start_date" type="date" value="${engineerEscape(proposal.target_start_date)}"></label>
       <label>Target End Date<input class="form-input" name="target_end_date" type="date" value="${engineerEscape(proposal.target_end_date)}"></label>
       <label class="proposal-form-wide">Supporting Information<textarea class="form-input" name="supporting_information" rows="3" placeholder="Site assessment, field findings, engineering recommendation, or other submitted context">${engineerEscape(proposal.supporting_information)}</textarea></label>
@@ -323,21 +323,57 @@ function engineerProposalFormHtml(proposal = {}) {
       <div id="proposalFeedbackList" class="proposal-feedback-list"></div>
       <div id="proposalFeedbackPager" class="proposal-pagination"></div>
     </div>
-    <div class="proposal-actions"><button type="button" class="btn-secondary" onclick="engineerSaveProposal('save_draft')">Save Draft</button><button type="button" class="btn-primary" onclick="engineerSaveProposal('submit')">Submit Proposal</button></div>
+    ${proposal.ai_estimated_budget ? `<div class="proposal-ai-budget"><strong>AI Estimated Budget: ${engineerMoney(proposal.ai_estimated_budget)}</strong><span>Range: ${engineerMoney(proposal.ai_budget_low)} - ${engineerMoney(proposal.ai_budget_high)} · Confidence: ${Number(proposal.ai_budget_confidence || 0).toFixed(0)}%</span><p>${engineerEscape(proposal.ai_budget_rationale || 'Advisory estimate based on the proposal context.')}</p><small>Advisory only. Head Office and the Mayor must review it.</small></div>` : '<div class="proposal-ai-budget proposal-ai-budget-empty"><strong>AI budget estimate required before submission</strong><span>Save the proposal, then generate an estimate from its scope, need, feedback, and supporting documents.</span></div>'}
+    <div class="proposal-actions"><button type="button" class="btn-secondary" onclick="engineerSaveProposal('save_draft')">Save Draft</button><button type="button" class="btn-secondary" onclick="engineerGenerateProposalBudget()">Generate AI Budget</button><button type="button" class="btn-primary" onclick="engineerSaveProposal('submit')">Submit Proposal</button></div>
   </form></div>`;
 }
 
-async function engineerSubmitProposal(event) { event.preventDefault(); await engineerSaveProposal('save_draft'); }
+async function engineerSubmitProposal(event) { event.preventDefault(); await engineerSaveProposal('submit'); }
+
+async function engineerSaveProposalDraft() {
+  const form = document.getElementById('projectProposalForm');
+  if (!form || !form.reportValidity()) return null;
+  const body = new FormData(form);
+  body.set('action', 'save_draft');
+  body.delete('feedback_ids[]');
+  engineerProposalFeedbackState.selected.forEach(id => body.append('feedback_ids[]', id));
+  return engineerProposalRequest(ENGINEER_PROPOSALS_API, { method: 'POST', headers: { ...ENGINEER_CSRF_HEADERS }, body });
+}
+
+async function engineerGenerateProposalBudget() {
+  try {
+    const saved = await engineerSaveProposalDraft();
+    if (!saved) return;
+    await engineerProposalRequest(ENGINEER_PROPOSALS_API, { method: 'POST', headers: { 'Content-Type': 'application/json', ...ENGINEER_CSRF_HEADERS }, body: JSON.stringify({ action: 'estimate_budget', id: saved.id }) });
+    engineerToast('AI budget estimate generated.');
+    await engineerRenderProposalFormById(saved.id);
+  } catch (error) { engineerToast(error.message, 'error'); }
+}
 
 async function engineerSaveProposal(action) {
   const form = document.getElementById('projectProposalForm');
   if (!form) return;
   if (!form.reportValidity()) return;
-  const body = new FormData(form);
-  body.set('action', action);
-  body.delete('feedback_ids[]');
-  engineerProposalFeedbackState.selected.forEach(id => body.append('feedback_ids[]', id));
   try {
+    if (action === 'submit') {
+      const saved = await engineerSaveProposalDraft();
+      if (!saved) return;
+      await engineerProposalRequest(ENGINEER_PROPOSALS_API, { method: 'POST', headers: { 'Content-Type': 'application/json', ...ENGINEER_CSRF_HEADERS }, body: JSON.stringify({ action: 'estimate_budget', id: saved.id }) });
+      const finalBody = new FormData(form);
+      finalBody.set('id', saved.id);
+      finalBody.set('action', 'submit');
+      finalBody.delete('proposal_documents[]');
+      finalBody.delete('feedback_ids[]');
+      engineerProposalFeedbackState.selected.forEach(id => finalBody.append('feedback_ids[]', id));
+      await engineerProposalRequest(ENGINEER_PROPOSALS_API, { method: 'POST', headers: { ...ENGINEER_CSRF_HEADERS }, body: finalBody });
+      engineerToast('Proposal submitted with an AI budget estimate.');
+      engineerRenderProposalPage('');
+      return;
+    }
+    const body = new FormData(form);
+    body.set('action', action);
+    body.delete('feedback_ids[]');
+    engineerProposalFeedbackState.selected.forEach(id => body.append('feedback_ids[]', id));
     const data = await engineerProposalRequest(ENGINEER_PROPOSALS_API, { method: 'POST', headers: { ...ENGINEER_CSRF_HEADERS }, body });
     engineerToast(action === 'submit' ? 'Proposal submitted for Head Office review.' : 'Proposal draft saved.');
     engineerRenderProposalPage(action === 'submit' ? '' : data.id);

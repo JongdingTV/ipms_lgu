@@ -43,6 +43,10 @@
 .proposal-pagination { display:flex; align-items:center; justify-content:flex-end; flex-wrap:wrap; gap:10px; margin-top:16px; padding-top:13px; border-top:1px solid var(--border); color:var(--text-muted); font-size:.74rem; }
 .proposal-pager-page { color:var(--text-primary); font-weight:800; }
 .proposal-actions { display:flex; justify-content:flex-end; gap:10px; margin-top:22px; padding-top:18px; border-top:1px solid var(--border); }
+.proposal-ai-budget { display:flex; flex-direction:column; gap:6px; margin-top:20px; padding:15px 16px; border:1px solid rgba(37,99,235,.25); border-left:4px solid #2563eb; border-radius:8px; background:rgba(239,246,255,.7); color:var(--text-primary); }
+.proposal-ai-budget span, .proposal-ai-budget p, .proposal-ai-budget small { color:var(--text-muted); font-size:.76rem; line-height:1.5; }
+.proposal-ai-budget p { margin:0; white-space:pre-wrap; }
+.proposal-ai-budget-empty { border-color:var(--border); border-left-color:#f97316; background:var(--bg-body); }
 .proposal-row { display:flex; justify-content:space-between; gap:20px; padding:17px; border:1px solid var(--border); border-radius:8px; background:var(--card-bg); }
 .proposal-row h3 { font-size:.96rem; margin:4px 0 5px; color:var(--text-primary); }
 .proposal-row p, .proposal-row small { color:var(--text-muted); font-size:.76rem; }

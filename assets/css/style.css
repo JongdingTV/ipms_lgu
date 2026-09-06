@@ -724,6 +724,9 @@ input.search-pill {
 .proposal-return-note { padding:11px 12px; border:1px solid #fdba74; border-radius:8px; background:#fff7ed; color:#9a3412; }
 .proposal-return-note p:last-child { margin:0; white-space:pre-wrap; font-size:.84rem; }
 .proposal-review-actions { display:flex; justify-content:flex-end; gap:8px; flex-wrap:wrap; padding-top:4px; }
+.proposal-ai-budget { padding:12px 14px; border:1px solid rgba(37,99,235,.25); border-left:4px solid #2563eb; border-radius:8px; background:rgba(239,246,255,.7); }
+.proposal-ai-budget p { margin:8px 0 0; color:var(--text-primary); font-size:.82rem; line-height:1.55; white-space:pre-wrap; }
+.proposal-ai-budget small { color:var(--text-muted); font-size:.72rem; }
 :root[data-theme="dark"] .proposal-filter-bar, :root[data-theme="dark"] .proposal-detail-top, :root[data-theme="dark"] .proposal-detail-copy { background:rgba(15,23,42,.35); }
 :root[data-theme="dark"] .proposal-return-note { background:rgba(154,52,18,.2); border-color:#9a3412; color:#fdba74; }
 

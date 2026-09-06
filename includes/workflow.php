@@ -238,6 +238,13 @@ function projectProposalEnsureSchema(PDO $db): void
         $db->exec("ALTER TABLE project_proposals ADD COLUMN IF NOT EXISTS physical_target VARCHAR(255) NULL AFTER implementing_office");
         $db->exec("ALTER TABLE project_proposals ADD COLUMN IF NOT EXISTS funding_source VARCHAR(100) NULL AFTER physical_target");
         $db->exec("ALTER TABLE project_proposals ADD COLUMN IF NOT EXISTS budget_estimate DECIMAL(15,2) NULL AFTER funding_source");
+        $db->exec("ALTER TABLE project_proposals ADD COLUMN IF NOT EXISTS ai_estimated_budget DECIMAL(15,2) NULL AFTER budget_estimate");
+        $db->exec("ALTER TABLE project_proposals ADD COLUMN IF NOT EXISTS ai_budget_low DECIMAL(15,2) NULL AFTER ai_estimated_budget");
+        $db->exec("ALTER TABLE project_proposals ADD COLUMN IF NOT EXISTS ai_budget_high DECIMAL(15,2) NULL AFTER ai_budget_low");
+        $db->exec("ALTER TABLE project_proposals ADD COLUMN IF NOT EXISTS ai_budget_confidence DECIMAL(5,2) NULL AFTER ai_budget_high");
+        $db->exec("ALTER TABLE project_proposals ADD COLUMN IF NOT EXISTS ai_budget_rationale TEXT NULL AFTER ai_budget_confidence");
+        $db->exec("ALTER TABLE project_proposals ADD COLUMN IF NOT EXISTS ai_budget_breakdown LONGTEXT NULL AFTER ai_budget_rationale");
+        $db->exec("ALTER TABLE project_proposals ADD COLUMN IF NOT EXISTS ai_budget_generated_at DATETIME NULL AFTER ai_budget_breakdown");
         $db->exec("ALTER TABLE project_proposals ADD COLUMN IF NOT EXISTS target_start_date DATE NULL AFTER budget_estimate");
         $db->exec("ALTER TABLE project_proposals ADD COLUMN IF NOT EXISTS target_end_date DATE NULL AFTER target_start_date");
         $db->exec("ALTER TABLE project_proposals ADD COLUMN IF NOT EXISTS supporting_information TEXT NULL AFTER target_end_date");

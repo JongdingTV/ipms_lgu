@@ -61,7 +61,7 @@ PROMPT;
      *        handling plumbing.
      * @return array{success:bool,reply:?string,message:string,http_status:int}
      */
-    public static function sendMessage(array $history, string $userMessage, ?string $systemPrompt = null): array
+    public static function sendMessage(array $history, string $userMessage, ?string $systemPrompt = null, bool $jsonResponse = false): array
     {
         // Gemini's "contents" shape differs from a generic {role, content}
         // history: role is 'user'|'model' (not 'assistant'), and each turn's
@@ -73,10 +73,14 @@ PROMPT;
         }
         $contents[] = ['role' => 'user', 'parts' => [['text' => $userMessage]]];
 
+        $generationConfig = ['maxOutputTokens' => self::MAX_OUTPUT_TOKENS];
+        if ($jsonResponse) {
+            $generationConfig['responseMimeType'] = 'application/json';
+        }
         $body = [
             'system_instruction' => ['parts' => ['text' => $systemPrompt ?? self::SYSTEM_PROMPT]],
             'contents' => $contents,
-            'generationConfig' => ['maxOutputTokens' => self::MAX_OUTPUT_TOKENS],
+            'generationConfig' => $generationConfig,
         ];
 
         return self::callGemini($body);
