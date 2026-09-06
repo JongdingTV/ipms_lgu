@@ -69,6 +69,10 @@ function engineerProposalStatusLabel(value) {
     submitted: 'Pending Review',
     under_review: 'Under Review',
     returned: 'Returned',
+    verified_by_head_office: 'Verified by Head Office',
+    for_mayor_validation: 'For Mayor Validation',
+    mayor_validated: 'Mayor Validated',
+    mayor_returned: 'Mayor Returned',
   })[value] || engineerStatus(value);
 }
 
@@ -311,6 +315,7 @@ function engineerProposalFormHtml(proposal = {}) {
       <label>Target End Date<input class="form-input" name="target_end_date" type="date" value="${engineerEscape(proposal.target_end_date)}"></label>
       <label class="proposal-form-wide">Supporting Information<textarea class="form-input" name="supporting_information" rows="3" placeholder="Site assessment, field findings, engineering recommendation, or other submitted context">${engineerEscape(proposal.supporting_information)}</textarea></label>
     </div>
+    <div class="proposal-documents"><div class="proposal-location-heading"><strong>Supporting Documents</strong><span>Attach feasibility, site assessment, and budget justification records for Head Office review.</span></div><div class="proposal-document-row"><select class="form-input" name="document_types[]"><option>Feasibility Study</option><option>Site Assessment</option><option>Budget Justification</option><option>Other</option></select><input class="form-input" name="document_titles[]" placeholder="Document title"><input class="form-input" type="file" name="proposal_documents[]" accept=".pdf,.doc,.docx,.xls,.xlsx,.png,.jpg,.jpeg"></div><div class="proposal-document-row"><select class="form-input" name="document_types[]"><option>Site Assessment</option><option>Feasibility Study</option><option>Budget Justification</option><option>Other</option></select><input class="form-input" name="document_titles[]" placeholder="Document title"><input class="form-input" type="file" name="proposal_documents[]" accept=".pdf,.doc,.docx,.xls,.xlsx,.png,.jpg,.jpeg"></div><div class="proposal-document-row"><select class="form-input" name="document_types[]"><option>Budget Justification</option><option>Feasibility Study</option><option>Site Assessment</option><option>Other</option></select><input class="form-input" name="document_titles[]" placeholder="Document title"><input class="form-input" type="file" name="proposal_documents[]" accept=".pdf,.doc,.docx,.xls,.xlsx,.png,.jpg,.jpeg"></div></div>
     <div id="engineerProposalRoadSection" class="proposal-road-section" style="display:none"><div class="proposal-location-heading"><strong>Road Geometry</strong><span>Required for Roads and Bridges. Click at least two points from start to end.</span></div><div class="proposal-road-grid"><label>Road Name *<input id="proposalRoadName" class="form-input" value="${engineerEscape(proposal.road_geometry?.road_name)}"></label><label>Road Type<select id="proposalRoadType" class="form-input"><option value="">Select road type</option>${['National Road','City Road','Barangay Road','Secondary Road','Bridge','Intersection'].map(value => `<option ${proposal.road_geometry?.road_type === value ? 'selected' : ''}>${value}</option>`).join('')}</select></label><label>Road Status<select id="proposalRoadStatus" class="form-input"><option value="">Select road status</option>${['Existing Road','Road Widening','New Road','Rehabilitation','Bridge Construction'].map(value => `<option ${proposal.road_geometry?.road_status === value ? 'selected' : ''}>${value}</option>`).join('')}</select></label><label>Road Width (m)<input id="proposalRoadWidth" type="number" min="0" step="0.1" class="form-input" value="${engineerEscape(proposal.road_geometry?.road_width)}"></label><label>Number of Lanes<input id="proposalRoadLanes" type="number" min="0" class="form-input" value="${engineerEscape(proposal.road_geometry?.num_lanes)}"></label><label>Road Surface<select id="proposalRoadSurface" class="form-input"><option value="">Select surface</option>${['Concrete','Asphalt','Gravel','Mixed'].map(value => `<option ${proposal.road_geometry?.road_surface === value ? 'selected' : ''}>${value}</option>`).join('')}</select></label></div><div id="engineerProposalRoadMap" class="proposal-location-map"></div><p id="proposalRoadReadout" class="proposal-map-note">No road points yet.</p><div class="proposal-road-toggles">${[['proposalRoadBridge','Bridge Included'],['proposalRoadDrainage','Drainage Included'],['proposalRoadBike','Bike Lane'],['proposalRoadSidewalk','Sidewalk'],['proposalRoadLights','Streetlights']].map(([id,label]) => `<label><input id="${id}" type="checkbox" ${proposal.road_geometry?.[id.replace('proposalRoad','').replace('Bridge','bridge_included').replace('Drainage','drainage_included').replace('Bike','bike_lane').replace('Sidewalk','sidewalk').replace('Lights','streetlights')] ? 'checked' : ''}> ${label}</label>`).join('')}</div><input type="hidden" name="road_geometry" id="engineerProposalRoadGeometry"></div>
     <div class="proposal-feedback-picker"><div class="engineer-panel-head"><h3>Community Need / Feedback Basis</h3><span class="engineer-readonly-pill">Read-only records</span></div>
       <div class="proposal-filter-row"><input id="proposalFeedbackSearch" class="form-input" placeholder="Search feedback"><select id="proposalFeedbackCategory" class="form-input"><option value="">All categories</option><option value="road_damage">Road damage</option><option value="drainage_flooding">Drainage / flooding</option><option value="streetlight">Streetlight</option><option value="complaint">Complaint</option><option value="suggestion">Suggestion</option><option value="inquiry">Inquiry</option></select><select id="proposalFeedbackPriority" class="form-input"><option value="">All priorities</option><option>urgent</option><option>high</option><option>medium</option><option>low</option></select><button type="button" class="btn-secondary" onclick="engineerLoadProposalFeedback(1)">Search</button></div>
@@ -328,11 +333,12 @@ async function engineerSaveProposal(action) {
   const form = document.getElementById('projectProposalForm');
   if (!form) return;
   if (!form.reportValidity()) return;
-  const body = Object.fromEntries(new FormData(form).entries());
-  body.action = action;
-  body.feedback_ids = [...engineerProposalFeedbackState.selected];
+  const body = new FormData(form);
+  body.set('action', action);
+  body.delete('feedback_ids[]');
+  engineerProposalFeedbackState.selected.forEach(id => body.append('feedback_ids[]', id));
   try {
-    const data = await engineerProposalRequest(ENGINEER_PROPOSALS_API, { method: 'POST', headers: { 'Content-Type': 'application/json', ...ENGINEER_CSRF_HEADERS }, body: JSON.stringify(body) });
+    const data = await engineerProposalRequest(ENGINEER_PROPOSALS_API, { method: 'POST', headers: { ...ENGINEER_CSRF_HEADERS }, body });
     engineerToast(action === 'submit' ? 'Proposal submitted for Head Office review.' : 'Proposal draft saved.');
     engineerRenderProposalPage(action === 'submit' ? '' : data.id);
   } catch (error) { engineerToast(error.message, 'error'); }

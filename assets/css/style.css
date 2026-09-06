@@ -707,6 +707,20 @@ input.search-pill {
 .proposal-location-map { height:260px; margin:9px 0; border:1px solid var(--border); border-radius:7px; overflow:hidden; }
 .proposal-gis-meta { padding:3px 2px; }
 .proposal-document-list { margin:0; padding:10px 12px 10px 30px; border:1px solid var(--border); border-radius:8px; color:var(--text-primary); font-size:.82rem; }
+.proposal-document-review-list { display:flex; flex-direction:column; gap:8px; }
+.proposal-document-review-row { display:grid; grid-template-columns:minmax(0,1fr) auto auto auto; gap:9px; align-items:center; padding:10px 12px; border:1px solid var(--border); border-radius:8px; background:var(--bg-body); }
+.proposal-document-review-row strong, .proposal-document-review-row small { display:block; }
+.proposal-document-review-row small { margin-top:3px; color:var(--text-muted); font-size:.7rem; }
+.proposal-document-review-row > span { color:var(--text-muted); font-size:.72rem; font-weight:800; text-transform:capitalize; }
+.proposal-document-checklist { padding:12px; border:1px dashed var(--border); border-radius:8px; }
+.proposal-checklist-row { display:flex; justify-content:space-between; gap:12px; padding:7px 0; border-top:1px solid var(--border); color:var(--text-primary); font-size:.76rem; }
+.proposal-checklist-row:first-of-type { margin-top:8px; }
+.proposal-checklist-missing, .proposal-checklist-needs_revision { color:#b91c1c; text-transform:capitalize; }
+.proposal-checklist-under_review { color:#b45309; text-transform:capitalize; }
+.proposal-checklist-complete { color:#15803d; text-transform:capitalize; }
+.proposal-history-list { display:flex; flex-direction:column; gap:8px; }
+.proposal-history-row { display:grid; grid-template-columns:160px minmax(0,1fr); gap:10px; padding:9px 11px; border-left:3px solid var(--accent); background:var(--bg-body); font-size:.76rem; }
+.proposal-history-row small { color:var(--text-muted); }
 .proposal-return-note { padding:11px 12px; border:1px solid #fdba74; border-radius:8px; background:#fff7ed; color:#9a3412; }
 .proposal-return-note p:last-child { margin:0; white-space:pre-wrap; font-size:.84rem; }
 .proposal-review-actions { display:flex; justify-content:flex-end; gap:8px; flex-wrap:wrap; padding-top:4px; }
@@ -731,6 +745,7 @@ input.search-pill {
   .proposal-detail-grid { grid-template-columns:1fr; }
   .proposal-detail-top { flex-direction:column; }
   .proposal-detail-top p { text-align:left; }
+  .proposal-document-review-row, .proposal-history-row { grid-template-columns:1fr; }
   .proposal-feedback-detail-row { align-items:flex-start; flex-direction:column; }
 }
 

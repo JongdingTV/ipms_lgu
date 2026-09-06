@@ -5,11 +5,12 @@ require_once __DIR__ . '/../includes/auth.php';
 require_once __DIR__ . '/../includes/workflow.php';
 require_once __DIR__ . '/../includes/Notifications.php';
 require_once __DIR__ . '/../includes/RoadGeometry.php';
+require_once __DIR__ . '/../includes/FileUpload.php';
 
 apiHeaders();
 $user = currentUser();
 $role = (string) ($user['role'] ?? '');
-requireAnyRole(['engineer', 'admin', 'super_admin']);
+requireAnyRole(['engineer', 'admin', 'super_admin', 'hope']);
 
 $method = $_SERVER['REQUEST_METHOD'] ?? 'GET';
 if ($method !== 'GET') {
@@ -138,11 +139,46 @@ function proposalResponse(PDO $db, array $row): array
     $feedback->execute([(int) $row['id']]);
     $row['feedback_basis'] = $feedback->fetchAll();
 
-    // Documents have not yet been added to the Engineer proposal submission
-    // form. This explicit empty collection keeps the Head Office view ready
-    // without incorrectly showing unrelated documents owned by the engineer.
-    $row['supporting_documents'] = [];
+    $documents = $db->prepare("SELECT d.id, d.document_type, d.title, d.original_name, d.file_path, d.file_size, d.mime_type, d.status, d.remarks, d.reviewed_by, d.reviewed_at, d.created_at, u.full_name AS submitted_by_name, reviewer.full_name AS reviewed_by_name FROM supporting_documents d LEFT JOIN users u ON u.id = d.uploaded_by LEFT JOIN users reviewer ON reviewer.id = d.reviewed_by WHERE d.owner_type = 'proposal' AND d.owner_id = ? AND d.is_current = 1 ORDER BY d.created_at DESC, d.id DESC");
+    $documents->execute([(int) $row['id']]);
+    $row['supporting_documents'] = $documents->fetchAll();
+    $required = ['Feasibility Study', 'Site Assessment', 'Budget Justification'];
+    $byType = [];
+    foreach ($row['supporting_documents'] as $document) $byType[$document['document_type']][] = $document;
+    $row['document_checklist'] = array_map(static function (string $type) use ($byType): array {
+        $documents = $byType[$type] ?? [];
+        $status = !$documents ? 'missing' : (count(array_filter($documents, static fn(array $d): bool => $d['status'] === 'rejected')) ? 'needs_revision' : (count(array_filter($documents, static fn(array $d): bool => $d['status'] === 'verified')) ? 'complete' : 'under_review'));
+        return ['document_type' => $type, 'status' => $status, 'documents' => $documents];
+    }, $required);
+    $history = $db->prepare("SELECT a.action, a.details, a.created_at, u.full_name AS actor_name, u.role AS actor_role FROM audit_logs a LEFT JOIN users u ON u.id = a.user_id WHERE a.table_name = 'project_proposals' AND a.record_id = ? ORDER BY a.created_at DESC, a.id DESC");
+    $history->execute([(int) $row['id']]);
+    $row['review_history'] = $history->fetchAll();
     return $row;
+}
+
+function proposalRequiredDocumentsComplete(array $documents): bool
+{
+    $required = ['Feasibility Study', 'Site Assessment', 'Budget Justification'];
+    foreach ($required as $type) {
+        $matches = array_filter($documents, static fn(array $document): bool => $document['document_type'] === $type && $document['status'] === 'verified');
+        if (!$matches) return false;
+    }
+    return true;
+}
+
+function proposalDocumentUpload(PDO $db, int $proposalId, int $userId): void
+{
+    $names = $_POST['document_titles'] ?? [];
+    $types = $_POST['document_types'] ?? [];
+    $files = $_FILES['proposal_documents'] ?? [];
+    foreach (array_keys($files['name'] ?? []) as $index) {
+        $file = FileUpload::fromNestedFiles($files, (int) $index);
+        if (!$file) continue;
+        $error = FileUpload::validate($file, ['required' => true, 'max_size' => 10 * 1024 * 1024, 'extensions' => ['pdf', 'doc', 'docx', 'xls', 'xlsx', 'png', 'jpg', 'jpeg']]);
+        if ($error) throw new FileUploadException($error);
+        $stored = FileUpload::store($file, 'supporting-documents/proposal', ['max_size' => 10 * 1024 * 1024, 'extensions' => ['pdf', 'doc', 'docx', 'xls', 'xlsx', 'png', 'jpg', 'jpeg']]);
+        $db->prepare("INSERT INTO supporting_documents (owner_type, owner_id, document_type, title, original_name, file_path, file_size, mime_type, uploaded_by, status) VALUES ('proposal', ?, ?, ?, ?, ?, ?, ?, ?, 'pending')")->execute([$proposalId, $types[$index] ?? 'Other', trim((string) ($names[$index] ?? $file['name'])), $stored['original_name'], $stored['stored_path'], $stored['file_size'], $stored['mime_type'], $userId]);
+    }
 }
 
 function proposalFilterOptions(PDO $db, string $role, int $userId): array
@@ -219,7 +255,7 @@ if ($method === 'GET') {
         if (!$row) {
             respond(['error' => 'Proposal not found'], 404);
         }
-        if (proposalIsHeadOffice($role)) {
+        if (proposalIsHeadOffice($role) || $role === 'hope') {
             auditLog($db, $userId, 'project_proposal_viewed', 'project_proposals', (int) $row['id'], 'Viewed ' . $row['proposal_code'] . '.');
         }
         respond(['data' => proposalResponse($db, $row)]);
@@ -259,36 +295,92 @@ if ($method === 'GET') {
 }
 
 if ($method === 'POST' || $method === 'PUT') {
-    $body = requestBody();
+    $body = $_POST !== [] ? $_POST : requestBody();
     $action = (string) ($body['action'] ?? $_GET['action'] ?? 'save_draft');
 
-    // Internal Head Office organization only; it cannot approve or register a project.
-    if ($action === 'set_status') {
+    if (in_array($action, ['set_status', 'review_action'], true)) {
         if (!proposalIsHeadOffice($role)) {
             respond(['error' => 'Only Head Office can update a proposal review status.'], 403);
         }
         $proposalId = (int) ($body['id'] ?? $_GET['id'] ?? 0);
-        $nextStatus = (string) ($body['status'] ?? '');
-        $returnNotes = trim((string) ($body['return_notes'] ?? ''));
-        if ($proposalId <= 0 || !in_array($nextStatus, ['under_review', 'returned'], true)) {
+        $reviewAction = (string) ($body['review_action'] ?? $body['status'] ?? '');
+        $reviewNotes = trim((string) ($body['review_notes'] ?? $body['return_notes'] ?? ''));
+        $nextStatus = ['start_review' => 'under_review', 'return_revision' => 'returned', 'verify' => 'verified_by_head_office', 'send_mayor' => 'for_mayor_validation'][$reviewAction] ?? $reviewAction;
+        if ($proposalId <= 0 || !in_array($nextStatus, ['under_review', 'returned', 'verified_by_head_office', 'for_mayor_validation'], true)) {
             respond(['error' => 'Invalid proposal review status.'], 422);
         }
-        if ($nextStatus === 'returned' && $returnNotes === '') {
-            respond(['error' => 'A return note is required before returning a proposal.'], 422);
+        if (in_array($nextStatus, ['returned', 'verified_by_head_office'], true) && $reviewNotes === '') {
+            respond(['error' => 'A review note is required for this action.'], 422);
         }
-        $find = $db->prepare("SELECT pp.*, u.full_name AS engineer_name FROM project_proposals pp INNER JOIN users u ON u.id = pp.engineer_id WHERE pp.id = ? AND pp.status IN ('submitted', 'under_review')");
+        $find = $db->prepare("SELECT pp.*, u.full_name AS engineer_name FROM project_proposals pp INNER JOIN users u ON u.id = pp.engineer_id WHERE pp.id = ?");
         $find->execute([$proposalId]);
         $proposal = $find->fetch();
         if (!$proposal) {
-            respond(['error' => 'Only submitted or under-review proposals can be updated.'], 409);
+            respond(['error' => 'Proposal not found.'], 404);
         }
-        $db->prepare("UPDATE project_proposals SET status = ?, reviewed_by = ?, reviewed_at = NOW(), return_notes = ?, updated_at = NOW() WHERE id = ?")
-            ->execute([$nextStatus, $userId, $nextStatus === 'returned' ? $returnNotes : null, $proposalId]);
-        $actionName = $nextStatus === 'returned' ? 'project_proposal_returned' : 'project_proposal_status_changed';
-        $details = $nextStatus === 'returned' ? 'Returned ' . $proposal['proposal_code'] . ' to the engineer: ' . $returnNotes : 'Marked ' . $proposal['proposal_code'] . ' as under review.';
+        $allowed = ['under_review' => ['submitted', 'mayor_returned'], 'returned' => ['submitted', 'under_review', 'mayor_returned'], 'verified_by_head_office' => ['under_review'], 'for_mayor_validation' => ['verified_by_head_office']];
+        if (!in_array($proposal['status'], $allowed[$nextStatus], true)) respond(['error' => 'This proposal is not at the required stage for that action.'], 409);
+        $documents = proposalResponse($db, $proposal)['supporting_documents'];
+        if ($nextStatus === 'verified_by_head_office' && !proposalRequiredDocumentsComplete($documents)) respond(['error' => 'All required supporting documents must be verified before Head Office verification.'], 422);
+        if ($nextStatus === 'for_mayor_validation' && !proposalRequiredDocumentsComplete($documents)) respond(['error' => 'Verify all required supporting documents before sending this proposal to the Mayor.'], 422);
+        $db->prepare("UPDATE project_proposals SET status = ?, reviewed_by = ?, reviewed_at = NOW(), return_notes = ?, head_office_review_notes = ?, head_office_verified_by = CASE WHEN ? = 'verified_by_head_office' THEN ? ELSE head_office_verified_by END, head_office_verified_at = CASE WHEN ? = 'verified_by_head_office' THEN NOW() ELSE head_office_verified_at END, updated_at = NOW() WHERE id = ?")
+            ->execute([$nextStatus, $userId, $nextStatus === 'returned' ? $reviewNotes : null, $reviewNotes ?: null, $nextStatus, $userId, $nextStatus, $proposalId]);
+        $actionName = ['under_review' => 'project_proposal_review_started', 'returned' => 'project_proposal_returned', 'verified_by_head_office' => 'project_proposal_head_office_verified', 'for_mayor_validation' => 'project_proposal_sent_to_mayor'][$nextStatus];
+        $details = $proposal['proposal_code'] . ' moved to ' . $nextStatus . ($reviewNotes !== '' ? ': ' . $reviewNotes : '.');
         auditLog($db, $userId, $actionName, 'project_proposals', $proposalId, $details);
-        notifyUser((int) $proposal['engineer_id'], $nextStatus === 'returned' ? 'warning' : 'info', $nextStatus === 'returned' ? 'Project Proposal Returned' : 'Project Proposal Under Review', $nextStatus === 'returned' ? 'Your proposal “' . $proposal['title'] . '” was returned with notes from Head Office.' : 'Head Office has started reviewing your proposal “' . $proposal['title'] . '”.', appUrl('/engineer/dashboard.php'));
+        if (in_array($nextStatus, ['returned', 'under_review'], true)) notifyUser((int) $proposal['engineer_id'], $nextStatus === 'returned' ? 'warning' : 'info', $nextStatus === 'returned' ? 'Project Proposal Returned' : 'Project Proposal Under Review', $nextStatus === 'returned' ? 'Your proposal “' . $proposal['title'] . '” was returned with notes from Head Office.' : 'Head Office has started reviewing your proposal “' . $proposal['title'] . '”.', appUrl('/engineer/dashboard.php'));
+        if ($nextStatus === 'for_mayor_validation') {
+            $mayors = $db->query("SELECT id FROM users WHERE role = 'hope' AND status = 'active'")->fetchAll(PDO::FETCH_COLUMN);
+            foreach ($mayors as $mayorId) notifyUser((int) $mayorId, 'info', 'Project Proposal Ready for Validation', $proposal['proposal_code'] . ' is ready for your project-need validation.', appUrl('/hope/dashboard.php'));
+        }
         respond(['success' => true, 'status' => $nextStatus]);
+    }
+
+    if ($action === 'verify_document') {
+        if (!proposalIsHeadOffice($role)) respond(['error' => 'Only Head Office can verify proposal documents.'], 403);
+        $documentId = (int) ($body['document_id'] ?? 0);
+        $documentStatus = (string) ($body['document_status'] ?? '');
+        $remarks = trim((string) ($body['remarks'] ?? ''));
+        if (!in_array($documentStatus, ['verified', 'rejected'], true) || $documentId <= 0) respond(['error' => 'Invalid document review.'], 422);
+        $stmt = $db->prepare("UPDATE supporting_documents d INNER JOIN project_proposals pp ON pp.id = d.owner_id AND d.owner_type = 'proposal' SET d.status = ?, d.remarks = ?, d.reviewed_by = ?, d.reviewed_at = NOW() WHERE d.id = ? AND pp.status IN ('submitted','under_review','mayor_returned')");
+        $stmt->execute([$documentStatus, $remarks ?: null, $userId, $documentId]);
+        if ($stmt->rowCount() !== 1) respond(['error' => 'Proposal document not found.'], 404);
+        auditLog($db, $userId, 'project_proposal_document_checked', 'project_proposals', $documentId, 'Document ' . $documentStatus . ($remarks !== '' ? ': ' . $remarks : '.'));
+        respond(['success' => true, 'status' => $documentStatus]);
+    }
+
+    if ($action === 'mayor_decision') {
+        if ($role !== 'hope') respond(['error' => 'Only the Mayor can validate project need.'], 403);
+        $proposalId = (int) ($body['id'] ?? 0);
+        $decision = (string) ($body['decision'] ?? '');
+        $notes = trim((string) ($body['notes'] ?? ''));
+        if (!in_array($decision, ['validate', 'return'], true) || $notes === '') respond(['error' => 'A validation or return comment is required.'], 422);
+        $find = $db->prepare('SELECT * FROM project_proposals WHERE id = ? AND status = \'for_mayor_validation\'');
+        $find->execute([$proposalId]);
+        $proposal = $find->fetch();
+        if (!$proposal) respond(['error' => 'Only proposals sent for Mayor validation can be decided.'], 409);
+        $nextStatus = $decision === 'validate' ? 'mayor_validated' : 'mayor_returned';
+        $db->prepare('UPDATE project_proposals SET status = ?, mayor_validated_by = ?, mayor_validated_at = NOW(), mayor_validation_notes = ?, updated_at = NOW() WHERE id = ? AND status = \'for_mayor_validation\'')->execute([$nextStatus, $userId, $notes, $proposalId]);
+        auditLog($db, $userId, $decision === 'validate' ? 'project_proposal_mayor_validated' : 'project_proposal_mayor_returned', 'project_proposals', $proposalId, $proposal['proposal_code'] . ': ' . $notes);
+        notifyUser((int) $proposal['reviewed_by'], $decision === 'validate' ? 'success' : 'warning', $decision === 'validate' ? 'Project Proposal Validated' : 'Project Proposal Returned by Mayor', $proposal['proposal_code'] . ' was ' . ($decision === 'validate' ? 'validated for the next stage.' : 'returned with Mayor comments.'), appUrl('/admin/dashboard.php?proposal_id=' . $proposalId));
+        notifyUser((int) $proposal['engineer_id'], $decision === 'validate' ? 'success' : 'warning', $decision === 'validate' ? 'Project Proposal Validated' : 'Project Proposal Returned by Mayor', $proposal['proposal_code'] . ' received a Mayor decision: ' . $notes, appUrl('/engineer/dashboard.php'));
+        respond(['success' => true, 'status' => $nextStatus]);
+    }
+
+    if ($action === 'upload_document') {
+        if ($role !== 'engineer') respond(['error' => 'Only Engineers can upload proposal documents.'], 403);
+        $proposalId = (int) ($body['id'] ?? 0);
+        $stmt = $db->prepare("SELECT status FROM project_proposals WHERE id = ? AND engineer_id = ?");
+        $stmt->execute([$proposalId, $userId]);
+        $proposalStatus = $stmt->fetchColumn();
+        if (!in_array($proposalStatus, ['draft', 'returned'], true)) respond(['error' => 'Documents can only be added to a draft or returned proposal.'], 409);
+        try {
+            proposalDocumentUpload($db, $proposalId, $userId);
+        } catch (Throwable $e) {
+            respond(['error' => $e->getMessage() ?: 'Unable to upload proposal document.'], 422);
+        }
+        auditLog($db, $userId, 'project_proposal_document_submitted', 'project_proposals', $proposalId, 'Supporting document uploaded.');
+        respond(['success' => true]);
     }
 
     if ($role !== 'engineer') {
@@ -401,6 +493,15 @@ if ($method === 'POST' || $method === 'PUT') {
             $db->rollBack();
         }
         respond(['error' => 'Unable to save project proposal.'], 500);
+    }
+
+    if (!empty($_FILES['proposal_documents']['name'] ?? [])) {
+        try {
+            proposalDocumentUpload($db, $id, $userId);
+        } catch (Throwable $e) {
+            respond(['error' => $e->getMessage() ?: 'Unable to upload proposal document.'], 422);
+        }
+        auditLog($db, $userId, 'project_proposal_document_submitted', 'project_proposals', $id, 'Supporting document uploaded with proposal submission.');
     }
 
     $proposalCode = $existing['proposal_code'] ?? ('PP-' . str_pad((string) $id, 5, '0', STR_PAD_LEFT));

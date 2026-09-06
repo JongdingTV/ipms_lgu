@@ -227,7 +227,7 @@ function projectProposalEnsureSchema(PDO $db): void
         // Head Office enough state to organize an incoming proposal and return
         // it for correction.  These are deliberately proposal-only fields:
         // no Mayor, HOPE, budget, or project-registration state is added here.
-        $db->exec("ALTER TABLE project_proposals MODIFY status ENUM('draft','submitted','under_review','returned') NOT NULL DEFAULT 'draft'");
+        $db->exec("ALTER TABLE project_proposals MODIFY status ENUM('draft','submitted','under_review','returned','verified_by_head_office','for_mayor_validation','mayor_validated','mayor_returned') NOT NULL DEFAULT 'draft'");
         $db->exec("ALTER TABLE project_proposals ADD COLUMN IF NOT EXISTS reviewed_by INT NULL AFTER submitted_at");
         $db->exec("ALTER TABLE project_proposals ADD COLUMN IF NOT EXISTS reviewed_at DATETIME NULL AFTER reviewed_by");
         $db->exec("ALTER TABLE project_proposals ADD COLUMN IF NOT EXISTS return_notes TEXT NULL AFTER reviewed_at");
@@ -241,7 +241,14 @@ function projectProposalEnsureSchema(PDO $db): void
         $db->exec("ALTER TABLE project_proposals ADD COLUMN IF NOT EXISTS target_start_date DATE NULL AFTER budget_estimate");
         $db->exec("ALTER TABLE project_proposals ADD COLUMN IF NOT EXISTS target_end_date DATE NULL AFTER target_start_date");
         $db->exec("ALTER TABLE project_proposals ADD COLUMN IF NOT EXISTS supporting_information TEXT NULL AFTER target_end_date");
+        $db->exec("ALTER TABLE project_proposals ADD COLUMN IF NOT EXISTS head_office_review_notes TEXT NULL AFTER return_notes");
+        $db->exec("ALTER TABLE project_proposals ADD COLUMN IF NOT EXISTS head_office_verified_by INT NULL AFTER head_office_review_notes");
+        $db->exec("ALTER TABLE project_proposals ADD COLUMN IF NOT EXISTS head_office_verified_at DATETIME NULL AFTER head_office_verified_by");
+        $db->exec("ALTER TABLE project_proposals ADD COLUMN IF NOT EXISTS mayor_validated_by INT NULL AFTER head_office_verified_at");
+        $db->exec("ALTER TABLE project_proposals ADD COLUMN IF NOT EXISTS mayor_validated_at DATETIME NULL AFTER mayor_validated_by");
+        $db->exec("ALTER TABLE project_proposals ADD COLUMN IF NOT EXISTS mayor_validation_notes TEXT NULL AFTER mayor_validated_at");
         $db->exec("ALTER TABLE project_proposals ADD INDEX IF NOT EXISTS idx_project_proposals_submitted_at (submitted_at)");
+        $db->exec("ALTER TABLE supporting_documents MODIFY owner_type ENUM('user','contractor','engineer','project','proposal','bac_bid') NOT NULL");
     } catch (Throwable $e) {
     }
 }

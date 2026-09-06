@@ -1061,6 +1061,10 @@ const PROPOSAL_STATUS_META = {
   submitted: { label: 'Submitted / Pending Review', className: 'badge-urgent' },
   under_review: { label: 'Under Review', className: 'badge-highprio' },
   returned: { label: 'Returned', className: 'badge-overbudget' },
+  verified_by_head_office: { label: 'Verified by Head Office', className: 'badge-teal' },
+  for_mayor_validation: { label: 'For Mayor Validation', className: 'badge-highprio' },
+  mayor_validated: { label: 'Mayor Validated', className: 'badge-approved' },
+  mayor_returned: { label: 'Mayor Returned / Needs Revision', className: 'badge-overbudget' },
 };
 
 let proposalState = {
@@ -1166,7 +1170,7 @@ async function loadProjectProposalPage(params = {}) {
       <div class="proposal-management-head"><div><h3>Project Proposals</h3><p>Search, organize, and review proposals submitted by Engineers.</p></div><label class="proposal-sort-label">Sort by <select id="proposalSort" class="filter-select"><option value="newest">Newest First</option><option value="oldest">Oldest First</option><option value="priority">Priority</option><option value="updated">Recently Updated</option><option value="category">Project Category</option><option value="engineer">Engineer</option></select></label></div>
       <div class="filter-bar proposal-filter-bar">
         <input id="proposalSearch" class="filter-input proposal-search" value="${escapeHtml(proposalState.search)}" placeholder="Search Project Proposals">
-        <select id="proposalStatus" class="filter-select"><option value="">All Statuses</option><option value="submitted">Pending Review</option><option value="under_review">Under Review</option><option value="returned">Returned</option></select>
+        <select id="proposalStatus" class="filter-select"><option value="">All Statuses</option><option value="submitted">Pending Review</option><option value="under_review">Under Review</option><option value="returned">Returned</option><option value="verified_by_head_office">Verified by Head Office</option><option value="for_mayor_validation">For Mayor Validation</option><option value="mayor_validated">Mayor Validated</option><option value="mayor_returned">Mayor Returned</option></select>
         <select id="proposalCategory" class="filter-select"><option value="">All Categories</option></select>
         <select id="proposalType" class="filter-select"><option value="">All Types</option></select>
         <select id="proposalDistrict" class="filter-select"><option value="">All Districts</option></select>
@@ -1294,14 +1298,19 @@ async function viewProjectProposal(id) {
         ${proposalFeedbackRows(feedback)}
         <h4>Project Location</h4>
         ${mapRecord ? `<div class="proposal-gis-card"><p class="proposal-section-note">${mapRecord.source === 'proposal' ? 'Location captured from the Engineer proposal pin.' : 'Location information captured in linked Citizen Feedback.'}</p><div id="proposalLocationMap" class="proposal-location-map"></div><div class="proposal-detail-grid proposal-gis-meta">${proposalDetailItem('Latitude', mapRecord.latitude)}${proposalDetailItem('Longitude', mapRecord.longitude)}${proposalDetailItem('Barangay', mapRecord.barangay || proposal.barangay)}${proposalDetailItem('District', mapRecord.district || proposal.district)}</div></div>` : `<p class="empty-state">No GIS coordinates were submitted with this proposal or its linked feedback.</p>`}
-        <h4>Supporting Information</h4>
-        ${documents.length ? `<ul class="proposal-document-list">${documents.map(doc => `<li>${escapeHtml(doc.title || doc.original_name || 'Supporting document')}</li>`).join('')}</ul>` : '<p class="empty-state">No supporting documents have been attached to this proposal yet.</p>'}
+        <h4>Supporting Documents</h4>
+        <div class="proposal-document-checklist"><strong>Required document checklist</strong>${(proposal.document_checklist || []).map(item => `<div class="proposal-checklist-row"><span>${escapeHtml(item.document_type)}</span><strong class="proposal-checklist-${escapeHtml(item.status)}">${escapeHtml(item.status.replaceAll('_', ' '))}</strong></div>`).join('')}</div>
+        ${documents.length ? `<div class="proposal-document-review-list">${documents.map(doc => `<div class="proposal-document-review-row"><div><strong>${escapeHtml(doc.title || doc.original_name || 'Supporting document')}</strong><small>${escapeHtml(doc.document_type)} · ${escapeHtml(doc.submitted_by_name || 'Unknown')} · ${proposalDateTime(doc.created_at)}</small></div><span>${escapeHtml(doc.status)}</span>${doc.file_path ? `<a class="btn-secondary btn-compact" href="${escapeHtml((window.BASE_PATH || '/') + doc.file_path)}" target="_blank" rel="noopener">View</a>` : ''}${['submitted','under_review','mayor_returned'].includes(proposal.status) ? `<button class="btn-secondary btn-compact" type="button" onclick="proposalVerifyDocument(${Number(doc.id)}, 'verified', ${Number(proposal.id)})">Verify</button><button class="btn-secondary btn-compact" type="button" onclick="proposalVerifyDocument(${Number(doc.id)}, 'rejected', ${Number(proposal.id)})">Needs Revision</button>` : ''}</div>`).join('')}</div>` : '<p class="empty-state">No supporting documents have been attached.</p>'}
         <h4>Proposal Source</h4>
         <div class="proposal-detail-grid">${proposalDetailItem('Proposed By', `Engineer ${proposal.engineer_name}`)}${proposalDetailItem('Office / Area', `Engineering Office${proposal.district ? ' — ' + proposal.district : ''}`)}${proposalDetailItem('Submitted', proposalDateTime(proposal.submitted_at || proposal.created_at))}${proposalDetailItem('Last Updated', proposalDateTime(proposal.updated_at))}</div>
         ${proposal.return_notes ? `<div class="proposal-return-note"><p class="modal-label">RETURN NOTES</p><p>${escapeHtml(proposal.return_notes)}</p></div>` : ''}
+        <h4>Review History</h4>
+        ${(proposal.review_history || []).length ? `<div class="proposal-history-list">${proposal.review_history.map(entry => `<div class="proposal-history-row"><small>${escapeHtml(entry.actor_name || 'System')} · ${escapeHtml(entry.actor_role || '')}<br>${proposalDateTime(entry.created_at)}</small><div><strong>${escapeHtml(entry.action.replaceAll('_', ' '))}</strong><p>${escapeHtml(entry.details || '')}</p></div></div>`).join('')}</div>` : '<p class="empty-state">No review history recorded yet.</p>'}
         <div class="proposal-review-actions">
           ${proposal.status === 'submitted' ? `<button type="button" class="btn-primary btn-compact" onclick="proposalSetReviewStatus(${Number(proposal.id)}, 'under_review')">Start Review</button>` : ''}
-          ${['submitted', 'under_review'].includes(proposal.status) ? `<button type="button" class="btn-secondary btn-compact" onclick="proposalOpenReturnModal(${Number(proposal.id)}, '${escapeHtml(proposal.proposal_code)}')">Return to Engineer</button>` : ''}
+          ${proposal.status === 'under_review' ? `<button type="button" class="btn-primary btn-compact" onclick="proposalOpenReviewActionModal(${Number(proposal.id)}, '${escapeHtml(proposal.proposal_code)}', 'verify')">Verify Proposal</button>` : ''}
+          ${proposal.status === 'verified_by_head_office' ? `<button type="button" class="btn-primary btn-compact" onclick="proposalOpenReviewActionModal(${Number(proposal.id)}, '${escapeHtml(proposal.proposal_code)}', 'send_mayor')">Send to Mayor for Validation</button>` : ''}
+          ${['submitted', 'under_review', 'mayor_returned'].includes(proposal.status) ? `<button type="button" class="btn-secondary btn-compact" onclick="proposalOpenReturnModal(${Number(proposal.id)}, '${escapeHtml(proposal.proposal_code)}')">Return to Engineer</button>` : ''}
           <button type="button" class="btn-secondary btn-compact" onclick="closeModal()">Close</button>
         </div>
       </div>
@@ -1354,6 +1363,31 @@ async function proposalSetReviewStatus(id, status, returnNotes = '') {
   } catch {
     toast('Unable to update the proposal review status.', 'error');
   }
+}
+
+async function proposalVerifyDocument(documentId, documentStatus, proposalId) {
+  const remarks = documentStatus === 'rejected' ? window.prompt('Explain what needs revision:') : '';
+  if (documentStatus === 'rejected' && !remarks?.trim()) return;
+  try {
+    await post(API.projectProposals, { action: 'verify_document', document_id: documentId, document_status: documentStatus, remarks: remarks || '' });
+    toast(documentStatus === 'verified' ? 'Document verified.' : 'Document marked for revision.');
+    closeModal();
+    viewProjectProposal(proposalId);
+  } catch (error) { toast(error.message || 'Unable to update document status.', 'error'); }
+}
+
+function proposalOpenReviewActionModal(id, code, action) {
+  const labels = { verify: 'Verify Proposal', send_mayor: 'Send to Mayor for Validation' };
+  openModal(`${labels[action] || 'Review Proposal'} — ${code}`, `<form id="proposalActionForm"><p class="proposal-section-note">${action === 'send_mayor' ? 'This will move the proposal to the Mayor validation queue. All required documents must already be verified.' : 'Confirm the Head Office technical and document review is complete.'}</p><div class="form-group"><label>Review Comments *</label><textarea class="form-input" name="review_notes" rows="4" required placeholder="Record the review basis"></textarea></div><div class="form-actions"><button type="button" class="btn-secondary" onclick="closeModal()">Cancel</button><button type="submit" class="btn-primary">${labels[action]}</button></div></form>`);
+  document.getElementById('proposalActionForm').addEventListener('submit', async event => {
+    event.preventDefault();
+    try {
+      await post(API.projectProposals, { action: 'review_action', id, review_action: action, review_notes: new FormData(event.target).get('review_notes') });
+      toast(action === 'send_mayor' ? 'Proposal sent to the Mayor.' : 'Proposal verified by Head Office.');
+      closeModal();
+      fetchProjectProposals();
+    } catch (error) { toast(error.message || 'Unable to update proposal.', 'error'); }
+  });
 }
 
 function proposalOpenReturnModal(id, code) {

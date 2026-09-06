@@ -200,6 +200,7 @@ require_once __DIR__ . '/sidebar.php';
 
     <section id="page-my-tasks" class="page-section" style="display:none;"></section>
     <section id="page-project-approvals" class="page-section" style="display:none;"></section>
+    <section id="page-proposal-validation" class="page-section" style="display:none;"></section>
     <section id="page-award-approvals" class="page-section" style="display:none;"></section>
     <section id="page-returned-projects" class="page-section" style="display:none;"></section>
     <section id="page-deletion-requests" class="page-section" style="display:none;"></section>

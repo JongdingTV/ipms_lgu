@@ -32,6 +32,7 @@ $role = (string) ($user['role'] ?? '');
 // kind of duplicate bookkeeping this feature is required not to invent.
 const TASK_CENTER_MODULES = [
     'Project Registration', 'Contractor Assignment', 'Payments', 'Project Approval',
+    'Project Proposal',
     'Citizen Feedback', 'Citizen Ratings', 'Inspections', 'Milestones', 'Urban Planning',
     'Contract Award', 'Project Deletion', 'Project Edit', 'Procurement', 'Procurement Documents',
     'Contractor Accreditation', 'Accreditation Documents', 'Bidding', 'User Governance', 'Login Security',

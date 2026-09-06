@@ -1,6 +1,7 @@
 /* HOPE (Head of Procuring Entity) portal frontend */
 const HOPE_API = window.BASE_PATH + 'hope/api/portal.php';
 const PROJECTS_API = window.BASE_PATH + 'api/projects.php';
+const PROPOSALS_API = window.BASE_PATH + 'api/project-proposals.php';
 const HOPE_USER_API = window.BASE_PATH + 'api/user.php';
 const HOPE_CSRF_HEADERS = window.CSRF_TOKEN ? { 'X-CSRF-Token': window.CSRF_TOKEN } : {};
 
@@ -112,6 +113,48 @@ async function hopeDecide(projectId, decision, reason) {
   const result = await response.json();
   if (!response.ok || result.error) throw hopeErrorFrom(result, response);
   return result;
+}
+
+async function hopeProposalGet(params = {}) {
+  const query = new URLSearchParams(params);
+  const response = await fetch(`${PROPOSALS_API}?${query}`);
+  const result = await response.json();
+  if (!response.ok || result.error) throw hopeErrorFrom(result, response);
+  return result;
+}
+
+async function hopeProposalDecision(id, decision, notes) {
+  const response = await fetch(PROPOSALS_API, { method: 'POST', headers: { 'Content-Type': 'application/json', ...HOPE_CSRF_HEADERS }, body: JSON.stringify({ action: 'mayor_decision', id, decision, notes }) });
+  const result = await response.json();
+  if (!response.ok || result.error) throw hopeErrorFrom(result, response);
+  return result;
+}
+
+async function hopeRenderProposalValidation() {
+  const container = document.getElementById('page-proposal-validation');
+  if (!container) return;
+  container.innerHTML = `<div class="page-header"><div><h2 class="page-title">Project Proposal Validation</h2><p class="hope-decision-note">Validate the community need and supporting basis after Head Office technical review.</p></div></div><div id="hopeProposalValidationTable" class="table-card"><div class="skeleton-group"><div class="skeleton-row"></div><div class="skeleton-row"></div></div></div><div id="hopeProposalValidationPager" class="pager"></div>`;
+  try {
+    const result = await hopeProposalGet({ status: 'for_mayor_validation', page: 1, per_page: 10 });
+    const rows = result.data || [];
+    document.getElementById('hopeProposalValidationTable').innerHTML = rows.length ? `<table class="data-table"><thead><tr><th>Proposal</th><th>Engineer</th><th>Location</th><th>Priority</th><th>Submitted</th><th>Status</th><th></th></tr></thead><tbody>${rows.map(row => `<tr><td><span class="proj-id">${hopeEscape(row.proposal_code)}</span><br><strong>${hopeEscape(row.title)}</strong></td><td>${hopeEscape(row.engineer_name || '-')}</td><td>${hopeEscape(row.barangay)}, ${hopeEscape(row.district)}</td><td>${hopeEscape(row.priority)}</td><td>${hopeDate(row.submitted_at)}</td><td>${hopeBadge(row.status)}</td><td><button class="btn-primary btn-compact" type="button" onclick="hopeOpenProposalValidation(${Number(row.id)})">Review</button></td></tr>`).join('')}</tbody></table>` : '<p class="empty-state">No project proposals are awaiting Mayor validation.</p>';
+    renderPagination(document.getElementById('hopeProposalValidationPager'), { page: result.page, lastPage: result.last_page, total: result.total, perPage: result.per_page || 10, onPageChange: async page => { const next = await hopeProposalGet({ status: 'for_mayor_validation', page, per_page: 10 }); result.data = next.data; result.page = next.page; result.last_page = next.last_page; result.total = next.total; hopeRenderProposalValidation(); } });
+  } catch (error) { document.getElementById('hopeProposalValidationTable').innerHTML = '<p class="empty-state">Unable to load project proposals for validation.</p>'; hopeToast(error.message, 'error'); }
+}
+
+async function hopeOpenProposalValidation(id) {
+  try {
+    const result = await hopeProposalGet({ id });
+    const proposal = result.data;
+    const docs = proposal.supporting_documents || [];
+    hopeOpenModal(`${hopeEscape(proposal.proposal_code)} — Project Need Validation`, `<div class="proposal-detail"><div class="proposal-detail-top">${hopeBadge(proposal.status)}<p>Head Office has verified this proposal. Your decision concerns the project need and community basis.</p></div><h4>Proposal Information</h4><div class="proposal-detail-grid"><div><p class="modal-label">PROJECT TITLE</p><p class="modal-val">${hopeEscape(proposal.title)}</p></div><div><p class="modal-label">CATEGORY</p><p class="modal-val">${hopeEscape(proposal.category)}</p></div><div><p class="modal-label">PROPONENT</p><p class="modal-val">${hopeEscape(proposal.engineer_name)}</p></div><div><p class="modal-label">PRIORITY</p><p class="modal-val">${hopeEscape(proposal.priority)}</p></div><div><p class="modal-label">LOCATION</p><p class="modal-val">${hopeEscape(proposal.location)}</p></div><div><p class="modal-label">AREA</p><p class="modal-val">${hopeEscape(proposal.barangay)}, ${hopeEscape(proposal.district)}</p></div></div><div class="proposal-detail-copy"><p class="modal-label">PROJECT NEED / JUSTIFICATION</p><p>${hopeEscape(proposal.justification)}</p></div><div class="proposal-detail-copy"><p class="modal-label">OBSERVED PROBLEM</p><p>${hopeEscape(proposal.observed_problem || '-')}</p></div><div class="proposal-detail-copy"><p class="modal-label">PROPOSED SOLUTION</p><p>${hopeEscape(proposal.proposed_solution || '-')}</p></div><h4>Citizen Need / Feedback Basis</h4>${(proposal.feedback_basis || []).map(row => `<div class="proposal-feedback-detail-row"><strong>FB-${String(row.id).padStart(4, '0')}</strong><p>${hopeEscape(row.message)}</p></div>`).join('') || '<p class="empty-state">No feedback records linked.</p>'}<h4>Supporting Documents</h4>${docs.map(doc => `<div class="proposal-document-review-row"><div><strong>${hopeEscape(doc.title || doc.original_name)}</strong><small>${hopeEscape(doc.document_type)} · ${hopeEscape(doc.submitted_by_name || '-')}</small></div>${hopeBadge(doc.status)}${doc.file_path ? `<a class="btn-secondary btn-compact" href="${hopeEscape((window.BASE_PATH || '/') + doc.file_path)}" target="_blank" rel="noopener">View</a>` : ''}</div>`).join('') || '<p class="empty-state">No documents attached.</p>'}<h4>Head Office Review</h4><p class="proposal-detail-copy">${hopeEscape(proposal.head_office_review_notes || 'Head Office verification recorded.')}</p><div class="form-actions"><button class="btn-secondary" type="button" onclick="hopeOpenProposalDecision(${Number(id)}, 'return')">Return for Revision</button><button class="btn-primary" type="button" onclick="hopeOpenProposalDecision(${Number(id)}, 'validate')">Validate Project Need</button></div></div>`, 'modal-lg');
+  } catch (error) { hopeToast(error.message, 'error'); }
+}
+
+function hopeOpenProposalDecision(id, decision) {
+  const label = decision === 'validate' ? 'Validate Project Need' : 'Return for Revision';
+  hopeOpenModal(label, `<form id="hopeProposalDecisionForm"><p class="hope-decision-note">${decision === 'validate' ? 'Confirm that the proposed infrastructure need is valid based on the submitted community and supporting basis.' : 'Explain what must be corrected before this proposal can proceed.'}</p><div class="form-group"><label>Comment *</label><textarea class="form-input" name="notes" rows="5" required></textarea></div><div class="form-actions"><button type="button" class="btn-secondary" onclick="hopeCloseModal()">Cancel</button><button class="btn-primary" type="submit">${label}</button></div></form>`);
+  document.getElementById('hopeProposalDecisionForm').addEventListener('submit', async event => { event.preventDefault(); try { await hopeProposalDecision(id, decision, new FormData(event.target).get('notes')); hopeCloseModal(); hopeToast(decision === 'validate' ? 'Project need validated.' : 'Proposal returned for revision.'); hopeRenderProposalValidation(); } catch (error) { hopeToast(error.message, 'error'); } });
 }
 
 /* ---- Refresh dispatch --------------------------------------------------- */
@@ -1269,6 +1312,7 @@ const hopeRenderers = {
   dashboard: hopeRenderDashboard,
   'my-tasks': () => taskCenterInitPage('page-my-tasks'),
   'project-approvals': hopeRenderProjectApprovals,
+  'proposal-validation': hopeRenderProposalValidation,
   'award-approvals': hopeRenderAwardApprovals,
   'returned-projects': hopeRenderReturnedProjects,
   'deletion-requests': hopeRenderDeletionRequests,

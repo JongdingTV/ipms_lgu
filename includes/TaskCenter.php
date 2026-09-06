@@ -409,6 +409,20 @@ function taskCenterForHope(PDO $db, int $userId): array
 {
     $tasks = [];
 
+    projectProposalEnsureSchema($db);
+    $proposalStmt = $db->query("SELECT id, proposal_code, title, priority, updated_at FROM project_proposals WHERE status = 'for_mayor_validation' ORDER BY updated_at ASC");
+    foreach ($proposalStmt->fetchAll() as $proposal) {
+        $tasks[] = [
+            'key' => 'hope_project_proposal_validation:' . $proposal['id'],
+            'title' => 'Project Proposal Needs Validation',
+            'description' => $proposal['proposal_code'] . ' — ' . $proposal['title'],
+            'project_id' => null, 'project_name' => $proposal['proposal_code'] . ' — ' . $proposal['title'],
+            'module' => 'Project Proposal', 'priority' => in_array($proposal['priority'], ['urgent', 'high'], true) ? 'urgent' : taskCenterPriorityBucket(null, $proposal['updated_at']),
+            'due_date' => null, 'created_date' => $proposal['updated_at'], 'status' => 'pending',
+            'link_page' => 'proposal-validation', 'link_params' => [],
+        ];
+    }
+
     $stmt = $db->query("SELECT id, project_code, name, updated_at FROM projects WHERE status = 'endorsed' ORDER BY updated_at ASC");
     foreach ($stmt->fetchAll() as $p) {
         $tasks[] = [

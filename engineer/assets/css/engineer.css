@@ -19,6 +19,8 @@
 .proposal-form label::first-letter { text-transform:uppercase; }
 .proposal-form-wide { grid-column:1 / -1; }
 .proposal-form textarea { resize:vertical; min-height:92px; line-height:1.5; }
+.proposal-documents { margin-top:24px; padding:18px; border:1px solid var(--border); border-radius:8px; background:#f8fafc; }
+.proposal-document-row { display:grid; grid-template-columns:170px minmax(160px,1fr) minmax(180px,1fr); gap:9px; margin-top:10px; }
 .proposal-feedback-picker { margin-top:28px; padding:22px; border:1px solid var(--border); border-radius:var(--radius); background:var(--bg-body); }
 .proposal-feedback-picker h3 { font-size:1rem; color:var(--text-primary); }
 .proposal-filter-row { display:flex; flex-wrap:wrap; gap:9px; align-items:center; }
