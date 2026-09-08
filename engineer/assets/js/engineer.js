@@ -55,6 +55,35 @@ function engineerShortMoney(value) {
   return 'PHP ' + Number(value || 0).toLocaleString(undefined, { maximumFractionDigits: 0 });
 }
 
+function engineerProposalAiHtml(proposal) {
+  if (!proposal.ai_estimated_budget) {
+    return '<div class="proposal-ai-budget proposal-ai-budget-empty"><strong>AI budget estimate required before submission</strong><span>Save the proposal, then generate an estimate from its scope, need, feedback, and supporting documents.</span></div>';
+  }
+
+  let breakdown = proposal.ai_budget_breakdown;
+  if (typeof breakdown === 'string') {
+    try { breakdown = JSON.parse(breakdown); } catch (error) { breakdown = []; }
+  }
+  breakdown = Array.isArray(breakdown) ? breakdown : [];
+  const rationale = String(proposal.ai_budget_rationale || 'Advisory estimate based on the proposal context.');
+  const rationaleParts = rationale.split(/\sData gaps:\s*/i);
+  const gaps = rationaleParts.length > 1 ? rationaleParts[1].split(';').map(item => item.trim()).filter(Boolean) : [];
+  const breakdownHtml = breakdown.length
+    ? `<div class="proposal-ai-section"><h4>Cost breakdown</h4><div class="proposal-ai-breakdown">${breakdown.map(item => `<div class="proposal-ai-cost"><span>${engineerEscape(item.item || 'Unspecified item')}</span><strong>${engineerMoney(item.amount)}</strong></div>`).join('')}</div></div>`
+    : '';
+  const gapsHtml = gaps.length
+    ? `<div class="proposal-ai-section"><h4>Information still needed</h4><ul class="proposal-ai-gaps">${gaps.map(gap => `<li>${engineerEscape(gap)}</li>`).join('')}</ul></div>`
+    : '';
+
+  return `<section class="proposal-ai-budget" aria-label="AI budget estimate">
+    <div class="proposal-ai-heading"><div><span class="proposal-ai-kicker">AI budget assessment</span><h3>${engineerMoney(proposal.ai_estimated_budget)}</h3></div><span class="proposal-ai-advisory">Advisory only</span></div>
+    <div class="proposal-ai-metrics"><div><span>Estimated budget</span><strong>${engineerMoney(proposal.ai_estimated_budget)}</strong></div><div><span>Expected range</span><strong>${engineerMoney(proposal.ai_budget_low)} - ${engineerMoney(proposal.ai_budget_high)}</strong></div><div><span>Confidence</span><strong>${Number(proposal.ai_budget_confidence || 0).toFixed(0)}%</strong></div></div>
+    <div class="proposal-ai-section"><h4>Assessment</h4><p>${engineerEscape(rationaleParts[0].trim())}</p></div>
+    ${breakdownHtml}${gapsHtml}
+    <small class="proposal-ai-footer">Head Office and the Mayor must review and validate this estimate.</small>
+  </section>`;
+}
+
 function engineerDate(value) {
   return value ? String(value).slice(0, 10) : '-';
 }
@@ -323,7 +352,7 @@ function engineerProposalFormHtml(proposal = {}) {
       <div id="proposalFeedbackList" class="proposal-feedback-list"></div>
       <div id="proposalFeedbackPager" class="proposal-pagination"></div>
     </div>
-    ${proposal.ai_estimated_budget ? `<div class="proposal-ai-budget"><strong>AI Estimated Budget: ${engineerMoney(proposal.ai_estimated_budget)}</strong><span>Range: ${engineerMoney(proposal.ai_budget_low)} - ${engineerMoney(proposal.ai_budget_high)} · Confidence: ${Number(proposal.ai_budget_confidence || 0).toFixed(0)}%</span><p>${engineerEscape(proposal.ai_budget_rationale || 'Advisory estimate based on the proposal context.')}</p><small>Advisory only. Head Office and the Mayor must review it.</small></div>` : '<div class="proposal-ai-budget proposal-ai-budget-empty"><strong>AI budget estimate required before submission</strong><span>Save the proposal, then generate an estimate from its scope, need, feedback, and supporting documents.</span></div>'}
+    ${engineerProposalAiHtml(proposal)}
     <div class="proposal-actions"><button type="button" class="btn-secondary" onclick="engineerSaveProposal('save_draft')">Save Draft</button><button type="button" class="btn-secondary" onclick="engineerGenerateProposalBudget()">Generate AI Budget</button><button type="button" class="btn-primary" onclick="engineerSaveProposal('submit')">Submit Proposal</button></div>
   </form></div>`;
 }

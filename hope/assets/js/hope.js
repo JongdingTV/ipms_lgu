@@ -1,4 +1,4 @@
-/* HOPE (Head of Procuring Entity) portal frontend */
+﻿/* HOPE (Head of Procuring Entity) portal frontend */
 const HOPE_API = window.BASE_PATH + 'hope/api/portal.php';
 const PROJECTS_API = window.BASE_PATH + 'api/projects.php';
 const PROPOSALS_API = window.BASE_PATH + 'api/project-proposals.php';
@@ -23,6 +23,57 @@ function hopeMoney(value) {
     minimumFractionDigits: 2,
     maximumFractionDigits: 2,
   });
+}
+
+function hopeAiSummaryHtml(proposal) {
+  const estimated = Number(proposal.ai_estimated_budget || 0);
+  const low = Number(proposal.ai_budget_low || 0);
+  const high = Number(proposal.ai_budget_high || 0);
+  const confidence = Number(proposal.ai_budget_confidence || 0);
+  const rationale = typeof proposal.ai_budget_rationale_text === 'string'
+    ? proposal.ai_budget_rationale_text
+    : (proposal.ai_budget_rationale || 'No AI budget rationale supplied.');
+
+  return `
+    <div class="proposal-ai-budget">
+      <div class="proposal-detail-top">
+        <div class="proposal-ai-heading">
+          <div>
+            <span class="proposal-ai-kicker">AI budget assessment</span>
+            <h3>${hopeMoney(estimated)}</h3>
+          </div>
+          <span class="proposal-ai-advisory">Advisory only</span>
+        </div>
+      </div>
+      <div class="proposal-detail-grid">
+        <div><p class="modal-label">ESTIMATE</p><p class="modal-val">${hopeMoney(estimated)}</p></div>
+        <div><p class="modal-label">RANGE</p><p class="modal-val">${hopeMoney(low)} - ${hopeMoney(high)}</p></div>
+        <div><p class="modal-label">CONFIDENCE</p><p class="modal-val">${confidence.toFixed(0)}%</p></div>
+      </div>
+      <div class="proposal-detail-copy">
+        <p class="modal-label">SUMMARY</p>
+        <p>${hopeEscape(rationale || 'No AI assessment summary is available yet.')}</p>
+      </div>
+      <div class="proposal-review-actions">
+        <button type="button" class="btn-secondary btn-compact" onclick="hopeGenerateProposalAiBudget(${Number(proposal.id)})">Regenerate AI Estimate</button>
+      </div>
+    </div>
+  `;
+}
+
+async function hopeGenerateProposalAiBudget(id) {
+  try {
+    const result = await fetch(PROPOSALS_API, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', ...HOPE_CSRF_HEADERS },
+      body: JSON.stringify({ action: 'estimate_budget', id })
+    }).then(res => res.json());
+    if (result.error) throw new Error(result.error);
+    hopeToast('AI estimate generated successfully.', 'success');
+    await hopeOpenProposalValidation(id);
+  } catch (error) {
+    hopeToast(error.message || 'Unable to generate the AI estimate.', 'error');
+  }
 }
 
 function hopeDate(value) {
@@ -147,10 +198,46 @@ async function hopeOpenProposalValidation(id) {
     const result = await hopeProposalGet({ id });
     const proposal = result.data;
     const docs = proposal.supporting_documents || [];
-      hopeOpenModal(`${hopeEscape(proposal.proposal_code)} — Project Need Validation`, `<div class="proposal-detail"><div class="proposal-detail-top">${hopeBadge(proposal.status)}<p>Head Office has verified this proposal. Your decision concerns the project need, budget estimate, and community basis.</p></div><h4>Proposal Information</h4><div class="proposal-detail-grid"><div><p class="modal-label">PROJECT TITLE</p><p class="modal-val">${hopeEscape(proposal.title)}</p></div><div><p class="modal-label">CATEGORY</p><p class="modal-val">${hopeEscape(proposal.category)}</p></div><div><p class="modal-label">PROPONENT</p><p class="modal-val">${hopeEscape(proposal.engineer_name)}</p></div><div><p class="modal-label">PRIORITY</p><p class="modal-val">${hopeEscape(proposal.priority)}</p></div><div><p class="modal-label">LOCATION</p><p class="modal-val">${hopeEscape(proposal.location)}</p></div><div><p class="modal-label">AREA</p><p class="modal-val">${hopeEscape(proposal.barangay)}, ${hopeEscape(proposal.district)}</p></div></div><div class="proposal-ai-budget"><p class="modal-label">AI BUDGET ASSESSMENT — ADVISORY ONLY</p><div class="proposal-detail-grid"><div><p class="modal-label">ESTIMATE</p><p class="modal-val">${hopeMoney(proposal.ai_estimated_budget)}</p></div><div><p class="modal-label">RANGE</p><p class="modal-val">${hopeMoney(proposal.ai_budget_low)} - ${hopeMoney(proposal.ai_budget_high)}</p></div><div><p class="modal-label">CONFIDENCE</p><p class="modal-val">${Number(proposal.ai_budget_confidence || 0).toFixed(0)}%</p></div></div><p>${hopeEscape(proposal.ai_budget_rationale || 'No AI budget rationale supplied.')}</p></div><div class="proposal-detail-copy"><p class="modal-label">PROJECT NEED / JUSTIFICATION</p>`
-  } catch (error) { hopeToast(error.message, 'error'); }
+    const breakdown = Array.isArray(proposal.ai_budget_breakdown) ? proposal.ai_budget_breakdown : [];
+    const rationaleText = typeof proposal.ai_budget_rationale_text === 'string'
+      ? proposal.ai_budget_rationale_text
+      : (proposal.ai_budget_rationale || 'No AI budget rationale supplied.');
+    const breakdownHtml = breakdown.length ? `<h4>Cost Breakdown</h4><div class="proposal-detail-grid">${breakdown.map(item => `<div><p class="modal-label">${hopeEscape(item.item || 'Cost item')}</p><p class="modal-val">${hopeMoney(item.amount)}</p></div>`).join('')}</div>` : '';
+    const gapsHtml = gaps.length ? `<h4>Details Not Found in Submission</h4><ul>${gaps.map(gap => `<li>${hopeEscape(gap)}</li>`).join('')}</ul>` : '';
+    const docsHtml = docs.length ? `<div class="proposal-document-review-list">${docs.map(doc => `<div class="proposal-document-review-row"><div><strong>${hopeEscape(doc.title || doc.original_name || 'Supporting document')}</strong><small>${hopeEscape(doc.document_type || 'Document')} · ${hopeEscape(doc.submitted_by_name || 'Unknown')} · ${hopeDate(doc.created_at)}</small></div><span>${hopeEscape(doc.status || 'pending')}</span>${doc.file_path ? `<a class="btn-secondary btn-compact" href="${hopeEscape((window.BASE_PATH || '/') + doc.file_path)}" target="_blank" rel="noopener">View</a>` : ''}</div>`).join('')}</div>` : '<p class="empty-state">No supporting documents have been attached.</p>';
+    const modalHtml = `
+      <div class="proposal-detail">
+        <div class="proposal-detail-top">
+          ${hopeBadge(proposal.status)}
+          <p>Head Office has verified this proposal. Your decision concerns the project need, budget estimate, and community basis.</p>
+        </div>
+        <h4>Proposal Information</h4>
+        <div class="proposal-detail-grid">
+          <div><p class="modal-label">PROJECT TITLE</p><p class="modal-val">${hopeEscape(proposal.title)}</p></div>
+          <div><p class="modal-label">CATEGORY</p><p class="modal-val">${hopeEscape(proposal.category)}</p></div>
+          <div><p class="modal-label">PROPONENT</p><p class="modal-val">${hopeEscape(proposal.engineer_name)}</p></div>
+          <div><p class="modal-label">PRIORITY</p><p class="modal-val">${hopeEscape(proposal.priority)}</p></div>
+          <div><p class="modal-label">LOCATION</p><p class="modal-val">${hopeEscape(proposal.location)}</p></div>
+          <div><p class="modal-label">AREA</p><p class="modal-val">${hopeEscape(proposal.barangay)}, ${hopeEscape(proposal.district)}</p></div>
+        </div>
+        <div class="proposal-detail-copy"><p class="modal-label">PROJECT NEED / JUSTIFICATION</p><p>${hopeEscape(proposal.justification || 'No justification provided.')}</p></div>
+        ${proposal.observed_problem ? `<div class="proposal-detail-copy"><p class="modal-label">OBSERVED PROBLEM</p><p>${hopeEscape(proposal.observed_problem)}</p></div>` : ''}
+        ${proposal.proposed_solution ? `<div class="proposal-detail-copy"><p class="modal-label">PROPOSED SOLUTION</p><p>${hopeEscape(proposal.proposed_solution)}</p></div>` : ''}
+        ${proposal.ai_estimated_budget ? hopeAiSummaryHtml(proposal) : `<div class="proposal-ai-budget proposal-ai-budget-empty"><strong>AI budget estimate not yet generated.</strong><span>Generate the estimate before validating the project need.</span><div class="proposal-review-actions"><button type="button" class="btn-primary btn-compact" onclick="hopeGenerateProposalAiBudget(${Number(proposal.id)})">Generate AI Budget</button></div></div>`}
+        <h4>Supporting Documents</h4>
+        ${docsHtml}
+        <div class="proposal-review-actions">
+          <button type="button" class="btn-secondary btn-compact" onclick="hopeCloseModal()">Cancel</button>
+          <button type="button" class="btn-secondary btn-compact" onclick="hopeOpenProposalDecision(${Number(proposal.id)}, 'return')">Return for Revision</button>
+          <button type="button" class="btn-primary btn-compact" onclick="hopeOpenProposalDecision(${Number(proposal.id)}, 'validate')">Validate Project Need</button>
+        </div>
+      </div>
+    `;
+    hopeOpenModal(`${hopeEscape(proposal.proposal_code)} — Project Need Validation`, modalHtml);
+  } catch (error) {
+    hopeToast(error.message, 'error');
+  }
 }
-
 function hopeOpenProposalDecision(id, decision) {
   const label = decision === 'validate' ? 'Validate Project Need' : 'Return for Revision';
   hopeOpenModal(label, `<form id="hopeProposalDecisionForm"><p class="hope-decision-note">${decision === 'validate' ? 'Confirm that the proposed infrastructure need is valid based on the submitted community and supporting basis.' : 'Explain what must be corrected before this proposal can proceed.'}</p><div class="form-group"><label>Comment *</label><textarea class="form-input" name="notes" rows="5" required></textarea></div><div class="form-actions"><button type="button" class="btn-secondary" onclick="hopeCloseModal()">Cancel</button><button class="btn-primary" type="submit">${label}</button></div></form>`);
@@ -196,14 +283,14 @@ async function hopeRenderDashboard() {
   document.getElementById('hopePendingPreview').innerHTML = pending.length
     ? pending.map(p => hopeRow(
         p.name,
-        `${p.project_code} — ${p.location || 'No location'} — submitted by ${p.created_by_name || 'Unknown'}`,
+        `${p.project_code} â€” ${p.location || 'No location'} â€” submitted by ${p.created_by_name || 'Unknown'}`,
         hopeMoney(p.budget)
       )).join('')
     : '<p class="empty-state">No projects are currently awaiting approval.</p>';
 
   const highRisk = data.high_risk_projects || [];
   document.getElementById('hopeHighRiskList').innerHTML = highRisk.length
-    ? highRisk.map(p => hopeRow(p.name, `${p.project_code} — ${hopeEscape(p.status).replaceAll('_', ' ')}`, hopeBadge('high_risk'))).join('')
+    ? highRisk.map(p => hopeRow(p.name, `${p.project_code} â€” ${hopeEscape(p.status).replaceAll('_', ' ')}`, hopeBadge('high_risk'))).join('')
     : '<p class="empty-state">No high-risk projects detected right now.</p>';
 
   try {
@@ -467,11 +554,11 @@ async function hopeOpenProjectModal(id) {
       hopeGet('project_risk', { id }).catch(() => ({ risk: 'unknown', summary: 'Risk summary unavailable.' })),
     ]);
     const color = p.progress >= 70 ? '#22c55e' : p.progress >= 40 ? '#f97316' : '#ef4444';
-    hopeOpenModal(`Project #${p.id} — ${hopeEscape(p.name)}`, `
+    hopeOpenModal(`Project #${p.id} â€” ${hopeEscape(p.name)}`, `
       <div style="display:flex;flex-direction:column;gap:14px;">
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">
-          <div><p class="modal-label">LOCATION</p><p class="modal-val">${hopeEscape(p.location || '—')}</p></div>
-          <div><p class="modal-label">CONTRACTOR</p><p class="modal-val">${hopeEscape(p.contractor_name || '—')}</p></div>
+          <div><p class="modal-label">LOCATION</p><p class="modal-val">${hopeEscape(p.location || 'â€”')}</p></div>
+          <div><p class="modal-label">CONTRACTOR</p><p class="modal-val">${hopeEscape(p.contractor_name || 'â€”')}</p></div>
           <div><p class="modal-label">BUDGET</p><p class="modal-val">${hopeMoney(p.budget)}</p></div>
           <div><p class="modal-label">SPENT</p><p class="modal-val">${hopeMoney(p.total_spent)}</p></div>
           <div><p class="modal-label">STATUS</p><p class="modal-val">${hopeBadge(p.status)}</p></div>
@@ -479,7 +566,7 @@ async function hopeOpenProjectModal(id) {
         </div>
         <div>
           <p class="modal-label">DESCRIPTION</p>
-          <p class="modal-val" style="font-weight:400;">${hopeEscape(p.description || '—')}</p>
+          <p class="modal-val" style="font-weight:400;">${hopeEscape(p.description || 'â€”')}</p>
         </div>
         <div>
           <p class="modal-label">PROGRESS</p>
@@ -494,7 +581,7 @@ async function hopeOpenProjectModal(id) {
           <div style="display:flex;flex-direction:column;gap:4px;margin-top:6px;">
             ${p.milestones.map(m => `
               <div style="display:flex;align-items:center;gap:8px;font-size:.8rem;">
-                <span style="color:${m.completed ? '#22c55e' : '#94a3b8'};">${m.completed ? '✓' : '○'}</span>
+                <span style="color:${m.completed ? '#22c55e' : '#94a3b8'};">${m.completed ? 'âœ“' : 'â—‹'}</span>
                 <span style="color:${m.completed ? '#1e293b' : '#64748b'};text-decoration:${m.completed ? 'line-through' : 'none'}">${hopeEscape(m.title)}</span>
                 <span style="margin-left:auto;color:#94a3b8;">${hopeDate(m.due_date)}</span>
               </div>
@@ -506,7 +593,7 @@ async function hopeOpenProjectModal(id) {
           <div style="display:flex;flex-direction:column;gap:4px;margin-top:6px;">
             ${p.documents?.length ? p.documents.map(d => `
               <div style="display:flex;align-items:center;gap:8px;font-size:.8rem;">
-                <span>${hopeEscape(d.document_type)} — ${hopeEscape(d.title)}</span>
+                <span>${hopeEscape(d.document_type)} â€” ${hopeEscape(d.title)}</span>
                 <a style="margin-left:auto;" href="${window.BASE_PATH}${hopeEscape(d.file_path)}" target="_blank" rel="noopener">Open</a>
               </div>
             `).join('') : '<p class="empty-state">No supporting documents on file.</p>'}
@@ -517,7 +604,7 @@ async function hopeOpenProjectModal(id) {
           <div id="hopeProjectDocChecklist" style="margin-top:6px;"></div>
         </div>
         <div class="hope-risk-box hope-risk-${hopeEscape(risk.risk)}">
-          <p class="modal-label">RISK SUMMARY — AI SUMMARY, ADVISORY ONLY</p>
+          <p class="modal-label">RISK SUMMARY â€” AI SUMMARY, ADVISORY ONLY</p>
           <p class="modal-val" style="font-weight:400;">${hopeEscape(risk.summary)}</p>
         </div>
         <div>
@@ -593,7 +680,7 @@ async function hopeOpenAwardDetailModal(recId) {
     const rec = detail.recommendation;
     const risk = detail.risk;
 
-    hopeOpenModal(`Contract Award — ${hopeEscape(rec.project_code)}`, `
+    hopeOpenModal(`Contract Award â€” ${hopeEscape(rec.project_code)}`, `
       <div style="display:flex;flex-direction:column;gap:14px;">
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">
           <div><p class="modal-label">PROJECT</p><p class="modal-val">${hopeEscape(rec.project_name)}</p></div>
@@ -632,14 +719,14 @@ async function hopeOpenAwardDetailModal(recId) {
           <div style="display:flex;flex-direction:column;gap:4px;margin-top:6px;">
             ${detail.documents.length ? detail.documents.map(d => `
               <div style="display:flex;align-items:center;gap:8px;font-size:.8rem;">
-                <span>${hopeEscape(d.document_type)} — ${hopeEscape(d.title)}</span>
+                <span>${hopeEscape(d.document_type)} â€” ${hopeEscape(d.title)}</span>
                 <a style="margin-left:auto;" href="${window.BASE_PATH}${hopeEscape(d.file_path)}" target="_blank" rel="noopener">Open</a>
               </div>
             `).join('') : '<p class="empty-state">No procurement documents attached.</p>'}
           </div>
         </div>
         <div class="hope-risk-box hope-risk-${hopeEscape(risk.risk)}">
-          <p class="modal-label">RISK SUMMARY — AI SUMMARY, ADVISORY ONLY</p>
+          <p class="modal-label">RISK SUMMARY â€” AI SUMMARY, ADVISORY ONLY</p>
           <p class="modal-val" style="font-weight:400;">${hopeEscape(risk.summary)}</p>
         </div>
         <div class="form-actions">
@@ -750,7 +837,7 @@ function hopeOpenDeletionDetailModal(requestId) {
   const r = hopeDeletionRequestsById[requestId];
   if (!r) return;
 
-  hopeOpenModal(`Deletion Request — ${hopeEscape(r.project_code)}`, `
+  hopeOpenModal(`Deletion Request â€” ${hopeEscape(r.project_code)}`, `
     <div style="display:flex;flex-direction:column;gap:14px;">
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">
         <div><p class="modal-label">PROJECT</p><p class="modal-val">${hopeEscape(r.project_name)}</p></div>
@@ -766,7 +853,7 @@ function hopeOpenDeletionDetailModal(requestId) {
       </div>
       <div class="form-actions">
         <button class="btn-secondary" type="button" onclick="hopeOpenDeletionDecisionModal(${requestId}, 'reject')">Reject Request</button>
-        <button class="btn-primary" type="button" onclick="hopeOpenDeletionDecisionModal(${requestId}, 'approve')">Approve — Permanently Delete</button>
+        <button class="btn-primary" type="button" onclick="hopeOpenDeletionDecisionModal(${requestId}, 'approve')">Approve â€” Permanently Delete</button>
       </div>
     </div>
   `);
@@ -813,7 +900,7 @@ function hopeOpenDeletionDecisionModal(requestId, decision) {
 
 /* ---- Edit Requests ---------------------------------------------------------
    Project Registration's Edit button (assets/js/script.js) no longer applies
-   changes instantly — it submits a project_edit_requests row via
+   changes instantly â€” it submits a project_edit_requests row via
    api/projects.php's request_edit action, and this queue is where HOPE
    approves or rejects it. Mirrors the Deletion Requests module above, but
    the review needs a before/after diff table rather than just a reason,
@@ -830,7 +917,7 @@ const HOPE_EDIT_FIELD_LABELS = {
 };
 
 function hopeFormatFieldValue(field, value) {
-  if (value === null || value === undefined || value === '') return '—';
+  if (value === null || value === undefined || value === '') return 'â€”';
   if (field === 'budget') return hopeMoney(value);
   if (field === 'progress') return `${value}%`;
   if (field === 'start_date' || field === 'end_date') return hopeDate(value);
@@ -902,7 +989,7 @@ async function hopeOpenEditDetailModal(requestId) {
   const roadGeometry = detail.proposed_road_geometry;
   const fieldNames = Object.keys(fields);
 
-  hopeOpenModal(`Edit Request — ${hopeEscape(r.project_code)}`, `
+  hopeOpenModal(`Edit Request â€” ${hopeEscape(r.project_code)}`, `
     <div style="display:flex;flex-direction:column;gap:14px;">
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">
         <div><p class="modal-label">PROJECT</p><p class="modal-val">${hopeEscape(r.project_name)}</p></div>
@@ -933,7 +1020,7 @@ async function hopeOpenEditDetailModal(requestId) {
       ${roadGeometry ? `
       <div>
         <p class="modal-label">ROAD GEOMETRY CHANGE</p>
-        <p class="modal-val" style="font-weight:400;">Road "${hopeEscape(roadGeometry.road_name)}" — ${(roadGeometry.estimated_length_meters / 1000).toFixed(2)} km, ${roadGeometry.num_segments} segment(s). The road drawing will be updated on approval.</p>
+        <p class="modal-val" style="font-weight:400;">Road "${hopeEscape(roadGeometry.road_name)}" â€” ${(roadGeometry.estimated_length_meters / 1000).toFixed(2)} km, ${roadGeometry.num_segments} segment(s). The road drawing will be updated on approval.</p>
       </div>` : ''}
       <div class="form-actions">
         <button class="btn-secondary" type="button" onclick="hopeOpenEditDecisionModal(${requestId}, 'reject')">Reject Request</button>
@@ -1145,7 +1232,7 @@ function hopeRenderCompletedProjects() {
 /* ---- Reports ----------------------------------------------------------------- */
 
 function hopeHighRiskSummaryText(list) {
-  if (!list || !list.length) return 'No high-risk projects detected — the infrastructure portfolio is currently on track.';
+  if (!list || !list.length) return 'No high-risk projects detected â€” the infrastructure portfolio is currently on track.';
   return `${list.length} project(s) currently flagged high risk: ${list.map(p => hopeEscape(p.name)).join(', ')}.`;
 }
 
@@ -1355,7 +1442,7 @@ window.GLOBAL_SEARCH_SOURCES = [
     url: PROJECTS_API,
     mapItem: (row) => ({
       title: row.name,
-      meta: `${row.project_code || ''} · ${row.status || ''}`.replace(/^ · /, ''),
+      meta: `${row.project_code || ''} Â· ${row.status || ''}`.replace(/^ Â· /, ''),
       page: 'project-approvals',
     }),
   },
@@ -1528,3 +1615,4 @@ document.addEventListener('DOMContentLoaded', async () => {
   hopeWireShell();
   await hopeRenderDashboard();
 });
+

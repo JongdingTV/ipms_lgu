@@ -1256,6 +1256,62 @@ function proposalDetailItem(label, value) {
   return `<div><p class="modal-label">${escapeHtml(label)}</p><p class="modal-val">${escapeHtml(value || '—')}</p></div>`;
 }
 
+function proposalAiSummaryHtml(proposal) {
+  const estimated = Number(proposal.ai_estimated_budget || 0);
+  const low = Number(proposal.ai_budget_low || 0);
+  const high = Number(proposal.ai_budget_high || 0);
+  const confidence = Number(proposal.ai_budget_confidence || 0);
+  const rationale = typeof proposal.ai_budget_rationale_text === 'string'
+    ? proposal.ai_budget_rationale_text
+    : (proposal.ai_budget_rationale || 'No AI budget rationale supplied.');
+  const isReviewer = ['admin', 'super_admin', 'hope'].includes(String(window.CURRENT_USER_ROLE || '').toLowerCase());
+  const generateButton = isReviewer ? `<button type="button" class="btn-secondary btn-compact" onclick="proposalGenerateAiBudget(${Number(proposal.id)})">Generate AI Budget</button>` : '';
+
+  return `
+    <div class="proposal-ai-budget">
+      <div class="proposal-detail-top">
+        <div class="proposal-ai-heading">
+          <div>
+            <span class="proposal-ai-kicker">AI budget assessment</span>
+            <h3>${formatMoney(estimated)}</h3>
+          </div>
+          <span class="proposal-ai-advisory">Advisory only</span>
+        </div>
+      </div>
+      <div class="proposal-detail-grid">
+        ${proposalDetailItem('Estimated Budget', formatMoney(estimated))}
+        ${proposalDetailItem('Expected Range', `${formatMoney(low)} - ${formatMoney(high)}`)}
+        ${proposalDetailItem('Confidence', `${confidence.toFixed(0)}%`)}
+      </div>
+      <div class="proposal-detail-copy">
+        <p class="modal-label">SUMMARY</p>
+        <p>${escapeHtml(rationale || 'No AI assessment summary is available yet.')}</p>
+      </div>
+      ${generateButton ? `<div class="proposal-review-actions">${generateButton}</div>` : ''}
+    </div>
+  `;
+}
+
+async function proposalGenerateAiBudget(id) {
+  try {
+    const result = await post(API.projectProposals, { action: 'estimate_budget', id });
+    if (result.error) { toast(result.error, 'error'); return; }
+    toast('AI estimate generated successfully.', 'success');
+    await viewProjectProposal(id);
+  } catch (error) {
+    toast(error.message || 'Unable to generate the AI estimate.', 'error');
+  }
+}
+
+function proposalAiSummaryContainer(proposal) {
+  const reviewerRoles = ['admin', 'super_admin', 'hope'];
+  const isReviewer = reviewerRoles.includes(String(window.CURRENT_USER_ROLE || '').toLowerCase());
+  if (!proposal.ai_estimated_budget) {
+    return `<div class="proposal-ai-budget proposal-ai-budget-empty"><strong>AI budget estimate not yet generated.</strong><span>Generate the estimate to compare project scope, expected cost, and confidence before validation.</span>${isReviewer ? `<div class="proposal-review-actions"><button type="button" class="btn-primary btn-compact" onclick="proposalGenerateAiBudget(${Number(proposal.id)})">Generate AI Budget</button></div>` : ''}</div>`;
+  }
+  return proposalAiSummaryHtml(proposal);
+}
+
 function proposalFeedbackRows(feedback) {
   if (!feedback.length) return '<p class="empty-state">No Citizen Feedback records were linked to this proposal.</p>';
   return `<div class="proposal-feedback-detail-list">${feedback.map(row => `<div class="proposal-feedback-detail-row"><div><strong>FB-${String(row.id).padStart(4, '0')}</strong><p>${escapeHtml(row.message || '')}</p><small>${escapeHtml([row.barangay, row.district].filter(Boolean).join(', ') || 'Area not specified')}</small></div><button class="btn-secondary btn-compact" type="button" onclick="viewProposalFeedback(${Number(row.id)})">View Feedback</button></div>`).join('')}</div>`;
@@ -1291,7 +1347,7 @@ async function viewProjectProposal(id) {
         ${proposal.proposed_solution ? `<div class="proposal-detail-copy"><p class="modal-label">PROPOSED SOLUTION</p><p>${escapeHtml(proposal.proposed_solution)}</p></div>` : ''}
         <h4>Supporting Project Information</h4><div class="proposal-detail-grid">${proposalDetailItem('Implementing Office', proposal.implementing_office)}${proposalDetailItem('Physical Target / Scope', proposal.physical_target)}${proposalDetailItem('Funding Source', proposal.funding_source)}${proposalDetailItem('Preliminary Budget Estimate', proposal.budget_estimate ? `PHP ${Number(proposal.budget_estimate).toLocaleString()}` : 'Not provided')}${proposalDetailItem('Target Start Date', proposal.target_start_date)}${proposalDetailItem('Target End Date', proposal.target_end_date)}</div>${proposal.supporting_information ? `<div class="proposal-detail-copy"><p class="modal-label">SUPPORTING INFORMATION</p><p>${escapeHtml(proposal.supporting_information)}</p></div>` : ''}
         <h4>AI Budget Assessment</h4>
-        <div class="proposal-ai-budget"><div class="proposal-detail-grid">${proposalDetailItem('AI Estimated Budget', proposal.ai_estimated_budget ? `PHP ${Number(proposal.ai_estimated_budget).toLocaleString()}` : 'Not generated')}${proposalDetailItem('Estimated Range', proposal.ai_budget_low && proposal.ai_budget_high ? `PHP ${Number(proposal.ai_budget_low).toLocaleString()} - PHP ${Number(proposal.ai_budget_high).toLocaleString()}` : '—')}${proposalDetailItem('Confidence', proposal.ai_budget_confidence !== null ? `${Number(proposal.ai_budget_confidence).toFixed(0)}%` : '—')}</div><p>${escapeHtml(proposal.ai_budget_rationale || 'No AI budget estimate has been generated.')}</p><small>Advisory only. Head Office verifies the technical basis and the Mayor validates the proposal before approval.</small></div>
+        ${proposalAiSummaryContainer(proposal)}
         <h4>Proponent</h4>
         <div class="proposal-detail-grid">${proposalDetailItem('Engineer Name', proposal.engineer_name)}${proposalDetailItem('Engineer ID', `ENG-${String(proposal.engineer_id).padStart(4, '0')}`)}${proposalDetailItem('Date Submitted', proposalDate(proposal.submitted_at))}${proposalDetailItem('Review Status', PROPOSAL_STATUS_META[proposal.status]?.label || proposal.status)}</div>
         ${proposal.road_geometry ? `<h4>Road Geometry</h4><div class="proposal-detail-grid">${proposalDetailItem('Road Name', proposal.road_geometry.road_name)}${proposalDetailItem('Road Type', proposal.road_geometry.road_type)}${proposalDetailItem('Road Status', proposal.road_geometry.road_status)}${proposalDetailItem('Estimated Length', proposal.road_geometry.estimated_length_meters ? `${Number(proposal.road_geometry.estimated_length_meters).toLocaleString()} m` : '—')}${proposalDetailItem('Start', proposal.road_geometry.start?.address)}${proposalDetailItem('End', proposal.road_geometry.end?.address)}${proposalDetailItem('Barangays Covered', (proposal.road_geometry.barangays_covered || []).join(', '))}${proposalDetailItem('Districts Covered', (proposal.road_geometry.districts_covered || []).join(', '))}${proposalDetailItem('Road Surface', proposal.road_geometry.road_surface)}${proposalDetailItem('Number of Lanes', proposal.road_geometry.num_lanes)}</div><p class="proposal-section-note">Road start/end and drawn path are preserved with this proposal for Head Office review.</p>` : ''}

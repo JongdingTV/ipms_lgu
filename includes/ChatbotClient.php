@@ -76,6 +76,32 @@ PROMPT;
         $generationConfig = ['maxOutputTokens' => self::MAX_OUTPUT_TOKENS];
         if ($jsonResponse) {
             $generationConfig['responseMimeType'] = 'application/json';
+            $generationConfig['responseSchema'] = [
+                'type' => 'OBJECT',
+                'properties' => [
+                    'estimated_budget' => ['type' => 'NUMBER'],
+                    'low_budget' => ['type' => 'NUMBER'],
+                    'high_budget' => ['type' => 'NUMBER'],
+                    'confidence' => ['type' => 'NUMBER'],
+                    'rationale' => ['type' => 'STRING'],
+                    'cost_breakdown' => [
+                        'type' => 'ARRAY',
+                        'items' => [
+                            'type' => 'OBJECT',
+                            'properties' => [
+                                'item' => ['type' => 'STRING'],
+                                'amount' => ['type' => 'NUMBER'],
+                            ],
+                            'required' => ['item', 'amount'],
+                        ],
+                    ],
+                    'data_gaps' => [
+                        'type' => 'ARRAY',
+                        'items' => ['type' => 'STRING'],
+                    ],
+                ],
+                'required' => ['estimated_budget', 'low_budget', 'high_budget', 'confidence', 'rationale', 'cost_breakdown', 'data_gaps'],
+            ];
         }
         $body = [
             'system_instruction' => ['parts' => ['text' => $systemPrompt ?? self::SYSTEM_PROMPT]],

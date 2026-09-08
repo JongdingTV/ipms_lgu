@@ -1192,7 +1192,7 @@ input.search-pill {
 
 /* ── Toast ── */
 .toast {
-  position: fixed; bottom: 24px; right: 24px; z-index: 999;
+  position: fixed; bottom: 24px; right: 24px; z-index: 2300;
   background: #1e2a3b; color: white; border-radius: var(--radius-sm);
   padding: 12px 18px; font-size: .83rem; font-weight: 500;
   opacity: 0; transform: translateY(10px);
