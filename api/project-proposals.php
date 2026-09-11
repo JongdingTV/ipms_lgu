@@ -256,20 +256,37 @@ Return valid JSON only with exactly this shape:
 Confidence must be 0-100. List missing quantities, dimensions, site assessment,
 road geometry details, and any other material information that is genuinely absent.
 PROMPT;
-    $result = ChatbotClient::sendMessage([], json_encode($context, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES), $systemPrompt, true);
-    if (!$result['success']) respond(['error' => $result['message']], 503);
-    $reply = trim((string) $result['reply']);
-    $estimate = json_decode($reply, true);
-    if (!is_array($estimate)) {
-        $cleanReply = preg_replace('/^```(?:json)?\s*|\s*```$/i', '', $reply);
-        $estimate = json_decode(trim((string) $cleanReply), true);
-    }
-    if (!is_array($estimate)) {
-        $jsonStart = strpos($reply, '{');
-        $jsonEnd = strrpos($reply, '}');
-        if ($jsonStart !== false && $jsonEnd !== false && $jsonEnd > $jsonStart) {
-            $estimate = json_decode(substr($reply, $jsonStart, $jsonEnd - $jsonStart + 1), true);
+    $contextJson = json_encode($context, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+    $decodeEstimate = static function (?string $reply): ?array {
+        $reply = trim((string) $reply);
+        $estimate = json_decode($reply, true);
+        if (!is_array($estimate)) {
+            $cleanReply = preg_replace('/^```(?:json)?\s*|\s*```$/i', '', $reply);
+            $estimate = json_decode(trim((string) $cleanReply), true);
         }
+        if (!is_array($estimate)) {
+            $jsonStart = strpos($reply, '{');
+            $jsonEnd = strrpos($reply, '}');
+            if ($jsonStart !== false && $jsonEnd !== false && $jsonEnd > $jsonStart) {
+                $estimate = json_decode(substr($reply, $jsonStart, $jsonEnd - $jsonStart + 1), true);
+            }
+        }
+        if (!is_array($estimate)) return null;
+        foreach (['estimated_budget' => 'estimatedBudget', 'low_budget' => 'lowBudget', 'high_budget' => 'highBudget', 'cost_breakdown' => 'costBreakdown', 'data_gaps' => 'dataGaps'] as $key => $alias) {
+            if (!array_key_exists($key, $estimate) && array_key_exists($alias, $estimate)) $estimate[$key] = $estimate[$alias];
+        }
+        foreach (['estimated_budget', 'low_budget', 'high_budget', 'confidence'] as $key) {
+            if (isset($estimate[$key]) && is_string($estimate[$key])) $estimate[$key] = (float) preg_replace('/[^0-9.\-]/', '', $estimate[$key]);
+        }
+        return $estimate;
+    };
+    $result = ChatbotClient::sendMessage([], $contextJson, $systemPrompt, true);
+    if (!$result['success']) respond(['error' => $result['message']], 503);
+    $estimate = $decodeEstimate($result['reply']);
+    if (!is_array($estimate) || !is_numeric($estimate['estimated_budget'] ?? null) || (float) $estimate['estimated_budget'] <= 0) {
+        $retryPrompt = $systemPrompt . "\nReturn a compact response now. Use only numeric values for all budget fields, and include estimated_budget greater than zero.";
+        $retry = ChatbotClient::sendMessage([], $contextJson, $retryPrompt, true);
+        if ($retry['success']) $estimate = $decodeEstimate($retry['reply']);
     }
     if (!is_array($estimate) || !is_numeric($estimate['estimated_budget'] ?? null) || (float) $estimate['estimated_budget'] <= 0) {
         respond(['error' => 'The AI returned an invalid budget estimate. Add more project scope and supporting information, then try again.'], 502);
