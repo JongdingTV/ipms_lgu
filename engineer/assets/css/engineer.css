@@ -43,6 +43,9 @@
 .proposal-pagination { display:flex; align-items:center; justify-content:flex-end; flex-wrap:wrap; gap:10px; margin-top:16px; padding-top:13px; border-top:1px solid var(--border); color:var(--text-muted); font-size:.74rem; }
 .proposal-pager-page { color:var(--text-primary); font-weight:800; }
 .proposal-actions { display:flex; justify-content:flex-end; gap:10px; margin-top:22px; padding-top:18px; border-top:1px solid var(--border); }
+.proposal-actions button.is-loading { display:inline-flex; align-items:center; justify-content:center; gap:8px; min-width:156px; cursor:wait; opacity:.8; }
+.proposal-actions button.is-loading::before { content:''; width:13px; height:13px; border:2px solid currentColor; border-right-color:transparent; border-radius:50%; animation:proposalAiSpin .7s linear infinite; }
+@keyframes proposalAiSpin { to { transform:rotate(360deg); } }
 .proposal-ai-budget { display:flex; flex-direction:column; gap:16px; margin-top:20px; padding:20px; border:1px solid rgba(37,99,235,.25); border-left:4px solid #2563eb; border-radius:8px; background:rgba(239,246,255,.7); color:var(--text-primary); }
 .proposal-ai-heading, .proposal-ai-cost { display:flex; align-items:center; justify-content:space-between; gap:14px; }
 .proposal-ai-heading h3 { margin:4px 0 0; color:var(--text-primary); font-size:1.35rem; }

@@ -10,7 +10,7 @@
 class ChatbotClient
 {
     private const API_BASE = 'https://generativelanguage.googleapis.com/v1beta/models/';
-    private const MAX_OUTPUT_TOKENS = 1024;
+    private const MAX_OUTPUT_TOKENS = 2048;
     private const TIMEOUT_SECONDS = 25;
 
     private const SYSTEM_PROMPT = <<<'PROMPT'

@@ -380,13 +380,29 @@ async function engineerSaveProposalDraft() {
 }
 
 async function engineerGenerateProposalBudget() {
+  const button = document.querySelector('#projectProposalForm button[onclick*="engineerGenerateProposalBudget"]');
+  if (button?.disabled) return;
+  const originalLabel = button?.textContent || 'Generate AI Budget';
+  if (button) {
+    button.disabled = true;
+    button.classList.add('is-loading');
+    button.textContent = 'Generating...';
+  }
   try {
     const saved = await engineerSaveProposalDraft();
     if (!saved) return;
     await engineerProposalRequest(ENGINEER_PROPOSALS_API, { method: 'POST', headers: { 'Content-Type': 'application/json', ...ENGINEER_CSRF_HEADERS }, body: JSON.stringify({ action: 'estimate_budget', id: saved.id }) });
     engineerToast('AI budget estimate generated.');
     await engineerRenderProposalFormById(saved.id);
-  } catch (error) { engineerToast(error.message, 'error'); }
+  } catch (error) {
+    engineerToast(error.message, 'error');
+  } finally {
+    if (button && button.isConnected) {
+      button.disabled = false;
+      button.classList.remove('is-loading');
+      button.textContent = originalLabel;
+    }
+  }
 }
 
 async function engineerSaveProposal(action) {
