@@ -235,8 +235,18 @@ function engineerOpenModal(title, html) {
 }
 
 async function engineerProposalRequest(url, options = {}) {
-  const response = await fetch(url, options);
-  const data = await response.json();
+  const response = await fetch(url, {
+    ...options,
+    headers: { Accept: 'application/json', ...(options.headers || {}) },
+  });
+  const raw = await response.text();
+  let data;
+  try {
+    data = raw ? JSON.parse(raw) : {};
+  } catch (error) {
+    const contentType = response.headers.get('content-type') || 'unknown content type';
+    throw new Error(`Engineer API returned HTML or invalid data (HTTP ${response.status}, ${contentType}). Check that ${url.split('?')[0]} is deployed and accessible.`);
+  }
   if (!response.ok || data.error) throw engineerErrorFrom(data, response);
   return data;
 }
