@@ -84,6 +84,34 @@
 .proposal-road-toggles label { display:inline-flex; align-items:center; gap:5px; }
 @media (max-width:700px) { .proposal-road-grid { grid-template-columns:1fr; } }
 :root[data-theme="dark"] .engineer-readonly-pill { background:rgba(99,102,241,.2); color:#c7d2fe; }
+:root[data-theme="dark"] .proposal-ai-budget {
+  background: #172554;
+  border-color: #3b82f6;
+  border-left-color: #60a5fa;
+  color: #f8fafc;
+}
+:root[data-theme="dark"] .proposal-ai-heading h3,
+:root[data-theme="dark"] .proposal-ai-metrics strong,
+:root[data-theme="dark"] .proposal-ai-section h4,
+:root[data-theme="dark"] .proposal-ai-cost span,
+:root[data-theme="dark"] .proposal-ai-cost strong {
+  color: #f8fafc;
+}
+:root[data-theme="dark"] .proposal-ai-kicker { color: #93c5fd; }
+:root[data-theme="dark"] .proposal-ai-advisory { background: #dbeafe; color: #1e3a8a; }
+:root[data-theme="dark"] .proposal-ai-budget span,
+:root[data-theme="dark"] .proposal-ai-budget p,
+:root[data-theme="dark"] .proposal-ai-budget small,
+:root[data-theme="dark"] .proposal-ai-gaps li {
+  color: #cbd5e1;
+}
+:root[data-theme="dark"] .proposal-ai-metrics > div,
+:root[data-theme="dark"] .proposal-ai-breakdown {
+  background: #1e3a5f;
+  border-color: #60a5fa;
+}
+:root[data-theme="dark"] .proposal-ai-cost { border-bottom-color: #365486; }
+:root[data-theme="dark"] .proposal-ai-footer { border-top-color: #60a5fa; }
 @media (max-width:700px) { .proposal-form-grid { grid-template-columns:1fr; } .proposal-form-wide { grid-column:auto; } .proposal-form-intro, .proposal-form { padding:18px; } .proposal-form-intro { flex-direction:column; } .proposal-feedback-picker { padding:16px; } .proposal-feedback-row, .proposal-row { grid-template-columns:1fr; display:grid; } .proposal-feedback-row small { padding-left:29px; } .proposal-row > div:last-child { justify-content:flex-start; } .proposal-pagination { justify-content:flex-start; } .proposal-ai-budget { padding:16px; } .proposal-ai-metrics, .proposal-ai-gaps { grid-template-columns:1fr; } .proposal-ai-heading { align-items:flex-start; flex-direction:column; } }
 .engineer-scope-note {
   margin-top: 6px;
