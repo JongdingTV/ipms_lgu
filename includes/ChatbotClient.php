@@ -104,7 +104,7 @@ PROMPT;
             ];
         }
         $body = [
-            'system_instruction' => ['parts' => ['text' => $systemPrompt ?? self::SYSTEM_PROMPT]],
+            'system_instruction' => ['parts' => [['text' => $systemPrompt ?? self::SYSTEM_PROMPT]]],
             'contents' => $contents,
             'generationConfig' => $generationConfig,
         ];

@@ -414,6 +414,17 @@ button { cursor: pointer; font-family: var(--font); }
 }
 .gis-legend-dot { display: inline-block; width: 11px; height: 11px; border-radius: 50%; flex-shrink: 0; box-shadow: 0 0 0 2px rgba(255,255,255,.5); }
 :root[data-theme="dark"] .gis-legend-dot { box-shadow: 0 0 0 2px rgba(0,0,0,.35); }
+.gis-scope-note {
+  display: block;
+  padding: 9px 13px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--card-bg);
+  box-shadow: var(--card-shadow);
+  color: var(--text-muted);
+  line-height: 1.5;
+}
+.gis-scope-note::selection { background: #bfdbfe; color: #1e3a8a; }
 .legend-blue  { background: #3b82f6; }
 .legend-green { background: #22c55e; }
 .chart-body { position: relative; }
