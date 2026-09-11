@@ -272,6 +272,12 @@ PROMPT;
             }
         }
         if (!is_array($estimate)) return null;
+        foreach (['estimate', 'budget_estimate', 'budgetEstimate', 'result'] as $nestedKey) {
+            if (isset($estimate[$nestedKey]) && is_array($estimate[$nestedKey])) {
+                $estimate = array_merge($estimate, $estimate[$nestedKey]);
+                break;
+            }
+        }
         foreach (['estimated_budget' => 'estimatedBudget', 'low_budget' => 'lowBudget', 'high_budget' => 'highBudget', 'cost_breakdown' => 'costBreakdown', 'data_gaps' => 'dataGaps'] as $key => $alias) {
             if (!array_key_exists($key, $estimate) && array_key_exists($alias, $estimate)) $estimate[$key] = $estimate[$alias];
         }
@@ -285,7 +291,11 @@ PROMPT;
     $estimate = $decodeEstimate($result['reply']);
     if (!is_array($estimate) || !is_numeric($estimate['estimated_budget'] ?? null) || (float) $estimate['estimated_budget'] <= 0) {
         $retryPrompt = $systemPrompt . "\nReturn a compact response now. Use only numeric values for all budget fields, and include estimated_budget greater than zero.";
-        $retry = ChatbotClient::sendMessage([], $contextJson, $retryPrompt, true);
+        // Some production Gemini models accept the structured request but
+        // return an incomplete object. A plain JSON-text retry is more
+        // portable across model versions and still passes through the same
+        // strict parser below.
+        $retry = ChatbotClient::sendMessage([], $contextJson, $retryPrompt, false);
         if ($retry['success']) $estimate = $decodeEstimate($retry['reply']);
     }
     if (!is_array($estimate) || !is_numeric($estimate['estimated_budget'] ?? null) || (float) $estimate['estimated_budget'] <= 0) {
