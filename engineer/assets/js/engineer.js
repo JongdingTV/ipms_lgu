@@ -15,6 +15,7 @@ let engineerState = {
   budgetWatch: [],
 };
 let engineerProposalFeedbackState = { page: 1, lastPage: 1, selected: new Set() };
+let engineerProposalAiBusy = false;
 let engineerProposalMap = null;
 let engineerProposalPin = null;
 let engineerProposalProjectMarkers = [];
@@ -57,7 +58,7 @@ function engineerShortMoney(value) {
 
 function engineerProposalAiHtml(proposal) {
   if (!proposal.ai_estimated_budget) {
-    return '<div class="proposal-ai-budget proposal-ai-budget-empty"><strong>AI budget estimate required before submission</strong><span>Save the proposal, then generate an estimate from its scope, need, feedback, and supporting documents.</span></div>';
+    return '<div id="proposalAiStatus" class="proposal-ai-budget proposal-ai-budget-empty"><strong>AI budget estimate required before submission</strong><span>Save the proposal, then generate an estimate from its scope, need, feedback, and supporting documents.</span></div>';
   }
 
   let breakdown = proposal.ai_budget_breakdown;
@@ -82,6 +83,11 @@ function engineerProposalAiHtml(proposal) {
     ${breakdownHtml}${gapsHtml}
     <small class="proposal-ai-footer">Head Office and the Mayor must review and validate this estimate.</small>
   </section>`;
+}
+
+function engineerSetProposalAiStatus(html) {
+  const status = document.getElementById('proposalAiStatus');
+  if (status) status.outerHTML = html;
 }
 
 function engineerDate(value) {
@@ -290,7 +296,7 @@ function engineerApplyFeedbackLocation(input) {
   const districtInput = document.querySelector('#projectProposalForm [name="district"]');
   const barangayInput = document.querySelector('#projectProposalForm [name="barangay"]');
   const locationInput = document.querySelector('#projectProposalForm [name="location"]');
-  if (districtInput && district) districtInput.value = district.replace(/^District\s*/i, '');
+  if (districtInput && district) engineerSetProposalDistrict(district.replace(/^District\s*/i, ''));
   if (barangayInput && barangay) barangayInput.value = barangay;
   if (locationInput && (location || barangay)) locationInput.value = location || `Barangay ${barangay}, District ${district.replace(/^District\s*/i, '')}, Quezon City`;
   if (Number.isFinite(latitude) && Number.isFinite(longitude) && latitude !== 0 && longitude !== 0) {
@@ -306,6 +312,20 @@ function engineerApplyFeedbackLocation(input) {
   } else if (engineerProposalMap && district && barangay) {
     engineerFocusProposalBarangay(`District ${district.replace(/^District\s*/i, '')}`, barangay);
   }
+}
+
+function engineerSetProposalDistrict(value) {
+  const district = String(value || '').replace(/^District\s*/i, '').trim();
+  const hidden = document.getElementById('engineerProposalDistrict');
+  const display = document.querySelector('#projectProposalForm [name="district_display"]');
+  const barangay = document.querySelector('#projectProposalForm [name="barangay"]');
+  if (hidden) hidden.value = district;
+  if (display) display.value = district ? `District ${district}` : '';
+  if (!barangay) return;
+  const current = barangay.value;
+  const entries = window.QC_DISTRICTS?.[`District ${district}`] || [];
+  barangay.innerHTML = '<option value="">Select barangay</option>' + entries.map(entry => `<option value="${engineerEscape(entry.name)}">${engineerEscape(entry.name)}</option>`).join('');
+  if (entries.some(entry => entry.name === current)) barangay.value = current;
 }
 
 function engineerProposalPagerHtml(page, lastPage, total) {
@@ -331,7 +351,10 @@ async function engineerOpenFeedback(id) {
 function engineerProposalFormHtml(proposal = {}) {
   const categories = ['Roads and Bridges', 'Drainage and Flood Control', 'Water Supply', 'Public Buildings and Facilities', 'Street Lighting', 'Parks and Recreation', 'Other'];
   const districts = ['1', '2', '3', '4', '5', '6'];
-  const proposalDistrict = String(proposal.district || '').replace(/^District\s*/i, '').trim();
+  const assignedDistrict = String(window.ENGINEER_DISTRICT || '').replace(/^District\s*/i, '').trim();
+  const proposalDistrict = String(proposal.district || assignedDistrict).replace(/^District\s*/i, '').trim();
+  const barangayEntries = window.QC_DISTRICTS?.[`District ${assignedDistrict}`] || [];
+  const barangayOptions = barangayEntries.map(entry => `<option value="${engineerEscape(entry.name)}" ${String(proposal.barangay || '') === String(entry.name) ? 'selected' : ''}>${engineerEscape(entry.name)}</option>`).join('');
   return `<div class="proposal-form-shell"><div class="proposal-form-intro"><div><span class="proposal-form-eyebrow">Engineer workspace</span><h2>${proposal.id ? 'Continue Project Proposal' : 'New Project Proposal'}</h2><p>Describe the infrastructure need and provide the community context for Head Office review.</p></div><span class="proposal-form-status">${proposal.id ? engineerStatus(proposal.status || 'draft') : 'Draft'}</span></div><form id="projectProposalForm" class="proposal-form" onsubmit="engineerSubmitProposal(event)">
     <input type="hidden" name="id" value="${proposal.id || ''}">
     <div class="proposal-form-grid">
@@ -339,8 +362,8 @@ function engineerProposalFormHtml(proposal = {}) {
       <label>Project Category *<select id="engineerProposalCategory" class="form-input" name="category" required><option value="">Select category</option>${categories.map(value => `<option ${proposal.category === value ? 'selected' : ''}>${value}</option>`).join('')}</select></label>
       <label>Infrastructure Type<input class="form-input" name="infrastructure_type" value="${engineerEscape(proposal.infrastructure_type)}" placeholder="e.g. road rehabilitation"></label>
       <label>Priority *<select class="form-input" name="priority" required>${['low','medium','high','urgent'].map(value => `<option value="${value}" ${proposal.priority === value ? 'selected' : ''}>${value[0].toUpperCase() + value.slice(1)}</option>`).join('')}</select></label>
-      <label>District *<select class="form-input" name="district" required><option value="">Select district</option>${districts.map(value => `<option value="${value}" ${proposalDistrict === value ? 'selected' : ''}>${value}</option>`).join('')}</select></label>
-      <label>Barangay *<input class="form-input" name="barangay" required value="${engineerEscape(proposal.barangay)}"></label>
+      <label>Assigned District *<select class="form-input" name="district_display" disabled><option value="District ${engineerEscape(proposalDistrict)}">District ${engineerEscape(proposalDistrict || '—')}</option></select><input type="hidden" name="district" id="engineerProposalDistrict" value="${engineerEscape(proposalDistrict)}"></label>
+      <label>Barangay *<select class="form-input" name="barangay" required><option value="">Select barangay</option>${barangayOptions}</select></label>
       <div class="proposal-form-wide proposal-location-picker"><div class="proposal-location-heading"><strong>Project Location</strong><span>Click the map to place the project pin, then drag it to adjust.</span></div><div id="engineerProposalMap" class="proposal-location-map"></div><label>Location description *<input class="form-input" name="location" required value="${engineerEscape(proposal.location)}" placeholder="Describe the project location"></label><input type="hidden" name="latitude" id="engineerProposalLatitude" value="${engineerEscape(proposal.latitude)}"><input type="hidden" name="longitude" id="engineerProposalLongitude" value="${engineerEscape(proposal.longitude)}"></div>
       <label class="proposal-form-wide">Description *<textarea class="form-input" name="description" rows="3" required>${engineerEscape(proposal.description)}</textarea></label>
       <label class="proposal-form-wide">Project Need / Justification *<textarea class="form-input" name="justification" rows="3" required>${engineerEscape(proposal.justification)}</textarea></label>
@@ -354,7 +377,7 @@ function engineerProposalFormHtml(proposal = {}) {
       <label>Target End Date<input class="form-input" name="target_end_date" type="date" value="${engineerEscape(proposal.target_end_date)}"></label>
       <label class="proposal-form-wide">Supporting Information<textarea class="form-input" name="supporting_information" rows="3" placeholder="Site assessment, field findings, engineering recommendation, or other submitted context">${engineerEscape(proposal.supporting_information)}</textarea></label>
     </div>
-    <div class="proposal-documents"><div class="proposal-location-heading"><strong>Supporting Documents</strong><span>Attach feasibility, site assessment, and budget justification records for Head Office review.</span></div><div class="proposal-document-row"><select class="form-input" name="document_types[]"><option>Feasibility Study</option><option>Site Assessment</option><option>Budget Justification</option><option>Other</option></select><input class="form-input" name="document_titles[]" placeholder="Document title"><input class="form-input" type="file" name="proposal_documents[]" accept=".pdf,.doc,.docx,.xls,.xlsx,.png,.jpg,.jpeg"></div><div class="proposal-document-row"><select class="form-input" name="document_types[]"><option>Site Assessment</option><option>Feasibility Study</option><option>Budget Justification</option><option>Other</option></select><input class="form-input" name="document_titles[]" placeholder="Document title"><input class="form-input" type="file" name="proposal_documents[]" accept=".pdf,.doc,.docx,.xls,.xlsx,.png,.jpg,.jpeg"></div><div class="proposal-document-row"><select class="form-input" name="document_types[]"><option>Budget Justification</option><option>Feasibility Study</option><option>Site Assessment</option><option>Other</option></select><input class="form-input" name="document_titles[]" placeholder="Document title"><input class="form-input" type="file" name="proposal_documents[]" accept=".pdf,.doc,.docx,.xls,.xlsx,.png,.jpg,.jpeg"></div></div>
+    <div class="proposal-documents"><div class="proposal-location-heading"><strong>Supporting Documents</strong><span>Attach up to 3 records for Head Office review.</span></div><div id="proposalDocumentRows"><div class="proposal-document-row"><select class="form-input" name="document_types[]"><option>Feasibility Study</option><option>Site Assessment</option><option>Budget Justification</option><option>Other</option></select><input class="form-input" name="document_titles[]" placeholder="Document title"><input class="form-input" type="file" name="proposal_documents[]" accept=".pdf,.doc,.docx,.xls,.xlsx,.png,.jpg,.jpeg"><button type="button" class="proposal-document-remove" aria-label="Remove document">&times;</button></div></div><button type="button" class="btn-secondary btn-compact proposal-add-document" id="proposalAddDocument">+ Add supporting document <span>(1/3)</span></button></div>
     <div id="engineerProposalRoadSection" class="proposal-road-section" style="display:none"><div class="proposal-location-heading"><strong>Road Geometry</strong><span>Required for Roads and Bridges. Click at least two points from start to end.</span></div><div class="proposal-road-grid"><label>Road Name *<input id="proposalRoadName" class="form-input" value="${engineerEscape(proposal.road_geometry?.road_name)}"></label><label>Road Type<select id="proposalRoadType" class="form-input"><option value="">Select road type</option>${['National Road','City Road','Barangay Road','Secondary Road','Bridge','Intersection'].map(value => `<option ${proposal.road_geometry?.road_type === value ? 'selected' : ''}>${value}</option>`).join('')}</select></label><label>Road Status<select id="proposalRoadStatus" class="form-input"><option value="">Select road status</option>${['Existing Road','Road Widening','New Road','Rehabilitation','Bridge Construction'].map(value => `<option ${proposal.road_geometry?.road_status === value ? 'selected' : ''}>${value}</option>`).join('')}</select></label><label>Road Width (m)<input id="proposalRoadWidth" type="number" min="0" step="0.1" class="form-input" value="${engineerEscape(proposal.road_geometry?.road_width)}"></label><label>Number of Lanes<input id="proposalRoadLanes" type="number" min="0" class="form-input" value="${engineerEscape(proposal.road_geometry?.num_lanes)}"></label><label>Road Surface<select id="proposalRoadSurface" class="form-input"><option value="">Select surface</option>${['Concrete','Asphalt','Gravel','Mixed'].map(value => `<option ${proposal.road_geometry?.road_surface === value ? 'selected' : ''}>${value}</option>`).join('')}</select></label></div><div id="engineerProposalRoadMap" class="proposal-location-map"></div><p id="proposalRoadReadout" class="proposal-map-note">No road points yet.</p><div class="proposal-road-toggles">${[['proposalRoadBridge','Bridge Included'],['proposalRoadDrainage','Drainage Included'],['proposalRoadBike','Bike Lane'],['proposalRoadSidewalk','Sidewalk'],['proposalRoadLights','Streetlights']].map(([id,label]) => `<label><input id="${id}" type="checkbox" ${proposal.road_geometry?.[id.replace('proposalRoad','').replace('Bridge','bridge_included').replace('Drainage','drainage_included').replace('Bike','bike_lane').replace('Sidewalk','sidewalk').replace('Lights','streetlights')] ? 'checked' : ''}> ${label}</label>`).join('')}</div><input type="hidden" name="road_geometry" id="engineerProposalRoadGeometry"></div>
     <div class="proposal-feedback-picker"><div class="engineer-panel-head"><h3>Community Need / Feedback Basis</h3><span class="engineer-readonly-pill">Read-only records</span></div>
       <div class="proposal-filter-row"><input id="proposalFeedbackSearch" class="form-input" placeholder="Search feedback"><select id="proposalFeedbackCategory" class="form-input"><option value="">All categories</option><option value="road_damage">Road damage</option><option value="drainage_flooding">Drainage / flooding</option><option value="streetlight">Streetlight</option><option value="complaint">Complaint</option><option value="suggestion">Suggestion</option><option value="inquiry">Inquiry</option></select><select id="proposalFeedbackPriority" class="form-input"><option value="">All priorities</option><option>urgent</option><option>high</option><option>medium</option><option>low</option></select><button type="button" class="btn-secondary" onclick="engineerLoadProposalFeedback(1)">Search</button></div>
@@ -376,10 +399,15 @@ async function engineerSaveProposalDraft() {
   body.set('action', 'save_draft');
   body.delete('feedback_ids[]');
   engineerProposalFeedbackState.selected.forEach(id => body.append('feedback_ids[]', id));
-  return engineerProposalRequest(ENGINEER_PROPOSALS_API, { method: 'POST', headers: { ...ENGINEER_CSRF_HEADERS }, body });
+  const saved = await engineerProposalRequest(ENGINEER_PROPOSALS_API, { method: 'POST', headers: { ...ENGINEER_CSRF_HEADERS }, body });
+  const idInput = form.querySelector('[name="id"]');
+  if (idInput && saved.id) idInput.value = String(saved.id);
+  return saved;
 }
 
 async function engineerGenerateProposalBudget() {
+  if (engineerProposalAiBusy) return;
+  engineerProposalAiBusy = true;
   const button = document.querySelector('#projectProposalForm button[onclick*="engineerGenerateProposalBudget"]');
   if (button?.disabled) return;
   const originalLabel = button?.textContent || 'Generate AI Budget';
@@ -388,6 +416,7 @@ async function engineerGenerateProposalBudget() {
     button.classList.add('is-loading');
     button.textContent = 'Generating...';
   }
+  engineerSetProposalAiStatus('<div id="proposalAiStatus" class="proposal-ai-budget proposal-ai-budget-loading"><div class="proposal-ai-loading-icon"></div><strong>AI is working on your budget estimate...</strong><span>Reviewing the project scope, location, feedback, road details, and supporting documents. This may take a moment.</span></div>');
   try {
     const saved = await engineerSaveProposalDraft();
     if (!saved) return;
@@ -395,8 +424,10 @@ async function engineerGenerateProposalBudget() {
     engineerToast('AI budget estimate generated.');
     await engineerRenderProposalFormById(saved.id);
   } catch (error) {
+    engineerSetProposalAiStatus(`<div id="proposalAiStatus" class="proposal-ai-budget proposal-ai-budget-error"><strong>AI budget estimate could not be generated</strong><span>${engineerEscape(error.message || 'The estimate service was unavailable.')}</span><small>Check that the proposal has enough project scope, physical target, site assessment, road dimensions when applicable, and supporting information, then try again.</small></div>`);
     engineerToast(error.message, 'error');
   } finally {
+    engineerProposalAiBusy = false;
     if (button && button.isConnected) {
       button.disabled = false;
       button.classList.remove('is-loading');
@@ -451,10 +482,27 @@ async function engineerRenderProposalPage(editId = '', page = 1) {
   if (editId) { engineerRenderProposalForm(data.data); return; }
 }
 
-function engineerProposalRowHtml(row) { return `<article class="proposal-row" data-search="${engineerEscape(`${row.proposal_code} ${row.title} ${row.barangay}`)}" data-status="${row.status}"><div><span class="engineer-project-code">${engineerEscape(row.proposal_code)}</span><h3>${engineerEscape(row.title)}</h3><p>${engineerEscape(row.barangay)}, ${engineerEscape(row.district)} · Based on ${row.feedback_count || 0} Citizen Reports</p></div><div>${engineerBadge(row.status)}<small>${engineerDate(row.submitted_at || row.created_at)}</small><button class="btn-secondary btn-compact" type="button" onclick="engineerViewProposal(${row.id})">View</button>${row.status === 'draft' ? `<button class="btn-secondary btn-compact" type="button" onclick="engineerRenderProposalFormById(${row.id})">Continue</button>` : ''}</div></article>`; }
 // A returned proposal is still owned by its Engineer and can be revised and
 // resubmitted; the API enforces that ownership/status rule server-side.
-function engineerProposalRowHtml(row) { return `<article class="proposal-row" data-search="${engineerEscape(`${row.proposal_code} ${row.title} ${row.barangay}`)}" data-status="${row.status}"><div><span class="engineer-project-code">${engineerEscape(row.proposal_code)}</span><h3>${engineerEscape(row.title)}</h3><p>${engineerEscape(row.barangay)}, ${engineerEscape(row.district)} &middot; Based on ${row.feedback_count || 0} Citizen Reports</p></div><div>${engineerBadge(row.status, engineerProposalStatusLabel(row.status))}<small>${engineerDate(row.submitted_at || row.created_at)}</small><button class="btn-secondary btn-compact" type="button" onclick="engineerViewProposal(${row.id})">View</button>${['draft', 'returned'].includes(row.status) ? `<button class="btn-secondary btn-compact" type="button" onclick="engineerRenderProposalFormById(${row.id})">${row.status === 'returned' ? 'Revise' : 'Continue'}</button>` : ''}</div></article>`; }
+function engineerProposalRowHtml(row) { return `<article class="proposal-row" data-search="${engineerEscape(`${row.proposal_code} ${row.title} ${row.barangay}`)}" data-status="${row.status}"><div><span class="engineer-project-code">${engineerEscape(row.proposal_code)}</span><h3>${engineerEscape(row.title)}</h3><p>${engineerEscape(row.barangay)}, ${engineerEscape(row.district)} &middot; Based on ${row.feedback_count || 0} Citizen Reports</p></div><div>${engineerBadge(row.status, engineerProposalStatusLabel(row.status))}<small>${engineerDate(row.submitted_at || row.created_at)}</small><button class="btn-secondary btn-compact" type="button" onclick="engineerViewProposal(${row.id})">View</button>${['draft', 'returned'].includes(row.status) ? `<button class="btn-secondary btn-compact" type="button" onclick="engineerRenderProposalFormById(${row.id})">${row.status === 'returned' ? 'Revise' : 'Continue'}</button>` : ''}${row.status === 'draft' ? `<button class="btn-danger btn-compact" type="button" onclick="engineerDeleteProposalDraft(${row.id})">Delete</button>` : ''}</div></article>`; }
+async function engineerDeleteProposalDraft(id) {
+  engineerOpenModal('Delete Draft Proposal', `<div class="proposal-delete-confirm"><div class="proposal-delete-icon">!</div><h4>Delete this draft?</h4><p>This will permanently remove the draft proposal, its linked feedback selections, and any uploaded draft documents.</p><p class="proposal-delete-warning">This action cannot be undone.</p><div class="proposal-delete-actions"><button type="button" class="btn-secondary" onclick="engineerCloseModal()">Keep Draft</button><button type="button" class="btn-danger" id="confirmDeleteProposal">Delete Draft</button></div></div>`);
+  document.getElementById('confirmDeleteProposal')?.addEventListener('click', () => engineerConfirmDeleteProposalDraft(id));
+}
+
+async function engineerConfirmDeleteProposalDraft(id) {
+  const button = document.getElementById('confirmDeleteProposal');
+  if (button) { button.disabled = true; button.textContent = 'Deleting...'; }
+  try {
+    await engineerProposalRequest(ENGINEER_PROPOSALS_API, { method: 'POST', headers: { 'Content-Type': 'application/json', ...ENGINEER_CSRF_HEADERS }, body: JSON.stringify({ action: 'delete_draft', id }) });
+    engineerCloseModal();
+    engineerToast('Draft proposal deleted.');
+    engineerRenderProposalPage();
+  } catch (error) {
+    if (button) { button.disabled = false; button.textContent = 'Delete Draft'; }
+    engineerToast(error.message, 'error');
+  }
+}
 async function engineerSetupProposalMap(proposal = {}) {
   if (engineerProposalMap) { engineerProposalMap.remove(); engineerProposalMap = null; engineerProposalPin = null; engineerProposalProjectMarkers = []; engineerProposalBoundaryLayers = []; }
   const container = document.getElementById('engineerProposalMap');
@@ -466,30 +514,43 @@ async function engineerSetupProposalMap(proposal = {}) {
     engineerProposalMap = L.map(container, { minZoom: 11, maxZoom: 17 });
     L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { attribution: '&copy; OpenStreetMap contributors' }).addTo(engineerProposalMap);
     const districts = window.QC_DISTRICTS || {};
+    const assignedDistrictNumber = String(window.ENGINEER_DISTRICT || '').replace(/^District\s*/i, '').trim();
+    const assignedDistrict = assignedDistrictNumber ? `District ${assignedDistrictNumber}` : '';
+    const assignedNames = new Set((districts[assignedDistrict] || []).map(entry => entry.geo || entry.name));
     const index = {};
     Object.keys(districts).forEach(district => (districts[district] || []).forEach(entry => { index[entry.geo || entry.name] = district; }));
     const layers = L.geoJSON(geojson, { style: feature => window.ProjectMap.districtStyle(feature, { light: true, index }), onEachFeature: (feature, layer) => layer.on('click', event => {
       L.DomEvent.stopPropagation(event.originalEvent);
       const district = index[feature.properties.adm4_en];
-      const districtSelect = document.querySelector('#projectProposalForm [name="district"]');
+      if (assignedDistrict && district !== assignedDistrict) {
+        engineerToast(`This map is limited to ${assignedDistrict}.`, 'error');
+        return;
+      }
       const area = (district && districts[district] || []).find(entry => (entry.geo || entry.name) === feature.properties.adm4_en);
-      if (district && districtSelect) districtSelect.value = district.replace(/^District\s*/i, '');
+      if (district) engineerSetProposalDistrict(district);
       if (area) document.querySelector('#projectProposalForm [name="barangay"]').value = area.name;
       engineerPlaceProposalPin(event.latlng, true);
     }) }).addTo(engineerProposalMap);
     engineerProposalBoundaryLayers = [];
     layers.eachLayer(layer => engineerProposalBoundaryLayers.push(layer));
-    engineerProposalMap.setMaxBounds(layers.getBounds().pad(0.3));
-    const districtSelect = document.querySelector('#projectProposalForm [name="district"]');
-    districtSelect?.addEventListener('change', () => engineerFocusProposalDistrict(`District ${districtSelect.value}`));
+    const assignedLayers = engineerProposalBoundaryLayers.filter(layer => assignedNames.has(layer.feature?.properties?.adm4_en));
+    const assignedBounds = assignedLayers.length ? L.featureGroup(assignedLayers).getBounds() : layers.getBounds();
+    engineerProposalMap.setMaxBounds(assignedBounds.pad(0.18));
+    const districtSelect = document.querySelector('#projectProposalForm [name="district_display"]');
+    districtSelect?.addEventListener('change', () => engineerFocusProposalDistrict(districtSelect.value));
     const latitude = Number(document.getElementById('engineerProposalLatitude')?.value || proposal.latitude);
     const longitude = Number(document.getElementById('engineerProposalLongitude')?.value || proposal.longitude);
     if (Number.isFinite(latitude) && Number.isFinite(longitude) && latitude !== 0 && longitude !== 0) {
-      engineerProposalMap.setView([latitude, longitude], 15, { animate: false });
-      engineerPlaceProposalPin(L.latLng(latitude, longitude), false);
+      const proposalPoint = L.latLng(latitude, longitude);
+      if (assignedBounds.contains(proposalPoint)) {
+        engineerProposalMap.setView(proposalPoint, 15, { animate: false });
+        engineerPlaceProposalPin(proposalPoint, false);
+      } else {
+        engineerProposalMap.fitBounds(assignedBounds.pad(0.12));
+      }
     } else {
-      engineerProposalMap.fitBounds(layers.getBounds());
-      const district = document.querySelector('#projectProposalForm [name="district"]')?.value;
+      engineerProposalMap.fitBounds(assignedBounds.pad(0.12));
+      const district = document.querySelector('#projectProposalForm [name="district_display"]')?.value;
       const barangay = document.querySelector('#projectProposalForm [name="barangay"]')?.value;
       if (district && barangay) engineerFocusProposalBarangay(`District ${district}`, barangay);
     }
@@ -497,10 +558,13 @@ async function engineerSetupProposalMap(proposal = {}) {
       const layer = engineerProposalBoundaryLayers.find(candidate => candidate.getBounds().contains(event.latlng));
       if (layer?.feature?.properties?.adm4_en) {
         const district = index[layer.feature.properties.adm4_en];
+        if (assignedDistrict && district !== assignedDistrict) {
+          engineerToast(`This map is limited to ${assignedDistrict}.`, 'error');
+          return;
+        }
         const area = (districts[district] || []).find(entry => (entry.geo || entry.name) === layer.feature.properties.adm4_en);
-        const districtSelect = document.querySelector('#projectProposalForm [name="district"]');
         const barangayInput = document.querySelector('#projectProposalForm [name="barangay"]');
-        if (districtSelect) districtSelect.value = district.replace(/^District\s*/i, '');
+        engineerSetProposalDistrict(district);
         if (barangayInput && area) barangayInput.value = area.name;
       }
       engineerPlaceProposalPin(event.latlng);
@@ -661,7 +725,9 @@ async function engineerSetupRoadProposal(proposal = {}) {
 
 function engineerFilterProposalRows() { const search = (document.getElementById('proposalListSearch')?.value || '').toLowerCase(); const status = document.getElementById('proposalListStatus')?.value || ''; document.querySelectorAll('.proposal-row').forEach(row => { row.style.display = (!search || row.dataset.search.toLowerCase().includes(search)) && (!status || row.dataset.status === status) ? '' : 'none'; }); }
 async function engineerRenderProposalFormById(id) { const data = await engineerProposalRequest(`${ENGINEER_PROPOSALS_API}?id=${id}`); engineerRenderProposalForm(data.data); }
-async function engineerRenderProposalForm(proposal = {}) { const workspace = document.getElementById('proposalWorkspace'); engineerProposalFeedbackState.selected = new Set((proposal.feedback_basis || []).map(row => String(row.id))); workspace.innerHTML = engineerProposalFormHtml(proposal); engineerSetupProposalMap(proposal); engineerSetupRoadProposal(proposal); await engineerLoadProposalFeedback(); engineerToggleProposalFeedback({ checked: false, value: '' }); }
+function engineerProposalDocumentRowHtml() { return `<div class="proposal-document-row"><select class="form-input" name="document_types[]"><option>Other</option><option>Feasibility Study</option><option>Site Assessment</option><option>Budget Justification</option></select><input class="form-input" name="document_titles[]" placeholder="Document title"><input class="form-input" type="file" name="proposal_documents[]" accept=".pdf,.doc,.docx,.xls,.xlsx,.png,.jpg,.jpeg"><button type="button" class="proposal-document-remove" aria-label="Remove document">&times;</button></div>`; }
+function engineerWireProposalDocuments() { const rows = document.getElementById('proposalDocumentRows'); const addButton = document.getElementById('proposalAddDocument'); if (!rows || !addButton) return; const sync = () => { const count = rows.querySelectorAll('.proposal-document-row').length; addButton.disabled = count >= 3; addButton.innerHTML = count >= 3 ? 'Document limit reached <span>(3/3)</span>' : `+ Add supporting document <span>(${count}/3)</span>`; }; addButton.addEventListener('click', () => { if (rows.children.length < 3) { rows.insertAdjacentHTML('beforeend', engineerProposalDocumentRowHtml()); sync(); } }); rows.addEventListener('click', event => { if (event.target.classList.contains('proposal-document-remove')) { if (rows.children.length > 1) event.target.closest('.proposal-document-row')?.remove(); sync(); } }); sync(); }
+async function engineerRenderProposalForm(proposal = {}) { const workspace = document.getElementById('proposalWorkspace'); engineerProposalFeedbackState.selected = new Set((proposal.feedback_basis || []).map(row => String(row.id))); workspace.innerHTML = engineerProposalFormHtml(proposal); engineerWireProposalDocuments(); engineerSetupProposalMap(proposal); engineerSetupRoadProposal(proposal); await engineerLoadProposalFeedback(); engineerToggleProposalFeedback({ checked: false, value: '' }); }
 async function engineerViewProposal(id) { const data = await engineerProposalRequest(`${ENGINEER_PROPOSALS_API}?id=${id}`); const proposal = data.data; engineerOpenModal(`${engineerEscape(proposal.proposal_code)} Proposal`, `<div class="engineer-detail-grid"><div class="engineer-detail-box"><span>Status</span><strong>${engineerStatus(proposal.status)}</strong></div><div class="engineer-detail-box"><span>Category</span><strong>${engineerEscape(proposal.category)}</strong></div><div class="engineer-detail-box"><span>Location</span><strong>${engineerEscape(proposal.location)}</strong></div><div class="engineer-detail-box"><span>Priority</span><strong>${engineerEscape(proposal.priority)}</strong></div></div><h4>Description</h4><p class="proposal-detail-copy">${engineerEscape(proposal.description)}</p><h4>Need / Justification</h4><p class="proposal-detail-copy">${engineerEscape(proposal.justification)}</p><h4>Feedback Basis (${proposal.feedback_basis.length})</h4>${proposal.feedback_basis.map(row => `<p class="proposal-detail-copy"><strong>FB-${String(row.id).padStart(4, '0')}</strong> ${engineerEscape(row.message)}</p>`).join('') || '<p class="empty-state">No feedback linked.</p>'}`); }
 
 async function engineerViewProposal(id) { const data = await engineerProposalRequest(`${ENGINEER_PROPOSALS_API}?id=${id}`); const proposal = data.data; engineerOpenModal(`${engineerEscape(proposal.proposal_code)} Proposal`, `<div class="engineer-detail-grid"><div class="engineer-detail-box"><span>Status</span><strong>${engineerStatus(proposal.status)}</strong></div><div class="engineer-detail-box"><span>Category</span><strong>${engineerEscape(proposal.category)}</strong></div><div class="engineer-detail-box"><span>Location</span><strong>${engineerEscape(proposal.location)}</strong></div><div class="engineer-detail-box"><span>Priority</span><strong>${engineerEscape(proposal.priority)}</strong></div></div>${proposal.return_notes ? `<h4>Return Notes from Head Office</h4><p class="proposal-detail-copy">${engineerEscape(proposal.return_notes)}</p>` : ''}<h4>Description</h4><p class="proposal-detail-copy">${engineerEscape(proposal.description)}</p><h4>Need / Justification</h4><p class="proposal-detail-copy">${engineerEscape(proposal.justification)}</p><h4>Feedback Basis (${proposal.feedback_basis.length})</h4>${proposal.feedback_basis.map(row => `<p class="proposal-detail-copy"><strong>FB-${String(row.id).padStart(4, '0')}</strong> ${engineerEscape(row.message)}</p>`).join('') || '<p class="empty-state">No feedback linked.</p>'}`); }
@@ -1335,7 +1401,7 @@ function engineerRenderInspectionPage() {
       <button type="button" class="mi-tab" data-mi-tab="returned">Returned</button>
       <button type="button" class="mi-tab" data-mi-tab="history">History</button>
     </div>
-    <div id="miTabBody"></div>
+    <div id="miTabBody" class="mi-tab-body"></div>
   `;
 
   page.querySelectorAll('.mi-tab').forEach(btn => {
@@ -1375,7 +1441,7 @@ async function miRenderMyInspections(container) {
     container.innerHTML = `
       ${inProgress.length ? `
         <section class="mi-section">
-          <h2 class="mi-section-title">Resume</h2>
+          <div class="mi-section-heading"><div><span class="mi-section-kicker">Continue working</span><h2 class="mi-section-title">Inspections in progress</h2></div><span class="mi-section-count">${inProgress.length}</span></div>
           <div class="mi-card-list">${inProgress.map(miResumeCardHtml).join('')}</div>
         </section>
       ` : ''}
@@ -1384,6 +1450,7 @@ async function miRenderMyInspections(container) {
           <h2 class="mi-section-title">My Inspections</h2>
           <button type="button" class="btn-secondary btn-compact" id="miAdHocBtn">+ New Inspection</button>
         </div>
+        <p class="mi-section-note">Start from a scheduled progress report or create an ad-hoc site visit.</p>
         <div class="mi-bucket-grid">
           ${miBucketColumnHtml('🔴 Overdue', buckets.overdue)}
           ${miBucketColumnHtml('🟠 Today', buckets.today)}
@@ -1409,7 +1476,7 @@ function miBucketColumnHtml(label, items) {
   return `
     <div class="mi-bucket-col">
       <div class="mi-bucket-head">${label} <span class="mi-bucket-count">${items.length}</span></div>
-      ${items.length ? items.map(miCandidateCardHtml).join('') : '<p class="empty-state">Nothing here.</p>'}
+      ${items.length ? items.map(miCandidateCardHtml).join('') : '<div class="mi-empty-state"><strong>Nothing here</strong><span>No inspections in this time bucket.</span></div>'}
     </div>
   `;
 }
@@ -1536,7 +1603,7 @@ function miRenderWizardTab(container) {
   }
   container.innerHTML = `
     <div class="mi-empty-wizard">
-      <p class="empty-state">No inspection in progress. Choose one from "My Inspections" to begin.</p>
+      <div class="mi-empty-state mi-empty-wizard"><div class="mi-empty-icon">+</div><strong>No inspection in progress</strong><span>Choose an assigned inspection from My Inspections to begin a field report.</span></div>
       <button type="button" class="btn-primary btn-compact" onclick="miShowTab('my-inspections')">Go to My Inspections</button>
     </div>
   `;
@@ -2048,7 +2115,7 @@ let miListState = { review: { page: 1, perPage: 10 }, history: { page: 1, perPag
 
 async function miRenderSubmittedList(container, action, emptyText) {
   container.innerHTML = `
-    <div id="miListBody"><p class="empty-state">Loading...</p></div>
+    <div id="miListBody" class="mi-list-surface"><p class="empty-state">Loading...</p></div>
     <div class="pagination-wrap" id="miListPager"></div>
   `;
   await miLoadSubmittedList(action, emptyText);
@@ -2062,7 +2129,7 @@ async function miLoadSubmittedList(action, emptyText) {
 
   try {
     const result = await engineerMiGet(action, { page: state.page, per_page: state.perPage });
-    listBody.innerHTML = result.data.length ? result.data.map(miSubmittedRowHtml).join('') : `<p class="empty-state">${emptyText}</p>`;
+    listBody.innerHTML = result.data.length ? result.data.map(miSubmittedRowHtml).join('') : `<div class="mi-empty-state mi-list-empty"><div class="mi-empty-icon">✓</div><strong>${emptyText}</strong><span>Completed inspection records will appear here.</span></div>`;
     listBody.querySelectorAll('[data-mi-view]').forEach(btn => {
       btn.addEventListener('click', () => miOpenSubmittedDetail(Number(btn.dataset.miView)));
     });
@@ -2108,7 +2175,7 @@ async function miRenderReturnedList(container) {
           </article>
         `).join('')}
       </div>
-    ` : '<p class="empty-state">Nothing needs reinspection right now.</p>';
+    ` : '<div class="mi-empty-state mi-list-empty"><div class="mi-empty-icon">✓</div><strong>Nothing needs reinspection right now</strong><span>Returned inspections will appear here when follow-up work is required.</span></div>';
 
     container.querySelectorAll('[data-mi-view]').forEach(btn => btn.addEventListener('click', () => miOpenSubmittedDetail(Number(btn.dataset.miView))));
     container.querySelectorAll('[data-mi-reinspect]').forEach(btn => btn.addEventListener('click', () => miStartInspection({ follow_up_of_inspection_id: btn.dataset.miReinspect })));

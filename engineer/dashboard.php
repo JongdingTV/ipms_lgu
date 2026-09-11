@@ -13,7 +13,7 @@ require_once __DIR__ . '/sidebar.php';
   <?php require_once __DIR__ . '/../includes/topbar.php'; ?>
 
   <main class="content engineer-content">
-    <script>window.QC_DISTRICTS = <?= json_encode(qcDistricts(), JSON_UNESCAPED_UNICODE) ?>; window.QC_GEOJSON_URL = <?= json_encode(appUrl('/citizen/assets/data/qc-barangays.geojson')) ?>;</script>
+    <script>window.QC_DISTRICTS = <?= json_encode(qcDistricts(), JSON_UNESCAPED_UNICODE) ?>; window.QC_GEOJSON_URL = <?= json_encode(appUrl('/citizen/assets/data/qc-barangays.geojson')) ?>; window.ENGINEER_DISTRICT = <?= json_encode(currentUser()['district'] ?? '') ?>;</script>
     <section id="page-dashboard" class="page-section">
       <div class="page-header">
         <div>

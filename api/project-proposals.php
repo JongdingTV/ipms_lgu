@@ -178,6 +178,12 @@ function proposalDocumentUpload(PDO $db, int $proposalId, int $userId): void
     $names = $_POST['document_titles'] ?? [];
     $types = $_POST['document_types'] ?? [];
     $files = $_FILES['proposal_documents'] ?? [];
+    $existingStmt = $db->prepare("SELECT COUNT(*) FROM supporting_documents WHERE owner_type = 'proposal' AND owner_id = ? AND is_current = 1");
+    $existingStmt->execute([$proposalId]);
+    $incomingCount = count(array_filter($files['name'] ?? [], static fn($name): bool => trim((string) $name) !== ''));
+    if ((int) $existingStmt->fetchColumn() + $incomingCount > 3) {
+        throw new FileUploadException('A maximum of 3 supporting documents is allowed per proposal.');
+    }
     foreach (array_keys($files['name'] ?? []) as $index) {
         $file = FileUpload::fromNestedFiles($files, (int) $index);
         if (!$file) continue;
@@ -397,6 +403,34 @@ if ($method === 'POST' || $method === 'PUT') {
     $body = $_POST !== [] ? $_POST : requestBody();
     $action = (string) ($body['action'] ?? $_GET['action'] ?? 'save_draft');
 
+    if ($action === 'delete_draft') {
+        if ($role !== 'engineer') respond(['error' => 'Only Engineers can delete their proposal drafts.'], 403);
+        $proposalId = (int) ($body['id'] ?? $_GET['id'] ?? 0);
+        $find = $db->prepare("SELECT id, proposal_code, status FROM project_proposals WHERE id = ? AND engineer_id = ?");
+        $find->execute([$proposalId, $userId]);
+        $draft = $find->fetch();
+        if (!$draft) respond(['error' => 'Draft proposal not found.'], 404);
+        if ($draft['status'] !== 'draft') respond(['error' => 'Only draft proposals can be deleted. Submitted or returned proposals must be preserved.'], 409);
+        $documents = $db->prepare("SELECT file_path FROM supporting_documents WHERE owner_type = 'proposal' AND owner_id = ?");
+        $documents->execute([$proposalId]);
+        $filesToDelete = array_filter(array_map(static fn(array $document): string => (string) $document['file_path'], $documents->fetchAll()));
+        $db->beginTransaction();
+        try {
+            $db->prepare("DELETE FROM supporting_documents WHERE owner_type = 'proposal' AND owner_id = ?")->execute([$proposalId]);
+            $db->prepare('DELETE FROM project_proposal_feedback WHERE proposal_id = ?')->execute([$proposalId]);
+            $db->prepare('DELETE FROM project_proposals WHERE id = ? AND engineer_id = ? AND status = \'draft\'')->execute([$proposalId, $userId]);
+            $db->commit();
+        } catch (Throwable $e) {
+            if ($db->inTransaction()) $db->rollBack();
+            respond(['error' => 'Unable to delete the draft proposal.'], 500);
+        }
+        foreach ($filesToDelete as $filePath) {
+            $absolutePath = dirname(__DIR__) . '/' . ltrim($filePath, '/');
+            if (is_file($absolutePath)) @unlink($absolutePath);
+        }
+        respond(['success' => true, 'id' => $proposalId]);
+    }
+
     if ($action === 'estimate_budget') {
         $proposalId = (int) ($body['id'] ?? $_GET['id'] ?? 0);
         if ($role === 'engineer') {
@@ -560,7 +594,10 @@ if ($method === 'POST' || $method === 'PUT') {
     }
 
     $engineerDistrict = proposalEngineerDistrict($db, $userId);
-    if ($engineerDistrict !== null && $district !== $engineerDistrict) {
+    if ($engineerDistrict === null) {
+        respond(['error' => 'Your Engineer account has no assigned district. Contact an administrator before creating a proposal.'], 403);
+    }
+    if ($district !== $engineerDistrict) {
         respond(['error' => 'Proposal district must match your assigned district.'], 422);
     }
 

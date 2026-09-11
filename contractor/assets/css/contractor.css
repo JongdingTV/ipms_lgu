@@ -8,6 +8,58 @@
   color: var(--text-muted);
   font-size: .82rem;
 }
+.contractor-bidding-workspace {
+  min-height: 330px;
+  padding: 24px;
+  background: #f8fafc;
+  border: 1px solid #d5dfeb;
+  border-radius: 10px;
+  box-shadow: 0 8px 24px rgba(15,23,42,.06);
+}
+.contractor-bidding-loading {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  min-height: 260px;
+  color: var(--text-muted);
+  font-size: .8rem;
+}
+.contractor-loading-dot {
+  width: 16px;
+  height: 16px;
+  border: 2px solid #bfdbfe;
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: contractorBiddingSpin .8s linear infinite;
+}
+@keyframes contractorBiddingSpin { to { transform: rotate(360deg); } }
+.contractor-empty-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  min-height: 280px;
+  padding: 28px 18px;
+  text-align: center;
+}
+.contractor-empty-icon {
+  display: grid;
+  place-items: center;
+  width: 46px;
+  height: 46px;
+  margin-bottom: 14px;
+  border: 1px solid #b9cce4;
+  border-radius: 50%;
+  color: var(--accent);
+  font-size: 1.25rem;
+  font-weight: 900;
+}
+.contractor-empty-state h2 { margin: 0 0 8px; color: var(--text-primary); font-size: 1rem; }
+.contractor-empty-state p { max-width: 420px; margin: 0; color: var(--text-muted); font-size: .8rem; line-height: 1.55; }
+.contractor-empty-note { margin-top: 14px; color: var(--accent); font-size: .72rem; font-weight: 700; }
+.contractor-empty-error .contractor-empty-icon { border-color: #fecaca; background: #fef2f2; color: #b91c1c; }
+.contractor-empty-error h2 { color: #991b1b; }
 .contractor-money {
   font-size: 1.35rem;
 }

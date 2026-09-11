@@ -885,7 +885,7 @@ async function contractorRenderOpenBiddings() {
         <p class="contractor-scope-note">Projects currently open for bidding, with their submission deadline.</p>
       </div>
     </div>
-    <div id="contractorOpenBiddingsList" class="contractor-stack"><p class="empty-state">Loading...</p></div>
+    <div id="contractorOpenBiddingsList" class="contractor-bidding-workspace"><div class="contractor-bidding-loading"><span class="contractor-loading-dot"></span><span>Loading open bidding opportunities...</span></div></div>
   `;
 
   const container = document.getElementById('contractorOpenBiddingsList');
@@ -911,9 +911,9 @@ async function contractorRenderOpenBiddings() {
             : `<button class="btn-primary btn-compact" type="button" onclick="contractorOpenBidForm(${item.project_id})">Submit Bid</button>`}
         </div>
       </article>
-    `).join('') : '<p class="empty-state">No projects are currently open for bidding.</p>';
+    `).join('') : '<div class="contractor-empty-state"><div class="contractor-empty-icon">⌂</div><h2>No open bidding projects</h2><p>There are no procurement opportunities available right now. Check back later for newly posted projects.</p><span class="contractor-empty-note">Your accreditation and bid history remain available in the sidebar.</span></div>';
   } catch (error) {
-    container.innerHTML = '<p class="empty-state">Unable to load open biddings.</p>';
+    container.innerHTML = '<div class="contractor-empty-state contractor-empty-error"><div class="contractor-empty-icon">!</div><h2>Unable to load bidding projects</h2><p>Please refresh the page or try again shortly.</p></div>';
   }
 }
 
