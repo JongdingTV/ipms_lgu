@@ -18,14 +18,36 @@ require_once __DIR__ . '/includes/feedback-categories.php';
 
 require_once __DIR__ . '/../includes/header.php';
 require_once __DIR__ . '/sidebar.php';
+require_once __DIR__ . '/../includes/workflow.php';
 
 // Get citizen data
 $pdo = getDB();
+projectWorkflowEnsureProjectStatusSchema($pdo);
 $stmt = $pdo->prepare("SELECT * FROM citizens WHERE user_id = ?");
 $stmt->execute([$user['user_id']]);
 // Accounts without a citizens row (e.g. the seeded demo login) still get a
 // working dashboard — every field below falls back through null coalescing.
 $citizen = $stmt->fetch() ?: [];
+
+$feedbackProjects = $pdo->query("SELECT id, project_code, name, location, district, barangay, status FROM projects WHERE status IN ('approved','bidding','awarded','assigned','active','delayed','on_hold','completion_inspection') ORDER BY name ASC")->fetchAll();
+foreach ($feedbackProjects as &$feedbackProject) {
+  $location = (string) ($feedbackProject['location'] ?? '');
+  if (empty($feedbackProject['district']) && preg_match('/District\s+[1-6]/i', $location, $districtMatch)) {
+    $feedbackProject['district'] = ucwords(strtolower($districtMatch[0]));
+  }
+  if (empty($feedbackProject['barangay'])) {
+    foreach (qcDistricts() as $districtEntries) {
+      foreach ($districtEntries as $districtEntry) {
+        if (stripos($location, 'Barangay ' . $districtEntry['name']) !== false || stripos($location, $districtEntry['name']) !== false) {
+          $feedbackProject['barangay'] = $districtEntry['name'];
+          if (empty($feedbackProject['district'])) $feedbackProject['district'] = $districtEntry['district'] ?? null;
+          break 2;
+        }
+      }
+    }
+  }
+}
+unset($feedbackProject);
 
 $verificationStatus = $citizen['verification_status'] ?? 'unverified';
 $hasIdPhoto = !empty($citizen['id_photo_path']);
@@ -512,8 +534,14 @@ $statusChip = [
                   </div>
 
                   <div class="form-group">
-                    <label for="feedbackProjectName" id="fbProjectNameLabel">Project Name <span class="fb-optional">(optional)</span></label>
-                    <input type="text" id="feedbackProjectName" name="project_name" placeholder="e.g. Barangay Culiat Road Widening">
+                    <label for="feedbackProjectName" id="fbProjectNameLabel">Select the project you are reporting <span class="fb-required">*</span></label>
+                    <select id="feedbackProjectName" name="project_id" required>
+                      <option value="">Choose the exact project</option>
+                      <?php foreach ($feedbackProjects as $feedbackProject): ?>
+                        <option value="<?= (int) $feedbackProject['id'] ?>" data-district="<?= htmlspecialchars((string) $feedbackProject['district'], ENT_QUOTES) ?>" data-barangay="<?= htmlspecialchars((string) $feedbackProject['barangay'], ENT_QUOTES) ?>"><?= htmlspecialchars($feedbackProject['project_code'] . ' — ' . $feedbackProject['name']) ?> · <?= htmlspecialchars($feedbackProject['location']) ?></option>
+                      <?php endforeach; ?>
+                    </select>
+                    <p class="fb-field-hint">Choose the ongoing project affected by your concern so staff can review the correct record.</p>
                   </div>
 
                   <div class="location-fieldset">

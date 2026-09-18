@@ -108,7 +108,7 @@
         </a>
         <a href="#" class="nav-item" data-page="cancelled-projects">
           <span class="nav-icon"><svg viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-5.293-2.707a1 1 0 00-1.414-1.414L10 7.172 8.707 5.879a1 1 0 00-1.414 1.414L8.586 8.586 7.293 9.879a1 1 0 101.414 1.414L10 10l1.293 1.293a1 1 0 001.414-1.414l-1.293-1.293 1.293-1.293z" clip-rule="evenodd"/></svg></span>
-          <span class="nav-label">Cancelled Projects</span>
+          <span class="nav-label">Discontinued Project Archive</span>
           <span class="nav-badge" data-badge="cancelled-projects"></span>
         </a>
       </div>

@@ -388,6 +388,41 @@ if ($method === 'GET') {
     ]);
 }
 
+// ── POST action=discontinue (Admin/Super Admin — archive project) ──
+if ($method === 'POST' && $action === 'discontinue') {
+    $body = requestBody();
+    $validated = Validator::make($body, [
+        'project_id' => 'required|integer',
+        'reason' => 'required|string|max:1000',
+        'feedback_id' => 'nullable|integer',
+    ])->stopOnFailure();
+
+    $projectId = (int) $validated['project_id'];
+    $reason = trim((string) $validated['reason']);
+    $stmt = $db->prepare('SELECT id, name, status, created_by FROM projects WHERE id = ?');
+    $stmt->execute([$projectId]);
+    $project = $stmt->fetch();
+    if (!$project) respond(['error' => 'Project not found.'], 404);
+    if ($project['status'] === 'cancelled') respond(['error' => 'This project is already in the discontinued archive.'], 422);
+
+    $feedbackId = !empty($validated['feedback_id']) ? (int) $validated['feedback_id'] : null;
+    if ($feedbackId) {
+        $feedbackStmt = $db->prepare('SELECT id FROM feedback WHERE id = ? AND project_id = ?');
+        $feedbackStmt->execute([$feedbackId, $projectId]);
+        if (!$feedbackStmt->fetch()) respond(['error' => 'The selected feedback is not linked to this project.'], 422);
+    }
+
+    $db->prepare('UPDATE projects SET status = ?, rejection_reason = ?, updated_at = NOW() WHERE id = ?')
+        ->execute(['cancelled', $reason, $projectId]);
+    $details = $project['name'] . ' was discontinued and moved to the project archive — ' . $reason . ($feedbackId ? ' (Feedback #' . $feedbackId . ').' : '.');
+    projectWorkflowLog($db, 'Project discontinued', $projectId, $details, (int) ($user['user_id'] ?? 0) ?: null);
+    logActivity((int) ($user['user_id'] ?? 0), 'project_discontinued', $details, 'Projects', $projectId);
+    if (!empty($project['created_by'])) {
+        notifyUser((int) $project['created_by'], 'warning', 'Project discontinued', $details);
+    }
+    respond(['success' => true, 'status' => 'cancelled']);
+}
+
 // ── POST action=decide (HOPE only — approve/return/reject) ──
 if ($method === 'POST' && $action === 'decide') {
     $body = requestBody();

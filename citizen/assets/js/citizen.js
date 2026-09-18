@@ -350,6 +350,39 @@ function setupLocationPicker() {
     });
 }
 
+function applyProjectFeedbackLocation() {
+    const projectSelect = document.getElementById('feedbackProjectName');
+    const districtSel = document.getElementById('feedbackDistrict');
+    const barangaySel = document.getElementById('feedbackBarangay');
+    if (!projectSelect || !districtSel || !barangaySel) return;
+
+    const option = projectSelect.selectedOptions[0];
+    const district = option?.dataset.district || '';
+    const barangay = option?.dataset.barangay || '';
+    const autoFilled = fbConcernType === 'project' && district !== '' && barangay !== '';
+
+    if (autoFilled) {
+        districtSel.value = district;
+        populateBarangayOptions(district);
+        barangaySel.value = barangay;
+        districtSel.classList.add('location-auto-filled');
+        barangaySel.classList.add('location-auto-filled');
+        const locationFieldset = districtSel.closest('.location-fieldset');
+        locationFieldset?.classList.add('project-location-auto-filled');
+        districtSel.setAttribute('aria-readonly', 'true');
+        barangaySel.setAttribute('aria-readonly', 'true');
+        updateAltHint();
+        updateLocationPill();
+    } else {
+        if (!option?.value || fbConcernType !== 'project') resetLocationPicker();
+        districtSel.classList.remove('location-auto-filled');
+        barangaySel.classList.remove('location-auto-filled');
+        districtSel.closest('.location-fieldset')?.classList.remove('project-location-auto-filled');
+        districtSel.removeAttribute('aria-readonly');
+        barangaySel.removeAttribute('aria-readonly');
+    }
+}
+
 // --- Exact-spot pin ---
 function placeExactPin(latlng) {
     if (!qcMap) return;
@@ -2498,9 +2531,13 @@ function fbApplyConcernType(concern) {
     const maintenance = concern === 'maintenance';
     const projectWrap = document.getElementById('fbProjectWrap');
     const cimmsWrap = document.getElementById('fbCimmsWrap');
+    const projectSelect = document.getElementById('feedbackProjectName');
 
     if (projectWrap) projectWrap.style.display = maintenance ? 'none' : '';
     if (cimmsWrap) cimmsWrap.style.display = maintenance ? '' : 'none';
+    if (projectSelect) projectSelect.required = !maintenance;
+    if (maintenance) document.getElementById('feedbackDistrict')?.closest('.location-fieldset')?.classList.remove('project-location-auto-filled');
+    if (projectSelect) applyProjectFeedbackLocation();
     if (maintenance) {
         // The card is self-contained; only the side illustration follows the concern.
         fbRenderIllustration('fbIllustration2', concern);
@@ -3490,7 +3527,7 @@ function fbRenderReview() {
     card.innerHTML = `
         <div class="fb-review-row"><span>Concern Type</span><strong>${escapeHtml(concernLabel)}</strong></div>
         ${infrastructure ? `<div class="fb-review-row"><span>Infrastructure Type</span><strong>${escapeHtml(infrastructure)}</strong></div>` : ''}
-        ${projectName?.value ? `<div class="fb-review-row"><span>Project Name</span><strong>${escapeHtml(projectName.value)}</strong></div>` : ''}
+        ${projectName?.value ? `<div class="fb-review-row"><span>Project Name</span><strong>${escapeHtml(projectName.selectedOptions?.[0]?.textContent || projectName.value)}</strong></div>` : ''}
         <div class="fb-review-row"><span>Location</span><strong>${escapeHtml(locationText)}</strong></div>
         <div class="fb-review-row"><span>Category</span><strong>${escapeHtml(category?.selectedOptions[0]?.textContent.trim() || 'Not specified')}</strong></div>
         <div class="fb-review-row"><span>Priority</span><strong>${escapeHtml(capitalizeFirst(priority?.value || ''))}</strong></div>
@@ -3584,6 +3621,10 @@ function setupFeedbackWizard() {
     setupInfrastructureHybrid();
     setupContactPhoneFormat();
     setupCimmsMaintenanceForm();
+    document.getElementById('feedbackProjectName')?.addEventListener('change', () => {
+        clearExactPin();
+        applyProjectFeedbackLocation();
+    });
 
     // Step 2 (Fill Information) in-panel actions
     document.getElementById('fbBackBtn2')?.addEventListener('click', () => fbGoToStep(1));

@@ -2198,6 +2198,24 @@ body {
     background: #f8fafc;
 }
 
+.project-location-auto-filled {
+    border-color: #93c5fd;
+    background: #eff6ff;
+}
+
+.location-auto-filled {
+    background: #dbeafe;
+    border-color: #93c5fd;
+    color: #1e3a8a;
+}
+
+.fb-field-hint {
+    margin: 6px 0 0;
+    color: var(--text-muted, #64748b);
+    font-size: .76rem;
+    line-height: 1.45;
+}
+
 .location-fieldset-head {
     display: flex;
     align-items: center;

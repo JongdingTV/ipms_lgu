@@ -120,6 +120,7 @@ function projectWorkflowEnsureProjectStatusSchema(PDO $db): void
         // from its location text, see projectDetectDistrictFromLocation(). Used
         // to scope what each district's engineer account can see/accept.
         $db->exec("ALTER TABLE projects ADD COLUMN IF NOT EXISTS district VARCHAR(20) NULL AFTER location");
+        $db->exec("ALTER TABLE projects ADD COLUMN IF NOT EXISTS barangay VARCHAR(100) NULL AFTER district");
     } catch (Throwable $e) {
     }
 }

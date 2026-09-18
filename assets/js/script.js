@@ -270,7 +270,7 @@ function navigate(page, params = {}) {
     'contractor-performance': loadContractorPerformancePage,
     'engineer-performance': loadEngineerPerformancePage,
     'completed-projects': () => loadStatusFilteredProjectsPage('page-completed-projects', 'Completed Projects', 'completed,turnover'),
-    'cancelled-projects': () => loadStatusFilteredProjectsPage('page-cancelled-projects', 'Cancelled Projects', 'cancelled'),
+    'cancelled-projects': () => loadStatusFilteredProjectsPage('page-cancelled-projects', 'Discontinued Project Archive', 'cancelled'),
     'public-facilities-integration': loadPublicFacilitiesPage,
   };
   if (loaders[page]) loaders[page]();
@@ -1519,6 +1519,7 @@ async function loadProjectsPage(containerId = 'page-project-registration', title
     <div class="page-header">
       <h2 class="page-title">${title}</h2>
     </div>
+    ${statusParam === 'cancelled' ? '<div class="archive-intro"><strong>Discontinued Project Archive</strong><span>Projects moved here remain available for audit. Their budgets, expenses, documents, and citizen feedback are preserved.</span></div>' : ''}
     <div class="filter-bar">
       <input class="filter-input" id="projSearch" placeholder="Search projects…" oninput="projectsState.search=this.value;projectsState.page=1;fetchProjects()" />
       <select class="filter-select" onchange="projectsState.status=this.value;projectsState.page=1;fetchProjects()">
@@ -2619,7 +2620,7 @@ function renderApprovalTable(rows) {
   wrap.innerHTML = `
     <table class="data-table">
       <thead>
-        <tr><th>Code</th><th>Project</th><th>Budget</th><th>Schedule</th><th>Contractor</th><th>Status</th><th>Actions</th></tr>
+        <tr><th>Code</th><th>Project</th><th>Budget</th><th>Schedule</th><th>Contractor</th>${containerId === 'page-cancelled-projects' ? '<th>Discontinuation reason</th>' : ''}<th>Status</th><th>Actions</th></tr>
       </thead>
       <tbody>
         ${rows.map(p => `
@@ -2629,6 +2630,7 @@ function renderApprovalTable(rows) {
             <td>${formatMoney(p.budget)}</td>
             <td>${formatDate(p.start_date)} to ${formatDate(p.end_date)}</td>
             <td>${p.contractor_name || 'Unassigned'}</td>
+            ${containerId === 'page-cancelled-projects' ? `<td><span class="archive-reason">${escapeHtml(p.rejection_reason || 'Reason not recorded')}</span></td>` : ''}
             <td>${statusBadge(p.status)}</td>
             <td>
               <div class="inline-actions">
@@ -5874,7 +5876,7 @@ function toggleStaffRequestDistrict(role) {
 /* ============================================================
    FEEDBACK PAGE
    ============================================================ */
-let feedbackState = { page: 1, search: '', status: '', priority: '', category: '' };
+let feedbackState = { page: 1, search: '', status: '', priority: '', category: '', sentiment: '' };
 
 const FEEDBACK_CATEGORY_LABELS = {
   complaint: 'General Complaint',
@@ -5918,6 +5920,11 @@ async function loadFeedbackPage(containerId = 'page-citizen-feedback', title = '
       <select class="filter-select" onchange="feedbackState.category=this.value;feedbackState.page=1;fetchFeedback()">
         <option value="">All Categories</option>
         ${Object.entries(FEEDBACK_CATEGORY_LABELS).map(([value, label]) => `<option value="${value}">${label}</option>`).join('')}
+      </select>
+      <select class="filter-select feedback-sentiment-filter" onchange="feedbackState.sentiment=this.value;feedbackState.page=1;fetchFeedback()">
+        <option value="">All Feedback Types</option>
+        <option value="positive">Good / Positive Feedback</option>
+        <option value="negative">Bad / Action Needed</option>
       </select>
       ${allowNewEntry ? '<button class="btn-primary" style="margin-left:auto;" onclick="showFeedbackForm()">+ New Entry</button>' : ''}
     </div>
@@ -6087,6 +6094,7 @@ async function openFeedbackDetailModal(id) {
             <button type="button" class="btn-secondary btn-compact" onclick="confirmFeedbackStatus(${f.id},'in_progress')" ${f.status === 'in_progress' ? 'disabled' : ''}>Mark In Progress</button>
             <button type="button" class="btn-primary btn-compact" onclick="confirmFeedbackStatus(${f.id},'resolved')" ${f.status === 'resolved' ? 'disabled' : ''}>Mark Resolved</button>
             <button type="button" class="btn-secondary btn-compact" onclick="confirmFeedbackStatus(${f.id},'closed')" ${f.status === 'closed' ? 'disabled' : ''}>Close</button>
+            ${f.project_id ? `<button type="button" class="btn-danger btn-compact" onclick="openDiscontinueProjectForm(${f.project_id},${f.id})">Discontinue Project</button>` : ''}
           </div>
         </div>
       </div>
@@ -6095,6 +6103,36 @@ async function openFeedbackDetailModal(id) {
     toast('Failed to load feedback details', 'error');
     console.error(err);
   }
+}
+
+function openDiscontinueProjectForm(projectId, feedbackId) {
+  openModal('Discontinue Project', `
+    <form id="discontinueProjectForm">
+      <p class="empty-state" style="text-align:left;padding:0 0 14px;">This moves the project to the Discontinued Project Archive. Project, expense, and feedback records will be preserved.</p>
+      <div class="form-group">
+        <label for="discontinueReason">Reason for discontinuation *</label>
+        <textarea id="discontinueReason" name="reason" class="form-input" rows="4" maxlength="1000" required placeholder="Explain the citizen feedback or documented issue supporting this decision."></textarea>
+      </div>
+      <div class="form-actions">
+        <button type="button" class="btn-secondary" onclick="closeModal()">Cancel</button>
+        <button type="submit" class="btn-danger">Move to Archive</button>
+      </div>
+    </form>
+  `);
+  document.getElementById('discontinueProjectForm')?.addEventListener('submit', async event => {
+    event.preventDefault();
+    const reason = String(new FormData(event.target).get('reason') || '').trim();
+    if (!reason) return;
+    try {
+      const result = await postAction(API.projects, 'discontinue', { project_id: projectId, feedback_id: feedbackId, reason });
+      if (result.error) throw new Error(result.error);
+      toast('Project moved to the Discontinued Project Archive.');
+      closeModal();
+      fetchFeedback();
+    } catch (error) {
+      toast(error.message || 'Could not discontinue project.', 'error');
+    }
+  });
 }
 
 async function confirmFeedbackStatus(id, status) {

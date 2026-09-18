@@ -66,6 +66,7 @@ $isAnonymous = !empty($_POST['anonymous']);
 $contactName = trim($_POST['contact_name'] ?? '');
 $contactPhone = trim($_POST['contact_phone'] ?? '');
 $contactEmail = trim($_POST['contact_email'] ?? '');
+$projectId = $concernType === 'project' ? (int) ($_POST['project_id'] ?? 0) : null;
 
 $errors = [];
 if (!in_array($concernType, ['project', 'maintenance'], true)) {
@@ -99,6 +100,13 @@ if (empty($message) || strlen($message) < 10) {
 // it only ever collects a free-text location (picked on the map or typed),
 // so district/barangay must never be required there.
 if ($concernType === 'project') {
+    if ($projectId <= 0) {
+        $errors[] = 'Please select the exact project related to your feedback';
+    } else {
+        $projectStmt = $pdo->prepare("SELECT id FROM projects WHERE id = ? AND status IN ('approved','bidding','awarded','assigned','active','delayed','on_hold','completion_inspection')");
+        $projectStmt->execute([$projectId]);
+        if (!$projectStmt->fetch()) $errors[] = 'The selected project is not currently available for feedback';
+    }
     if ($district === '' || $barangay === '') {
         $errors[] = 'Please select your district and barangay';
     } elseif (!qcIsValidLocation($district, $barangay)) {
@@ -230,12 +238,13 @@ try {
             anonymous, contact_name, contact_phone, contact_email,
             cimm_sync_status, priority, district, barangay, location, latitude, longitude, status
         ) VALUES (
-            NULL, ?, ?, ?, ?, ?, ?,
+            ?, ?, ?, ?, ?, ?, ?,
             ?, ?, ?, ?,
             ?, ?, ?, ?, ?, ?, ?, 'open'
         )
     ");
     $stmt->execute([
+        $projectId,
         $citizenId,
         $citizenNameForRow,
         $message,

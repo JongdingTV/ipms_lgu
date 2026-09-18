@@ -113,6 +113,19 @@ if ($method === 'GET') {
         $where[]  = 'f.category = ?';
         $params[] = $_GET['category'];
     }
+    if (($_GET['sentiment'] ?? '') === 'negative') {
+        $where[] = "(
+            f.priority IN ('urgent','high')
+            OR f.category IN ('complaint','road_damage','drainage_flooding','safety_hazard','project_delay')
+            OR LOWER(f.message) REGEXP 'bad|poor|terrible|worse|worst|disappoint|unhappy|dissatisf|waste|useless|failed|failure|unsafe|dangerous|abandon|delayed|delay|problem|issue|complaint|pangit|sira|delikado|sayang|mabagal|hindi maayos|nakakainis|reklamo'
+        )";
+    }
+    if (($_GET['sentiment'] ?? '') === 'positive') {
+        $where[] = "(
+            f.category IN ('commendation','suggestion')
+            OR LOWER(f.message) REGEXP 'good|great|excellent|helpful|thank|thanks|appreciat|satisfied|happy|improv|benefit|useful|mahusay|maganda|salamat|nakakatulong|sulit|ayos'
+        )";
+    }
     if (!empty($_GET['project_id'])) {
         $where[]  = 'f.project_id = ?';
         $params[] = (int) $_GET['project_id'];
