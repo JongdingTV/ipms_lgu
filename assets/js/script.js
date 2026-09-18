@@ -238,6 +238,13 @@ function navigate(page, params = {}) {
   document.querySelectorAll('.nav-item').forEach(el => {
     el.classList.toggle('active', el.dataset.page === page);
   });
+  document.querySelectorAll('.nav-dropdown').forEach(group => {
+    const isActiveGroup = !!group.querySelector(`.nav-item[data-page="${page}"]`);
+    if (isActiveGroup) {
+      group.classList.add('open');
+      group.querySelector('.nav-group-toggle')?.setAttribute('aria-expanded', 'true');
+    }
+  });
 
   // Show/hide sections
   document.querySelectorAll('.page-section').forEach(s => {
@@ -6346,6 +6353,14 @@ document.getElementById('searchInput')?.addEventListener('keydown', e => {
    INIT — build page sections and load dashboard
    ============================================================ */
 document.addEventListener('DOMContentLoaded', () => {
+  document.querySelectorAll('.nav-group-toggle').forEach(toggle => {
+    toggle.addEventListener('click', () => {
+      const group = toggle.closest('.nav-dropdown');
+      const isOpen = group.classList.toggle('open');
+      toggle.setAttribute('aria-expanded', String(isOpen));
+    });
+  });
+
   // User menu toggle
   const userMenuBtn = document.getElementById('userMenuBtn');
   const userMenu = document.getElementById('userMenu');

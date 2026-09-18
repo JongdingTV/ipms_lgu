@@ -174,6 +174,22 @@ button { cursor: pointer; font-family: var(--font); }
 .nav-icon { width: 18px; height: 18px; flex-shrink: 0; display: flex; align-items: center; justify-content: center; transition: transform .15s; }
 .nav-icon svg { width: 100%; height: 100%; }
 .nav-item:hover .nav-icon { transform: scale(1.08); }
+.nav-dropdown { gap: 2px; }
+.nav-group-toggle {
+  display: flex; align-items: center; justify-content: space-between; gap: 8px;
+  width: 100%; padding: 9px 12px; border: 0; border-radius: var(--radius-sm);
+  background: transparent; color: var(--text-sidebar); font: 600 .72rem var(--font);
+  text-align: left; transition: background .18s, color .18s;
+}
+.nav-group-toggle:hover { background: var(--bg-sidebar-hover); color: var(--accent); }
+.nav-group-toggle-label { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.nav-group-toggle-icon { width: 17px; height: 17px; display: flex; align-items: center; justify-content: center; color: var(--accent); flex-shrink: 0; }
+.nav-group-toggle-icon svg { width: 100%; height: 100%; }
+.nav-group-chevron { width: 15px; height: 15px; flex-shrink: 0; transition: transform .2s; }
+.nav-dropdown:not(.open) > .nav-item { display: none; }
+.nav-dropdown.open > .nav-group-toggle { color: var(--accent); }
+.nav-dropdown.open > .nav-group-toggle .nav-group-chevron { transform: rotate(180deg); }
+.nav-dropdown > .nav-item { margin-left: 4px; }
 
 /* ── Sidebar notification badges & status pills ──
    Populated live by assets/js/script.js's fetchSidebarBadges() from

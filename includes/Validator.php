@@ -42,12 +42,12 @@ final class Validator
                 if (isset($this->errors[$field])) {
                     break;
                 }
-                $this->applyRule($field, $value, (string) $rule);
+                $this->applyRule($field, $value, (string) $rule, $rulesList);
             }
         }
     }
 
-    private function applyRule(string $field, mixed $value, string $rule): void
+    private function applyRule(string $field, mixed $value, string $rule, array $rulesList = []): void
     {
         [$name, $param] = array_pad(explode(':', $rule, 2), 2, null);
         $label = $this->fieldLabel($field);
@@ -64,17 +64,19 @@ final class Validator
                 break;
 
             case 'min':
-                if (is_string($value) && mb_strlen($value) < (int) $param) {
+                $isNumericField = in_array('integer', $rulesList, true) || in_array('numeric', $rulesList, true);
+                if (!$isNumericField && is_string($value) && mb_strlen($value) < (int) $param) {
                     $this->errors[$field] = $label . ' must be at least ' . $param . ' characters.';
-                } elseif (!is_string($value) && is_numeric($value) && (float) $value < (float) $param) {
+                } elseif ($isNumericField && is_numeric($value) && (float) $value < (float) $param) {
                     $this->errors[$field] = $label . ' must be at least ' . $param . '.';
                 }
                 break;
 
             case 'max':
-                if (is_string($value) && mb_strlen($value) > (int) $param) {
+                $isNumericField = in_array('integer', $rulesList, true) || in_array('numeric', $rulesList, true);
+                if (!$isNumericField && is_string($value) && mb_strlen($value) > (int) $param) {
                     $this->errors[$field] = $label . ' must be at most ' . $param . ' characters.';
-                } elseif (!is_string($value) && is_numeric($value) && (float) $value > (float) $param) {
+                } elseif ($isNumericField && is_numeric($value) && (float) $value > (float) $param) {
                     $this->errors[$field] = $label . ' must be at most ' . $param . '.';
                 }
                 break;

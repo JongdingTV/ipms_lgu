@@ -16,6 +16,12 @@
         <span class="nav-label">Dashboard</span>
         <span class="nav-badge" data-badge="dashboard"></span>
       </a>
+
+      <div class="nav-group nav-dropdown">
+        <button type="button" class="nav-group-toggle" aria-expanded="false">
+          <span class="nav-group-toggle-label"><span class="nav-group-toggle-icon" aria-hidden="true"><svg viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M4 4a2 2 0 00-2 2v8a2 2 0 002 2h12a2 2 0 002-2V6a2 2 0 00-2-2h-5l-1-1H4zm2 5a1 1 0 011-1h6a1 1 0 110 2H7a1 1 0 01-1-1zm1 3a1 1 0 100 2h4a1 1 0 100-2H7z" clip-rule="evenodd"/></svg></span>Project Delivery</span>
+          <svg class="nav-group-chevron" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z" clip-rule="evenodd"/></svg>
+        </button>
       <a href="#" class="nav-item" data-page="project-proposals">
         <span class="nav-icon"><svg viewBox="0 0 20 20" fill="currentColor"><path d="M2 6a2 2 0 012-2h5l2 2h5a2 2 0 012 2v6a2 2 0 01-2 2H4a2 2 0 01-2-2V6z"/></svg></span>
         <span class="nav-label">Project Proposal</span>
@@ -36,6 +42,13 @@
         <span class="nav-label">Contract &amp; Payment Review</span>
         <span class="nav-badge" data-badge="workflow-management"></span>
       </a>
+      </div>
+
+      <div class="nav-group nav-dropdown">
+        <button type="button" class="nav-group-toggle" aria-expanded="false">
+          <span class="nav-group-toggle-label"><span class="nav-group-toggle-icon" aria-hidden="true"><svg viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M2 16a1 1 0 011-1h1V9a1 1 0 112 0v6h2V5a1 1 0 112 0v10h2v-3a1 1 0 112 0v3h2V3a1 1 0 112 0v12h1a1 1 0 110 2H3a1 1 0 01-1-1z" clip-rule="evenodd"/></svg></span>Monitoring &amp; Insights</span>
+          <svg class="nav-group-chevron" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z" clip-rule="evenodd"/></svg>
+        </button>
       <a href="#" class="nav-item" data-page="budget-monitoring">
         <span class="nav-icon"><svg viewBox="0 0 20 20" fill="currentColor"><path d="M4 4a2 2 0 00-2 2v1h16V6a2 2 0 00-2-2H4z"/><path fill-rule="evenodd" d="M18 9H2v5a2 2 0 002 2h12a2 2 0 002-2V9zM4 13a1 1 0 011-1h1a1 1 0 110 2H5a1 1 0 01-1-1zm5-1a1 1 0 100 2h1a1 1 0 100-2H9z" clip-rule="evenodd"/></svg></span>
         <span class="nav-label">Budget Monitoring</span>
@@ -63,6 +76,13 @@
         <span class="nav-label">AI Project Assistant</span>
         <span class="nav-badge" data-badge="ai-risk-insights"></span>
       </a>
+      </div>
+
+      <div class="nav-group nav-dropdown">
+        <button type="button" class="nav-group-toggle" aria-expanded="false">
+          <span class="nav-group-toggle-label"><span class="nav-group-toggle-icon" aria-hidden="true"><svg viewBox="0 0 20 20" fill="currentColor"><path d="M9 6a3 3 0 11-6 0 3 3 0 016 0zM17 6a3 3 0 11-6 0 3 3 0 016 0zM12.93 17c.046-.327.07-.66.07-1a6.97 6.97 0 00-1.5-4.33A5 5 0 0119 16v1h-6.07zM6 11a5 5 0 015 5v1H1v-1a5 5 0 015-5z"/></svg></span>Community &amp; Staff</span>
+          <svg class="nav-group-chevron" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z" clip-rule="evenodd"/></svg>
+        </button>
       <a href="#" class="nav-item" data-page="announcements">
         <span class="nav-icon"><svg viewBox="0 0 20 20" fill="currentColor"><path d="M9.383 3.076A1 1 0 0110 4v12a1 1 0 01-1.617.816L4.766 14H3a1 1 0 01-1-1V7a1 1 0 011-1h1.766l3.617-2.816a1 1 0 011-.108zM14.657 2.929a1 1 0 011.414 0A9.972 9.972 0 0119 10a9.972 9.972 0 01-2.929 7.071 1 1 0 11-1.414-1.414A7.971 7.971 0 0017 10c0-2.21-.894-4.208-2.343-5.657a1 1 0 010-1.414zm-2.829 2.828a1 1 0 011.415 0A5.983 5.983 0 0115 10a5.983 5.983 0 01-1.757 4.243 1 1 0 01-1.415-1.415A3.984 3.984 0 0013 10a3.984 3.984 0 00-1.172-2.828 1 1 0 010-1.415z"/></svg></span>
         <span class="nav-label">Announcements</span>
@@ -86,6 +106,7 @@
         <span class="nav-label">Staff Requests</span>
         <span class="nav-badge" data-badge="staff-requests"></span>
       </a>
+      </div>
 
       <div class="nav-group">
         <p class="nav-group-label">Performance</p>
@@ -114,7 +135,7 @@
       </div>
 
       <div class="nav-group">
-        <p class="nav-group-label">System Integrations</p>
+        <p class="nav-group-label">Integrations</p>
         <a href="#" class="nav-item" data-page="public-facilities-integration">
           <span class="nav-icon"><svg viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M4 16V4a1 1 0 011-1h5a1 1 0 011 1v3h4a1 1 0 011 1v8h1a1 1 0 110 2H3a1 1 0 110-2h1zm3-10a1 1 0 000 2h1a1 1 0 100-2H7zm0 4a1 1 0 000 2h1a1 1 0 100-2H7zm5 2a1 1 0 011-1h1a1 1 0 110 2h-1a1 1 0 01-1-1zm1 3a1 1 0 100 2h1a1 1 0 100-2h-1zM7 12a1 1 0 100 2h1a1 1 0 100-2H7z" clip-rule="evenodd"/></svg></span>
           <span class="nav-label">Public Facilities Integration</span>
