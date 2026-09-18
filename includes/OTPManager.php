@@ -43,20 +43,12 @@ class OTPManager
             ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
         ");
 
-        // Self-heal deployments that did not run the migration. Use metadata
-        // checks instead of ADD ... IF NOT EXISTS for older MySQL versions.
+        // Self-healing column add: this repo has no migration runner, so any
+        // environment that only ever relied on this class to create the table
+        // (rather than running database/migrations/add_purpose_to_otp_tokens.sql)
+        // still ends up with the purpose column present.
         try {
-            $columnStmt = $this->db->prepare("SHOW COLUMNS FROM otp_tokens LIKE 'purpose'");
-            $columnStmt->execute();
-            if (!$columnStmt->fetch()) {
-                $this->db->exec("ALTER TABLE otp_tokens ADD COLUMN purpose VARCHAR(30) NOT NULL DEFAULT 'general' AFTER user_id");
-            }
-
-            $indexStmt = $this->db->prepare('SHOW INDEX FROM otp_tokens WHERE Key_name = ?');
-            $indexStmt->execute(['idx_otp_user_purpose']);
-            if (!$indexStmt->fetch()) {
-                $this->db->exec('ALTER TABLE otp_tokens ADD INDEX idx_otp_user_purpose (user_id, purpose)');
-            }
+            $this->db->exec("ALTER TABLE otp_tokens ADD COLUMN IF NOT EXISTS purpose VARCHAR(30) NOT NULL DEFAULT 'general' AFTER user_id");
         } catch (Throwable $e) {
         }
     }
@@ -217,11 +209,7 @@ class OTPManager
             return ['success' => true, 'message' => 'OTP sent successfully to ' . $to];
         } catch (Throwable $e) {
             error_log('OTP email send failed: ' . $e->getMessage());
-            return [
-                'success' => false,
-                'dev_fallback' => APP_ENV !== 'production',
-                'message' => 'Failed to send the verification email. Please try again later.',
-            ];
+            return ['success' => false, 'message' => 'Failed to send the verification email. Please try again later.'];
         }
     }
 

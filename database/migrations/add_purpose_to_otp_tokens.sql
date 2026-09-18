@@ -8,34 +8,8 @@
 
 USE lgu_infrastructure;
 
-SET @purpose_exists = (
-  SELECT COUNT(*)
-  FROM information_schema.columns
-  WHERE table_schema = DATABASE()
-    AND table_name = 'otp_tokens'
-    AND column_name = 'purpose'
-);
-SET @purpose_sql = IF(
-  @purpose_exists = 0,
-  'ALTER TABLE otp_tokens ADD COLUMN purpose VARCHAR(30) NOT NULL DEFAULT ''general'' AFTER user_id',
-  'SELECT 1'
-);
-PREPARE purpose_stmt FROM @purpose_sql;
-EXECUTE purpose_stmt;
-DEALLOCATE PREPARE purpose_stmt;
+ALTER TABLE otp_tokens
+  ADD COLUMN IF NOT EXISTS purpose VARCHAR(30) NOT NULL DEFAULT 'general' AFTER user_id;
 
-SET @purpose_index_exists = (
-  SELECT COUNT(*)
-  FROM information_schema.statistics
-  WHERE table_schema = DATABASE()
-    AND table_name = 'otp_tokens'
-    AND index_name = 'idx_otp_user_purpose'
-);
-SET @purpose_index_sql = IF(
-  @purpose_index_exists = 0,
-  'ALTER TABLE otp_tokens ADD INDEX idx_otp_user_purpose (user_id, purpose)',
-  'SELECT 1'
-);
-PREPARE purpose_index_stmt FROM @purpose_index_sql;
-EXECUTE purpose_index_stmt;
-DEALLOCATE PREPARE purpose_index_stmt;
+ALTER TABLE otp_tokens
+  ADD INDEX IF NOT EXISTS idx_otp_user_purpose (user_id, purpose);
