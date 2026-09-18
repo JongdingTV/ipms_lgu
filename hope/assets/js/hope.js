@@ -33,6 +33,9 @@ function hopeAiSummaryHtml(proposal) {
   const rationale = typeof proposal.ai_budget_rationale_text === 'string'
     ? proposal.ai_budget_rationale_text
     : (proposal.ai_budget_rationale || 'No AI budget rationale supplied.');
+  let breakdown = proposal.ai_budget_breakdown;
+  if (typeof breakdown === 'string') { try { breakdown = JSON.parse(breakdown); } catch (error) { breakdown = []; } }
+  const breakdownHtml = Array.isArray(breakdown) && breakdown.length ? `<div class="proposal-detail-copy"><p class="modal-label">COST BREAKDOWN</p>${breakdown.map(item => `<p>${hopeEscape(item.item || 'Unspecified item')}: ${item.quantity ?? '-'} ${hopeEscape(item.unit || 'units')} x ${hopeMoney(item.unit_cost || 0)} = ${hopeMoney(item.amount || 0)}</p>`).join('')}</div>` : '';
 
   return `
     <div class="proposal-ai-budget">
@@ -54,6 +57,7 @@ function hopeAiSummaryHtml(proposal) {
         <p class="modal-label">SUMMARY</p>
         <p>${hopeEscape(rationale || 'No AI assessment summary is available yet.')}</p>
       </div>
+      ${breakdownHtml}
       <div class="proposal-review-actions">
         <button type="button" class="btn-secondary btn-compact" onclick="hopeGenerateProposalAiBudget(${Number(proposal.id)})">Regenerate AI Estimate</button>
       </div>

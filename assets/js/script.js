@@ -1273,6 +1273,9 @@ function proposalAiSummaryHtml(proposal) {
     : (proposal.ai_budget_rationale || 'No AI budget rationale supplied.');
   const isReviewer = ['admin', 'super_admin', 'hope'].includes(String(window.CURRENT_USER_ROLE || '').toLowerCase());
   const generateButton = isReviewer ? `<button type="button" class="btn-secondary btn-compact" onclick="proposalGenerateAiBudget(${Number(proposal.id)})">Generate AI Budget</button>` : '';
+  let breakdown = proposal.ai_budget_breakdown;
+  if (typeof breakdown === 'string') { try { breakdown = JSON.parse(breakdown); } catch (error) { breakdown = []; } }
+  const breakdownHtml = Array.isArray(breakdown) && breakdown.length ? `<div class="proposal-detail-copy"><p class="modal-label">COST BREAKDOWN</p>${breakdown.map(item => `<p>${escapeHtml(item.item || 'Unspecified item')}: ${item.quantity ?? '-'} ${escapeHtml(item.unit || 'units')} x ${formatMoney(item.unit_cost || 0)} = ${formatMoney(item.amount || 0)}</p>`).join('')}</div>` : '';
 
   return `
     <div class="proposal-ai-budget">
@@ -1294,6 +1297,7 @@ function proposalAiSummaryHtml(proposal) {
         <p class="modal-label">SUMMARY</p>
         <p>${escapeHtml(rationale || 'No AI assessment summary is available yet.')}</p>
       </div>
+      ${breakdownHtml}
       ${generateButton ? `<div class="proposal-review-actions">${generateButton}</div>` : ''}
     </div>
   `;

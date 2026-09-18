@@ -90,9 +90,12 @@ PROMPT;
                             'type' => 'OBJECT',
                             'properties' => [
                                 'item' => ['type' => 'STRING'],
+                                'quantity' => ['type' => 'NUMBER'],
+                                'unit' => ['type' => 'STRING'],
+                                'unit_cost' => ['type' => 'NUMBER'],
                                 'amount' => ['type' => 'NUMBER'],
                             ],
-                            'required' => ['item', 'amount'],
+                            'required' => ['item', 'quantity', 'unit', 'unit_cost', 'amount'],
                         ],
                     ],
                     'data_gaps' => [

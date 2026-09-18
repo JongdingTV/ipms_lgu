@@ -70,7 +70,7 @@ function engineerProposalAiHtml(proposal) {
   const rationaleParts = rationale.split(/\sData gaps:\s*/i);
   const gaps = rationaleParts.length > 1 ? rationaleParts[1].split(';').map(item => item.trim()).filter(Boolean) : [];
   const breakdownHtml = breakdown.length
-    ? `<div class="proposal-ai-section"><h4>Cost breakdown</h4><div class="proposal-ai-breakdown">${breakdown.map(item => `<div class="proposal-ai-cost"><span>${engineerEscape(item.item || 'Unspecified item')}</span><strong>${engineerMoney(item.amount)}</strong></div>`).join('')}</div></div>`
+    ? `<div class="proposal-ai-section"><h4>Cost breakdown</h4><div class="proposal-ai-breakdown">${breakdown.map(item => `<div class="proposal-ai-cost"><span>${engineerEscape(item.item || 'Unspecified item')}<small>${item.quantity != null ? engineerEscape(String(item.quantity)) : '-'} ${engineerEscape(item.unit || 'units')} x ${item.unit_cost != null ? engineerMoney(item.unit_cost) : 'unit cost not supplied'}</small></span><strong>${engineerMoney(item.amount)}</strong></div>`).join('')}</div></div>`
     : '';
   const gapsHtml = gaps.length
     ? `<div class="proposal-ai-section"><h4>Information still needed</h4><ul class="proposal-ai-gaps">${gaps.map(gap => `<li>${engineerEscape(gap)}</li>`).join('')}</ul></div>`
