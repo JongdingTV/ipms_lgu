@@ -188,14 +188,31 @@ $out['funding_source_breakdown'] = $db->query("
     ORDER BY total DESC
 ")->fetchAll();
 
-// ── Monthly spending trend, last 12 calendar months with any expense ──
-$out['monthly_spending'] = $db->query("
-    SELECT DATE_FORMAT(expense_date, '%Y-%m') AS ym, DATE_FORMAT(expense_date, '%b %Y') AS month, SUM(amount) AS total
+// ── Monthly spending trend, always the current month plus the previous 11 ──
+$monthlyRows = $db->query("
+    SELECT DATE_FORMAT(expense_date, '%Y-%m') AS ym, SUM(amount) AS total
     FROM expenses
+    WHERE expense_date >= DATE_SUB(DATE_FORMAT(CURDATE(), '%Y-%m-01'), INTERVAL 11 MONTH)
+      AND expense_date <= CURDATE()
     GROUP BY ym
     ORDER BY ym ASC
-    LIMIT 12
 ")->fetchAll();
+$monthlyTotals = [];
+foreach ($monthlyRows as $monthlyRow) {
+    $monthlyTotals[$monthlyRow['ym']] = (float) $monthlyRow['total'];
+}
+$out['monthly_spending'] = [];
+$monthCursor = new DateTime(date('Y-m-01'));
+$monthCursor->modify('-11 months');
+for ($monthIndex = 0; $monthIndex < 12; $monthIndex++) {
+    $monthKey = $monthCursor->format('Y-m');
+    $out['monthly_spending'][] = [
+        'ym' => $monthKey,
+        'month' => $monthCursor->format('M Y'),
+        'total' => $monthlyTotals[$monthKey] ?? 0,
+    ];
+    $monthCursor->modify('+1 month');
+}
 
 // ── Recent citizen feedback ──
 $out['recent_feedback'] = $db->query("

@@ -72,6 +72,17 @@ if ($method === 'GET') {
     }
 
     $whereSQL = implode(' AND ', $where);
+
+    if (!empty($_GET['report'])) {
+        $stmt = $db->prepare("SELECT e.*, p.name AS project_name, p.budget AS project_budget
+            FROM expenses e
+            JOIN projects p ON p.id = e.project_id
+            WHERE $whereSQL
+            ORDER BY e.expense_date DESC, e.id DESC");
+        $stmt->execute($params);
+        respond(['data' => $stmt->fetchAll()]);
+    }
+
     $page     = max(1, (int) ($_GET['page'] ?? 1));
     $limit    = 15;
     $offset   = ($page - 1) * $limit;

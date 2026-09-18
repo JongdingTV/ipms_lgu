@@ -259,7 +259,9 @@ feedback, and document metadata. Do not list a detail as missing if it is presen
 Use Philippine pesos. This is advisory only and must be validated by the City Mayor.
 Return valid JSON only with exactly this shape:
 {"estimated_budget":number,"low_budget":number,"high_budget":number,"confidence":number,"rationale":"string","cost_breakdown":[{"item":"string","amount":number}],"data_gaps":["string"]}
-Confidence must be 0-100. List missing quantities, dimensions, site assessment,
+Confidence must be a number from 60-80. Use the lower end when material details
+are missing and the higher end when the supplied scope is well supported. List
+missing quantities, dimensions, site assessment,
 road geometry details, and any other material information that is genuinely absent.
 PROMPT;
     $contextJson = json_encode($context, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
@@ -310,7 +312,7 @@ PROMPT;
     $estimated = round((float) $estimate['estimated_budget'], 2);
     $low = max(0, round((float) ($estimate['low_budget'] ?? $estimated), 2));
     $high = max($estimated, round((float) ($estimate['high_budget'] ?? $estimated), 2));
-    $confidence = min(100, max(0, round((float) ($estimate['confidence'] ?? 0), 2)));
+    $confidence = min(80, max(60, round((float) ($estimate['confidence'] ?? 60), 2)));
     $breakdown = is_array($estimate['cost_breakdown'] ?? null) ? array_slice($estimate['cost_breakdown'], 0, 20) : [];
     $gaps = is_array($estimate['data_gaps'] ?? null) ? array_slice($estimate['data_gaps'], 0, 20) : [];
     $rationale = trim((string) ($estimate['rationale'] ?? ''));

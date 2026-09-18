@@ -944,6 +944,13 @@ input.search-pill {
 .budget-summary-grid { display: grid; grid-template-columns: repeat(4,1fr); gap: 14px; }
 .budget-summary-card { min-width: 0; background: var(--card-bg); border: 1px solid var(--border); border-radius: var(--radius); padding: 14px 16px; box-shadow: var(--card-shadow); }
 .budget-proj-name { font-size: .82rem; font-weight: 700; color: var(--text-primary); margin-bottom: 6px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.budget-overview { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-bottom: 14px; }
+.budget-overview-card { min-width: 0; padding: 14px 16px; background: var(--card-bg); border: 1px solid var(--border); border-radius: var(--radius); box-shadow: var(--card-shadow); }
+.budget-overview-card span { display: block; color: var(--text-muted); font-size: .72rem; font-weight: 700; text-transform: uppercase; letter-spacing: .04em; }
+.budget-overview-card strong { display: block; margin-top: 5px; color: var(--text-primary); font-size: 1.15rem; }
+.budget-overview-card small { display: block; margin-top: 3px; color: var(--text-muted); font-size: .7rem; }
+.budget-header-actions { display: flex; align-items: center; justify-content: flex-end; gap: 10px; margin-left: auto; }
+.budget-live-status { margin-left: 10px; color: var(--text-muted); font-size: .72rem; font-weight: 600; }
 
 /* ── Contractor Cards ── */
 .contractors-grid { display: grid; grid-template-columns: repeat(auto-fill,minmax(280px,1fr)); gap: 16px; margin-top: 16px; }
@@ -1478,7 +1485,8 @@ input.search-pill {
 @media (max-width:1100px) {
   .kpi-grid { grid-template-columns: repeat(2,1fr); }
   .charts-row { grid-template-columns: 1fr; }
-  .budget-summary-grid { grid-template-columns: repeat(2,1fr); }
+  .budget-summary-grid, .budget-overview { grid-template-columns: repeat(2,1fr); }
+  .budget-header-actions { width: 100%; margin-left: 0; }
   .admin-summary-grid { grid-template-columns: repeat(2,1fr); }
   .report-columns { grid-template-columns: 1fr 1fr; }
   .risk-grid { grid-template-columns: 1fr; }
@@ -1501,7 +1509,9 @@ input.search-pill {
   .user-info { display: none; }
   .hide-tablet { display: none; }
   .gsearch-trigger kbd { display: none; }
-  .budget-summary-grid { grid-template-columns: 1fr; }
+  .budget-summary-grid, .budget-overview { grid-template-columns: 1fr; }
+  .budget-header-actions { justify-content: space-between; }
+  .budget-live-status { margin-left: 0; }
   .admin-summary-grid { grid-template-columns: 1fr; }
 }
 

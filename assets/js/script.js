@@ -5533,7 +5533,13 @@ async function loadBudgetPage(containerId = 'page-budget-monitoring', title = 'B
   container.innerHTML = `
     <div class="page-header">
       <h2 class="page-title">${title}</h2>
+      <div class="budget-header-actions">
+        <span id="budgetLiveStatus" class="budget-live-status">Live data</span>
+        <button class="btn-secondary" onclick="refreshBudgetPage()" title="Refresh live budget data">Refresh</button>
+        <button class="btn-primary" onclick="exportBudgetReport()">Generate Report</button>
+      </div>
     </div>
+    <div id="budgetOverview" class="budget-overview"></div>
     <div id="budgetSummary" class="budget-summary-grid"></div>
     <div class="filter-bar">
       <input class="filter-input" placeholder="Search expenses…" oninput="budgetState.search=this.value;budgetState.page=1;fetchExpenses()" />
@@ -5547,21 +5553,41 @@ async function loadBudgetPage(containerId = 'page-budget-monitoring', title = 'B
     <div id="expensesPager" class="pager"></div>
   `;
 
-  fetchBudgetSummary();
-  fetchExpenses();
+  refreshBudgetPage();
+}
+
+async function refreshBudgetPage() {
+  await Promise.all([fetchBudgetSummary(), fetchExpenses()]);
+  const status = document.getElementById('budgetLiveStatus');
+  if (status) status.textContent = `Updated ${new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`;
 }
 
 async function fetchBudgetSummary() {
   try {
     const d = await get(API.expenses, { summary: 1 });
     const wrap = document.getElementById('budgetSummary');
+    const rows = d.data || [];
+    const totalBudget = rows.reduce((sum, row) => sum + (Number(row.budget) || 0), 0);
+    const totalSpent = rows.reduce((sum, row) => sum + (Number(row.total_spent) || 0), 0);
+    const remaining = totalBudget - totalSpent;
+    const usage = totalBudget > 0 ? (totalSpent / totalBudget) * 100 : 0;
+    const overview = document.getElementById('budgetOverview');
+    if (overview) overview.innerHTML = `
+      <div class="budget-overview-card"><span>Total Budget</span><strong>₱${totalBudget.toLocaleString()}</strong><small>Across ${rows.length} active projects</small></div>
+      <div class="budget-overview-card"><span>Total Spent</span><strong>₱${totalSpent.toLocaleString()}</strong><small>Recorded expenses to date</small></div>
+      <div class="budget-overview-card"><span>Remaining</span><strong style="color:${remaining < 0 ? '#ef4444' : '#22c55e'};">₱${remaining.toLocaleString()}</strong><small>${remaining < 0 ? 'Over approved budget' : 'Available allocation'}</small></div>
+      <div class="budget-overview-card"><span>Utilization</span><strong>${usage.toFixed(1)}%</strong><small>Spent versus approved budget</small></div>`;
     if (!wrap) return;
-    wrap.innerHTML = d.data.slice(0, 4).map(r => {
+    wrap.innerHTML = rows.slice().sort((a, b) => {
+      const aPct = Number(a.budget) > 0 ? Number(a.total_spent) / Number(a.budget) : 0;
+      const bPct = Number(b.budget) > 0 ? Number(b.total_spent) / Number(b.budget) : 0;
+      return bPct - aPct;
+    }).slice(0, 4).map(r => {
       const pct = r.budget > 0 ? Math.min(100, Math.round((r.total_spent / r.budget) * 100)) : 0;
       const color = pct >= 90 ? '#ef4444' : pct >= 70 ? '#f97316' : '#22c55e';
       return `
         <div class="budget-summary-card">
-          <p class="budget-proj-name">${r.project_name}</p>
+          <p class="budget-proj-name">${escapeHtml(r.project_name)}</p>
           <div style="display:flex;flex-wrap:wrap;justify-content:space-between;gap:4px;font-size:.75rem;color:#64748b;margin:4px 0;">
             <span>₱${Number(r.total_spent).toLocaleString()} spent</span>
             <span>₱${Number(r.budget).toLocaleString()} budget</span>
@@ -5576,6 +5602,65 @@ async function fetchBudgetSummary() {
         </div>`;
     }).join('');
   } catch {}
+}
+
+async function exportBudgetReport() {
+  try {
+    const [summaryResponse, expenseResponse, dashboardResponse] = await Promise.all([
+      get(API.expenses, { summary: 1 }),
+      get(API.expenses, { report: 1 }),
+      get(API.dashboard),
+    ]);
+    const summary = summaryResponse.data || [];
+    const expenses = expenseResponse.data || [];
+    const dashboard = dashboardResponse || {};
+    const totalBudget = summary.reduce((total, row) => total + (Number(row.budget) || 0), 0);
+    const totalSpent = summary.reduce((total, row) => total + (Number(row.total_spent) || 0), 0);
+    const remaining = totalBudget - totalSpent;
+    const usage = totalBudget > 0 ? (totalSpent / totalBudget) * 100 : 0;
+    const flagged = expenses.filter(row => Number(row.flagged) === 1);
+    const categories = {};
+    expenses.forEach(row => {
+      const category = row.category || 'Uncategorized';
+      categories[category] = (categories[category] || 0) + (Number(row.amount) || 0);
+    });
+    const reportEscape = value => String(value ?? '').replace(/[&<>"']/g, char => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#039;' }[char]));
+    const reportMoney = value => `₱${(Number(value) || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+    const usageColor = usage >= 90 ? '#c2410c' : usage >= 70 ? '#b45309' : '#15803d';
+    const projectRows = summary.slice().sort((a, b) => {
+      const aUsage = Number(a.budget) > 0 ? Number(a.total_spent) / Number(a.budget) : 0;
+      const bUsage = Number(b.budget) > 0 ? Number(b.total_spent) / Number(b.budget) : 0;
+      return bUsage - aUsage;
+    }).map(row => {
+      const budget = Number(row.budget) || 0;
+      const spent = Number(row.total_spent) || 0;
+      const percent = budget > 0 ? (spent / budget) * 100 : 0;
+      return `<tr><td><strong>${reportEscape(row.project_name)}</strong><small>${reportEscape(row.project_code || '')}</small></td><td>${reportMoney(budget)}</td><td>${reportMoney(spent)}</td><td class="${Number(row.remaining) < 0 ? 'negative' : ''}">${reportMoney(row.remaining)}</td><td><strong style="color:${percent >= 90 ? '#c2410c' : '#334155'}">${percent.toFixed(1)}%</strong><div class="bar"><i style="width:${Math.min(100, Math.max(0, percent))}%;background:${percent >= 90 ? '#ea580c' : percent >= 70 ? '#f59e0b' : '#16a34a'}"></i></div></td><td>${Number(row.flag_count) || 0}</td></tr>`;
+    }).join('');
+    const categoryRows = Object.entries(categories).sort((a, b) => b[1] - a[1]).map(([category, amount]) => `<tr><td>${reportEscape(category)}</td><td>${reportMoney(amount)}</td><td>${totalSpent > 0 ? ((amount / totalSpent) * 100).toFixed(1) : '0.0'}%</td></tr>`).join('');
+    const monthlyRows = (dashboard.monthly_spending || []).map(row => `<tr><td>${reportEscape(row.month)}</td><td>${reportMoney(row.total)}</td></tr>`).join('');
+    const expenseRows = expenses.map(row => `<tr><td>${reportEscape(row.expense_date)}</td><td>${reportEscape(row.project_name)}</td><td>${reportEscape(row.category || 'Uncategorized')}</td><td>${reportEscape(row.description || 'No description')}</td><td>${reportMoney(row.amount)}</td><td>${Number(row.flagged) === 1 ? '<span class="flag">Flagged</span>' : 'OK'}</td></tr>`).join('');
+    const generated = new Date().toLocaleString();
+    const html = `<!doctype html><html lang="en"><head><meta charset="utf-8"><title>IPMS Budget Tracking Report</title><style>
+      :root{font-family:Arial,Helvetica,sans-serif;color:#172033;background:#eef2f7}*{box-sizing:border-box}body{margin:0;padding:32px}.sheet{max-width:1180px;margin:auto;background:#fff;padding:42px;box-shadow:0 12px 35px #10213d18}header{display:flex;justify-content:space-between;gap:24px;border-bottom:3px solid #1d4ed8;padding-bottom:24px}.brand{display:flex;align-items:center;gap:12px}.brand-mark{width:38px;height:38px;border-radius:9px;background:#1d4ed8;color:#fff;display:grid;place-items:center;font-weight:800;font-size:16px}.kicker{color:#1d4ed8;font-size:11px;font-weight:800;letter-spacing:.12em;text-transform:uppercase}h1{font-size:28px;margin:5px 0 8px;color:#12316d}h2{font-size:17px;margin:30px 0 12px;color:#12316d}p,small{color:#64748b}header p{margin:0;font-size:13px}.meta{text-align:right;font-size:12px}.report-tools{display:flex;justify-content:flex-end;gap:8px;margin-top:12px}.report-btn{border:1px solid #cbd5e1;border-radius:6px;padding:8px 12px;background:#fff;color:#1e3a8a;font:600 12px Arial;cursor:pointer}.report-btn:hover{background:#eff6ff;border-color:#93c5fd}.report-btn.primary{background:#1d4ed8;color:#fff;border-color:#1d4ed8}.report-btn.primary:hover{background:#1e40af}.cards{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin:24px 0}.card{border:1px solid #dbe3ef;border-radius:8px;padding:16px;background:#f8fafc}.card span{display:block;color:#64748b;font-size:11px;text-transform:uppercase;font-weight:bold;letter-spacing:.04em}.card strong{display:block;font-size:21px;margin-top:8px}.negative,.flag{color:#c2410c}.bar{height:6px;background:#e2e8f0;border-radius:8px;margin-top:7px;min-width:90px}.bar i{display:block;height:100%;border-radius:8px}table{width:100%;border-collapse:collapse;font-size:12px}th{text-align:left;background:#eff6ff;color:#1e3a8a;font-size:11px;text-transform:uppercase}th,td{padding:10px 9px;border-bottom:1px solid #e5e7eb;vertical-align:top}tbody tr:nth-child(even){background:#f8fafc}tbody tr:hover{background:#eff6ff}td small{display:block;margin-top:3px}.columns{display:grid;grid-template-columns:1fr 1fr;gap:28px}.section-note{font-size:12px;margin-top:-5px}.flag{font-weight:bold}.report-status{display:inline-block;margin-top:12px;padding:5px 9px;border-radius:999px;background:#dcfce7;color:#166534;font-size:11px;font-weight:700}footer{border-top:1px solid #dbe3ef;margin-top:30px;padding-top:14px;font-size:11px;color:#64748b}@media print{body{padding:0;background:#fff}.sheet{box-shadow:none;max-width:none;padding:20px}.no-print{display:none!important}}@media(max-width:760px){body{padding:10px}.sheet{padding:20px}.cards,.columns{grid-template-columns:1fr 1fr}header{display:block}.meta{text-align:left;margin-top:15px}.report-tools{justify-content:flex-start}table{font-size:10px}}
+    </style></head><body><main class="sheet"><header><div><div class="brand"><span class="brand-mark">IP</span><span class="kicker">IPMS Finance Desk</span></div><h1>Budget Tracking Report</h1><p>Infrastructure Project Management System</p><p>Live financial snapshot across active projects</p><span class="report-status">Current data snapshot</span></div><div class="meta"><strong>Generated</strong><br>${reportEscape(generated)}<div class="report-tools"><button class="report-btn primary no-print" onclick="window.print()">Print report</button><button class="report-btn no-print" onclick="window.close()">Close</button></div></div></header>
+      <section class="cards"><div class="card"><span>Total budget</span><strong>${reportMoney(totalBudget)}</strong><small>${summary.length} active projects</small></div><div class="card"><span>Total spent</span><strong>${reportMoney(totalSpent)}</strong><small>${expenses.length} expense records</small></div><div class="card"><span>Remaining</span><strong class="${remaining < 0 ? 'negative' : ''}">${reportMoney(remaining)}</strong><small>${remaining < 0 ? 'Over approved budget' : 'Available allocation'}</small></div><div class="card"><span>Utilization</span><strong style="color:${usageColor}">${usage.toFixed(1)}%</strong><small>${flagged.length} flagged records</small></div></section>
+      <h2>Project Budget Health</h2><table><thead><tr><th>Project</th><th>Budget</th><th>Spent</th><th>Remaining</th><th>Usage</th><th>Flags</th></tr></thead><tbody>${projectRows || '<tr><td colspan="6">No project budget records found.</td></tr>'}</tbody></table>
+      <div class="columns"><section><h2>Monthly Spending</h2><p class="section-note">Current month plus the previous 11 months.</p><table><thead><tr><th>Month</th><th>Total spent</th></tr></thead><tbody>${monthlyRows || '<tr><td colspan="2">No monthly spending data.</td></tr>'}</tbody></table></section><section><h2>Spending By Category</h2><p class="section-note">Share of all recorded expenses.</p><table><thead><tr><th>Category</th><th>Amount</th><th>Share</th></tr></thead><tbody>${categoryRows || '<tr><td colspan="3">No category data.</td></tr>'}</tbody></table></section></div>
+      <h2>Expense Ledger</h2><p class="section-note">Every expense record returned by the live budget API, newest first.</p><table><thead><tr><th>Date</th><th>Project</th><th>Category</th><th>Description</th><th>Amount</th><th>Status</th></tr></thead><tbody>${expenseRows || '<tr><td colspan="6">No expense records found.</td></tr>'}</tbody></table><footer>Advisory management report. Figures are calculated from current project and expense records at generation time.</footer></main></body></html>`;
+    const url = URL.createObjectURL(new Blob([html], { type: 'text/html;charset=utf-8' }));
+    const reportWindow = window.open(url, '_blank');
+    if (!reportWindow) {
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `ipms-budget-report-${new Date().toISOString().slice(0, 10)}.html`;
+      link.click();
+    }
+    setTimeout(() => URL.revokeObjectURL(url), 60000);
+    toast('Budget report generated.');
+  } catch {
+    toast('Failed to generate budget report.', 'error');
+  }
 }
 
 async function fetchExpenses() {
@@ -5676,15 +5761,14 @@ async function submitExpenseForm(e) {
     if (res.error) { toast(res.error, 'error'); return; }
     toast('Expense logged!');
     closeModal();
-    fetchExpenses();
-    fetchBudgetSummary();
+    refreshBudgetPage();
   } catch { toast('Failed to log expense', 'error'); }
 }
 
 async function toggleFlag(id, current) {
   try {
     await put(API.expenses, id, { flagged: current ? 0 : 1 });
-    fetchExpenses();
+    refreshBudgetPage();
   } catch { toast('Update failed', 'error'); }
 }
 
@@ -5693,8 +5777,7 @@ async function deleteExpense(id) {
   try {
     await del(API.expenses, id);
     toast('Expense deleted');
-    fetchExpenses();
-    fetchBudgetSummary();
+    refreshBudgetPage();
   } catch { toast('Delete failed', 'error'); }
 }
 
