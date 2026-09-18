@@ -14,6 +14,7 @@ function clear2faSession(): void
     unset(
         $_SESSION['pending_2fa_user_id'],
         $_SESSION['pending_2fa_role'],
+        $_SESSION['pending_2fa_purpose'],
         $_SESSION['pending_2fa_email'],
         $_SESSION['pending_2fa_name'],
         $_SESSION['pending_2fa_started_at'],
@@ -46,14 +47,33 @@ if ($startedAt <= 0 || (time() - $startedAt) > PENDING_2FA_TIMEOUT_SECONDS) {
 }
 
 $role = (string) ($_SESSION['pending_2fa_role'] ?? '');
+$purpose = (string) ($_SESSION['pending_2fa_purpose'] ?? 'staff_login');
 $pendingEmail = (string) ($_SESSION['pending_2fa_email'] ?? '');
 $pendingName = (string) ($_SESSION['pending_2fa_name'] ?? '');
+$expectedPurpose = $role === 'citizen' ? 'citizen_login' : 'staff_login';
+if ($purpose !== $expectedPurpose) {
+    clear2faSession();
+    header('Location: ' . appUrl('/auth/login.php?error=' . rawurlencode('Your verification session is invalid. Please log in again.')));
+    exit;
+}
 
-$roleLabels = ['super_admin' => 'Super Admin', 'admin' => 'Admin', 'bac' => 'BAC'];
+$roleLabels = [
+    'super_admin' => 'Super Admin',
+    'admin' => 'Admin',
+    'bac' => 'BAC',
+    'engineer' => 'Engineer',
+    'contractor' => 'Contractor',
+    'hope' => 'City Mayor',
+    'citizen' => 'Citizen',
+];
 $roleThemes = [
     'super_admin' => ['from' => '#1a0d2e', 'to' => '#4c1d95', 'primary' => '#7c3aed', 'secondary' => '#a78bfa'],
     'admin' => ['from' => '#0a0a0a', 'to' => '#1c1c2e', 'primary' => '#6366f1', 'secondary' => '#818cf8'],
     'bac' => ['from' => '#4a0e0e', 'to' => '#7f1d1d', 'primary' => '#ef4444', 'secondary' => '#f87171'],
+    'engineer' => ['from' => '#123524', 'to' => '#166534', 'primary' => '#16a34a', 'secondary' => '#4ade80'],
+    'contractor' => ['from' => '#422006', 'to' => '#9a3412', 'primary' => '#ea580c', 'secondary' => '#fb923c'],
+    'hope' => ['from' => '#164e63', 'to' => '#0e7490', 'primary' => '#0891b2', 'secondary' => '#67e8f9'],
+    'citizen' => ['from' => '#172554', 'to' => '#1d4ed8', 'primary' => '#2563eb', 'secondary' => '#60a5fa'],
 ];
 $theme = $roleThemes[$role] ?? ['from' => '#0f393a', 'to' => '#116466', 'primary' => '#116466', 'secondary' => '#2f5fbb'];
 
@@ -67,8 +87,8 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
 
     if ($action === 'cancel') {
         clear2faSession();
-        logActivity($userId, 'otp_cancelled', 'Staff cancelled 2FA challenge (' . $role . ')');
-        header('Location: ' . appUrl('/auth/login.php'));
+        logActivity($userId, 'otp_cancelled', 'Login OTP challenge cancelled (' . $role . ')');
+        header('Location: ' . appUrl($role === 'citizen' ? '/citizen/login.php' : '/auth/login.php'));
         exit;
     }
 
@@ -77,7 +97,7 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
         if ($wait > 0) {
             $error = "Please wait {$wait}s before requesting another code.";
         } else {
-            $result = $otp->createOTP($userId, 'staff_login');
+            $result = $otp->createOTP($userId, $purpose);
             if ($result['success']) {
                 $sendResult = $otp->sendOTPEmail($pendingEmail, $pendingName, $result['otp_code']);
                 unset($_SESSION['dev_otp_preview']);
@@ -102,9 +122,9 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
         if ($code === '') {
             $error = 'Please enter the code sent to your email.';
         } else {
-            $result = $otp->verifyOTP($userId, $code, 'staff_login');
+            $result = $otp->verifyOTP($userId, $code, $purpose);
             if ($result['success']) {
-                $stmt = getDB()->prepare('SELECT id, username, email, full_name, role, status FROM users WHERE id = ?');
+                $stmt = getDB()->prepare('SELECT id, username, email, full_name, role, status, district FROM users WHERE id = ?');
                 $stmt->execute([$userId]);
                 $freshUser = $stmt->fetch();
 
@@ -115,23 +135,10 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
                     exit;
                 }
 
-                session_regenerate_id(true);
-                $_SESSION['auth_user'] = [
-                    'user_id' => (int) $freshUser['id'],
-                    'username' => $freshUser['username'],
-                    'email' => $freshUser['email'],
-                    'full_name' => $freshUser['full_name'],
-                    'role' => $freshUser['role'],
-                ];
-                $_SESSION['user_id'] = (int) $freshUser['id'];
-                $_SESSION['username'] = $freshUser['username'];
-                $_SESSION['email'] = $freshUser['email'];
-                $_SESSION['full_name'] = $freshUser['full_name'];
-                $_SESSION['role'] = $freshUser['role'];
-                $_SESSION['last_activity'] = time();
+                establishUserSession($freshUser);
 
                 clear2faSession();
-                logActivity((int) $freshUser['id'], 'otp_verified', '2FA code verified for staff login');
+                logActivity((int) $freshUser['id'], 'otp_verified', 'Login OTP verified (' . $freshUser['role'] . ')');
                 redirectToRoleDashboard($freshUser['role']);
             } else {
                 $error = $result['message'];
@@ -297,7 +304,7 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
 <body>
     <main class="shell">
         <section class="brand-panel">
-            <div class="eyebrow"><?= htmlspecialchars($roleLabels[$role] ?? 'Staff') ?> Portal</div>
+            <div class="eyebrow"><?= htmlspecialchars($roleLabels[$role] ?? 'User') ?> Portal</div>
             <h1>One more step to confirm it's really you.</h1>
             <p>We've sent a 6-digit verification code to protect this account. This extra check only takes a moment.</p>
         </section>

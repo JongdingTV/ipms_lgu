@@ -62,68 +62,64 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
 
         if ($result['success']) {
             $authedUser = $result['user'];
-            $staff2faRoles = ['super_admin', 'admin', 'bac', 'hope'];
+            // Password authentication alone never grants access. The OTP is
+            // freshly issued for every login, for citizens and staff alike.
+            unset(
+                $_SESSION['auth_user'],
+                $_SESSION['user_id'],
+                $_SESSION['username'],
+                $_SESSION['email'],
+                $_SESSION['full_name'],
+                $_SESSION['role'],
+                $_SESSION['district'],
+                $_SESSION['dev_otp_preview']
+            );
 
-            if (in_array($authedUser['role'], $staff2faRoles, true) && getSetting('require_staff_2fa', false)) {
-                // authenticateUser() already fully established the session (auth_user +
-                // mirror keys). Undo that here so isLoggedIn() is false again until the
-                // OTP step passes — mirrors the existing pending_otp_user_id pattern
-                // citizen registration already uses (see citizen/verify-otp.php).
-                unset(
-                    $_SESSION['auth_user'],
-                    $_SESSION['user_id'],
-                    $_SESSION['username'],
-                    $_SESSION['email'],
-                    $_SESSION['full_name'],
-                    $_SESSION['role']
-                );
-                unset($_SESSION['dev_otp_preview']);
+            $otpPurpose = $authedUser['role'] === 'citizen' ? 'citizen_login' : 'staff_login';
+            $_SESSION['pending_2fa_user_id'] = $authedUser['user_id'];
+            $_SESSION['pending_2fa_role'] = $authedUser['role'];
+            $_SESSION['pending_2fa_purpose'] = $otpPurpose;
+            $_SESSION['pending_2fa_email'] = $authedUser['email'];
+            $_SESSION['pending_2fa_name'] = $authedUser['full_name'];
+            $_SESSION['pending_2fa_started_at'] = time();
+            $_SESSION['pending_2fa_last_sent_at'] = time();
 
-                $_SESSION['pending_2fa_user_id'] = $authedUser['user_id'];
-                $_SESSION['pending_2fa_role'] = $authedUser['role'];
-                $_SESSION['pending_2fa_email'] = $authedUser['email'];
-                $_SESSION['pending_2fa_name'] = $authedUser['full_name'];
-                $_SESSION['pending_2fa_started_at'] = time();
-                $_SESSION['pending_2fa_last_sent_at'] = time();
+            $otp = new OTPManager();
+            $otpResult = $otp->createOTP($authedUser['user_id'], $otpPurpose);
+            $sendOk = false;
 
-                $otp = new OTPManager();
-                $otpResult = $otp->createOTP($authedUser['user_id'], 'staff_login');
-                $sendOk = false;
-
-                if ($otpResult['success']) {
-                    $sendResult = $otp->sendOTPEmail($authedUser['email'], $authedUser['full_name'], $otpResult['otp_code']);
-                    if ($sendResult['success']) {
-                        $sendOk = true;
-                        logActivity($authedUser['user_id'], 'otp_challenge_sent', 'Staff 2FA code sent (' . $authedUser['role'] . ')');
-                    } elseif (!empty($sendResult['dev_fallback'])) {
-                        $sendOk = true;
-                        $_SESSION['dev_otp_preview'] = $otpResult['otp_code'];
-                        logActivity($authedUser['user_id'], 'otp_challenge_sent', 'Staff 2FA code generated (dev preview, ' . $authedUser['role'] . ')');
-                    } else {
-                        logActivity($authedUser['user_id'], 'otp_challenge_send_failed', $sendResult['message'] ?? '');
-                    }
+            if ($otpResult['success']) {
+                $sendResult = $otp->sendOTPEmail($authedUser['email'], $authedUser['full_name'], $otpResult['otp_code']);
+                if ($sendResult['success']) {
+                    $sendOk = true;
+                    logActivity($authedUser['user_id'], 'otp_challenge_sent', 'Login OTP sent (' . $authedUser['role'] . ')');
+                } elseif (!empty($sendResult['dev_fallback'])) {
+                    $sendOk = true;
+                    $_SESSION['dev_otp_preview'] = $otpResult['otp_code'];
+                    logActivity($authedUser['user_id'], 'otp_challenge_sent', 'Login OTP generated (dev preview, ' . $authedUser['role'] . ')');
                 } else {
-                    logActivity($authedUser['user_id'], 'otp_challenge_send_failed', $otpResult['message'] ?? 'Unable to generate OTP');
+                    logActivity($authedUser['user_id'], 'otp_challenge_send_failed', $sendResult['message'] ?? '');
                 }
-
-                if ($sendOk) {
-                    header('Location: ' . appUrl('/auth/verify-otp.php'));
-                    exit;
-                }
-
-                // Fail-closed: never silently grant access when 2FA can't be delivered.
-                unset(
-                    $_SESSION['pending_2fa_user_id'],
-                    $_SESSION['pending_2fa_role'],
-                    $_SESSION['pending_2fa_email'],
-                    $_SESSION['pending_2fa_name'],
-                    $_SESSION['pending_2fa_started_at'],
-                    $_SESSION['pending_2fa_last_sent_at']
-                );
-                $error = 'Unable to send verification code, contact your administrator.';
             } else {
-                redirectToRoleDashboard($authedUser['role']);
+                logActivity($authedUser['user_id'], 'otp_challenge_send_failed', $otpResult['message'] ?? 'Unable to generate OTP');
             }
+
+            if ($sendOk) {
+                header('Location: ' . appUrl('/auth/verify-otp.php'));
+                exit;
+            }
+
+            // Fail-closed: never silently grant access when 2FA can't be delivered.
+            unset(
+                $_SESSION['pending_2fa_user_id'],
+                $_SESSION['pending_2fa_role'],
+                $_SESSION['pending_2fa_purpose'],
+                $_SESSION['pending_2fa_email'],
+                $_SESSION['pending_2fa_name'],
+                $_SESSION['pending_2fa_started_at'],
+                $_SESSION['pending_2fa_last_sent_at']
+            );
+            $error = 'Unable to send verification code, contact your administrator.';
         } else {
             $error = $result['message'];
         }

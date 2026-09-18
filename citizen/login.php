@@ -43,7 +43,64 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
     } else {
         $result = authenticateUser($identifier, $password, 'citizen');
         if ($result['success']) {
-            redirectToRoleDashboard($result['user']['role']);
+            $authedUser = $result['user'];
+
+            // Password authentication alone never grants access. Issue a
+            // fresh login OTP for every citizen login.
+            unset(
+                $_SESSION['auth_user'],
+                $_SESSION['user_id'],
+                $_SESSION['username'],
+                $_SESSION['email'],
+                $_SESSION['full_name'],
+                $_SESSION['role'],
+                $_SESSION['district'],
+                $_SESSION['dev_otp_preview']
+            );
+
+            $_SESSION['pending_2fa_user_id'] = $authedUser['user_id'];
+            $_SESSION['pending_2fa_role'] = 'citizen';
+            $_SESSION['pending_2fa_purpose'] = 'citizen_login';
+            $_SESSION['pending_2fa_email'] = $authedUser['email'];
+            $_SESSION['pending_2fa_name'] = $authedUser['full_name'];
+            $_SESSION['pending_2fa_started_at'] = time();
+            $_SESSION['pending_2fa_last_sent_at'] = time();
+
+            $otp = new OTPManager();
+            $otpResult = $otp->createOTP($authedUser['user_id'], 'citizen_login');
+            $sendOk = false;
+
+            if ($otpResult['success']) {
+                $sendResult = $otp->sendOTPEmail($authedUser['email'], $authedUser['full_name'], $otpResult['otp_code']);
+                if ($sendResult['success']) {
+                    $sendOk = true;
+                    logActivity($authedUser['user_id'], 'otp_challenge_sent', 'Login OTP sent (citizen)');
+                } elseif (!empty($sendResult['dev_fallback'])) {
+                    $sendOk = true;
+                    $_SESSION['dev_otp_preview'] = $otpResult['otp_code'];
+                    logActivity($authedUser['user_id'], 'otp_challenge_sent', 'Login OTP generated (dev preview, citizen)');
+                } else {
+                    logActivity($authedUser['user_id'], 'otp_challenge_send_failed', $sendResult['message'] ?? '');
+                }
+            } else {
+                logActivity($authedUser['user_id'], 'otp_challenge_send_failed', $otpResult['message'] ?? 'Unable to generate OTP');
+            }
+
+            if ($sendOk) {
+                header('Location: ' . appUrl('/auth/verify-otp.php'));
+                exit;
+            }
+
+            unset(
+                $_SESSION['pending_2fa_user_id'],
+                $_SESSION['pending_2fa_role'],
+                $_SESSION['pending_2fa_purpose'],
+                $_SESSION['pending_2fa_email'],
+                $_SESSION['pending_2fa_name'],
+                $_SESSION['pending_2fa_started_at'],
+                $_SESSION['pending_2fa_last_sent_at']
+            );
+            $error = 'Unable to send verification code, contact your administrator.';
         } elseif (!empty($result['inactive_user'])) {
             // Correct credentials, account just never finished email
             // verification (e.g. the original OTP session was lost). Resend a
