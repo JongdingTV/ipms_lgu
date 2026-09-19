@@ -5,6 +5,7 @@
 require_once __DIR__ . '/../includes/db.php';
 require_once __DIR__ . '/../includes/auth.php';
 require_once __DIR__ . '/../includes/Notifications.php';
+require_once __DIR__ . '/../includes/workflow.php';
 apiHeaders();
 
 // Staff-only endpoint: citizens submit via citizen/api/submit-feedback.php and
@@ -13,12 +14,22 @@ apiHeaders();
 // either, so mutating/reading arbitrary feedback records is restricted to
 // admin roles only.
 $method = $_SERVER['REQUEST_METHOD'];
-requireAnyRole(['super_admin', 'admin']);
+$currentUser = currentUser();
+$isEngineer = ($currentUser['role'] ?? '') === 'engineer';
+requireAnyRole(['super_admin', 'admin', 'engineer']);
 
 requireCsrfProtection();
 
 $db     = getDB();
+feedbackEnsureSchema($db);
 $id     = isset($_GET['id']) ? (int) $_GET['id'] : null;
+
+function feedbackEngineerCanAccess(PDO $db, int $feedbackId, int $engineerId): bool
+{
+    $stmt = $db->prepare("SELECT 1 FROM feedback f INNER JOIN engineer_project_assignments a ON a.project_id = f.project_id AND a.engineer_id = ? AND a.status = 'active' WHERE f.id = ?");
+    $stmt->execute([$engineerId, $feedbackId]);
+    return (bool) $stmt->fetchColumn();
+}
 
 // Mirrors assets/js/script.js's FEEDBACK_CATEGORY_LABELS — kept in sync by
 // hand since this is the only server-side spot that needs the human label.
@@ -81,6 +92,9 @@ if ($method === 'GET') {
     }
 
     if ($id) {
+        if ($isEngineer && !feedbackEngineerCanAccess($db, $id, (int) $currentUser['user_id'])) {
+            respond(['error' => 'You may only view feedback for projects assigned to you.'], 403);
+        }
         $stmt = $db->prepare("
             SELECT f.*, p.name AS project_name
             FROM feedback f
@@ -100,6 +114,10 @@ if ($method === 'GET') {
 
     $where  = ['1=1'];
     $params = [];
+    if ($isEngineer) {
+        $where[] = "EXISTS (SELECT 1 FROM engineer_project_assignments ea WHERE ea.project_id = f.project_id AND ea.engineer_id = ? AND ea.status = 'active')";
+        $params[] = (int) $currentUser['user_id'];
+    }
 
     if (!empty($_GET['status'])) {
         $where[]  = 'f.status = ?';
@@ -165,6 +183,7 @@ if ($method === 'GET') {
 
 // ── POST ───────────────────────────────────────────────────
 if ($method === 'POST') {
+    if ($isEngineer) respond(['error' => 'Engineers cannot create feedback records.'], 403);
     $b = requestBody();
     if (empty($b['message'])) respond(['error' => "'message' is required"], 422);
 
@@ -189,6 +208,24 @@ if ($method === 'PUT') {
     if (!$id) respond(['error' => 'ID required'], 400);
     $b = requestBody();
 
+    $beforeStmt = $db->prepare('SELECT * FROM feedback WHERE id = ?');
+    $beforeStmt->execute([$id]);
+    $before = $beforeStmt->fetch();
+    if (!$before) respond(['error' => 'Feedback not found'], 404);
+    if ($isEngineer && !feedbackEngineerCanAccess($db, $id, (int) $currentUser['user_id'])) {
+        respond(['error' => 'You may only update feedback for projects assigned to you.'], 403);
+    }
+    if (array_key_exists('priority', $b) && !in_array($b['priority'], ['low', 'medium', 'high', 'urgent'], true)) {
+        respond(['error' => 'Invalid feedback priority'], 422);
+    }
+    if (array_key_exists('status', $b) && !in_array($b['status'], ['open', 'in_progress', 'resolved', 'closed'], true)) {
+        respond(['error' => 'Invalid feedback status'], 422);
+    }
+    $priorityChanged = array_key_exists('priority', $b) && $b['priority'] !== $before['priority'];
+    if ($priorityChanged && trim((string) ($b['priority_review_reason'] ?? '')) === '') {
+        respond(['error' => 'A reason is required when changing feedback priority.'], 422);
+    }
+
     $fields = [];
     $params = [];
     foreach (['project_id','citizen_name','message','category','priority','status'] as $f) {
@@ -199,11 +236,14 @@ if ($method === 'PUT') {
     }
     if (empty($fields)) respond(['error' => 'Nothing to update'], 422);
 
-    $before = null;
-    if (isset($b['status'])) {
-        $beforeStmt = $db->prepare("SELECT citizen_id, status FROM feedback WHERE id = ?");
-        $beforeStmt->execute([$id]);
-        $before = $beforeStmt->fetch();
+    if ($priorityChanged) {
+        $fields[] = 'priority_source = ?';
+        $params[] = $isEngineer ? 'ENGINEER_REVIEW' : 'ADMIN_REVIEW';
+        $fields[] = 'priority_reviewed_by = ?';
+        $params[] = (int) $currentUser['user_id'];
+        $fields[] = 'priority_reviewed_at = NOW()';
+        $fields[] = 'priority_review_reason = ?';
+        $params[] = trim((string) $b['priority_review_reason']);
     }
 
     $params[] = $id;
@@ -211,7 +251,16 @@ if ($method === 'PUT') {
     $db->prepare("UPDATE feedback SET " . implode(', ', $fields) . " WHERE id = ?")
        ->execute($params);
 
-    if ($before && $before['status'] !== $b['status'] && !empty($before['citizen_id'])) {
+    if ($priorityChanged) {
+        auditLog($db, (int) $currentUser['user_id'], 'feedback_priority_changed', 'feedback', $id, sprintf(
+            '%s -> %s. Reason: %s', feedbackPriorityLabel($before['priority']), feedbackPriorityLabel($b['priority']), trim((string) $b['priority_review_reason'])
+        ));
+    }
+    if (isset($b['status']) && $before['status'] !== $b['status']) {
+        auditLog($db, (int) $currentUser['user_id'], 'feedback_status_changed', 'feedback', $id, $before['status'] . ' -> ' . $b['status'] . '.');
+    }
+
+    if (isset($b['status']) && $before['status'] !== $b['status'] && !empty($before['citizen_id'])) {
         $cu = $db->prepare("SELECT user_id FROM citizens WHERE id = ?");
         $cu->execute([$before['citizen_id']]);
         notifyUser(

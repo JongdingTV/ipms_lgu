@@ -55,6 +55,7 @@ requireCsrfProtection();
 $db     = getDB();
 engineerScopeEnsureTables($db);
 projectWorkflowEnsureProjectStatusSchema($db);
+feedbackEnsureSchema($db);
 documentsEnsureVersioningSchema($db);
 projectDeletionEnsureSchema($db);
 projectEditEnsureSchema($db);
@@ -198,7 +199,12 @@ if ($method === 'GET') {
                    COALESCE(SUM(e.amount),0) AS total_spent,
                    (SELECT a.engineer_id FROM engineer_project_assignments a WHERE a.project_id = p.id AND a.status = 'active' ORDER BY a.assigned_at DESC LIMIT 1) AS assigned_engineer_id,
                    (SELECT u.full_name FROM engineer_project_assignments a INNER JOIN users u ON u.id = a.engineer_id WHERE a.project_id = p.id AND a.status = 'active' ORDER BY a.assigned_at DESC LIMIT 1) AS assigned_engineer_name,
-                   (SELECT COUNT(*) FROM project_edit_requests r WHERE r.project_id = p.id AND r.status = 'pending') AS has_pending_edit_request
+                   (SELECT COUNT(*) FROM project_edit_requests r WHERE r.project_id = p.id AND r.status = 'pending') AS has_pending_edit_request,
+                   (SELECT COUNT(*) FROM feedback f WHERE f.project_id = p.id AND f.status IN ('open','in_progress')) AS feedback_total_active,
+                   (SELECT COUNT(*) FROM feedback f WHERE f.project_id = p.id AND f.status IN ('open','in_progress') AND f.priority = 'urgent') AS feedback_critical_count,
+                   (SELECT COUNT(*) FROM feedback f WHERE f.project_id = p.id AND f.status IN ('open','in_progress') AND f.priority = 'high') AS feedback_high_count,
+                   (SELECT COUNT(*) FROM feedback f WHERE f.project_id = p.id AND f.status IN ('open','in_progress') AND f.priority = 'medium') AS feedback_medium_count,
+                   (SELECT COUNT(*) FROM feedback f WHERE f.project_id = p.id AND f.status IN ('open','in_progress') AND f.priority = 'low') AS feedback_low_count
             FROM projects p
             LEFT JOIN contractors c ON c.id = p.contractor_id
             LEFT JOIN expenses    e ON e.project_id = p.id
@@ -229,6 +235,10 @@ if ($method === 'GET') {
         ");
         $docs->execute([$id]);
         $project['documents'] = $docs->fetchAll();
+
+        $feedbackStmt = $db->prepare("SELECT f.id, f.category, f.message, f.priority, f.status, f.created_at, f.updated_at, u.full_name AS assigned_engineer_name FROM feedback f LEFT JOIN engineer_project_assignments a ON a.project_id = f.project_id AND a.status = 'active' LEFT JOIN users u ON u.id = a.engineer_id WHERE f.project_id = ? ORDER BY FIELD(f.priority, 'urgent', 'high', 'medium', 'low'), f.created_at DESC");
+        $feedbackStmt->execute([$id]);
+        $project['feedback'] = $feedbackStmt->fetchAll();
 
         if ($project['category'] === 'Roads and Bridges') {
             $geoStmt = $db->prepare("SELECT * FROM project_road_geometry WHERE project_id = ?");
@@ -358,7 +368,12 @@ if ($method === 'GET') {
                COALESCE(SUM(e.amount),0) AS total_spent,
                (SELECT a.engineer_id FROM engineer_project_assignments a WHERE a.project_id = p.id AND a.status = 'active' ORDER BY a.assigned_at DESC LIMIT 1) AS assigned_engineer_id,
                (SELECT u.full_name FROM engineer_project_assignments a INNER JOIN users u ON u.id = a.engineer_id WHERE a.project_id = p.id AND a.status = 'active' ORDER BY a.assigned_at DESC LIMIT 1) AS assigned_engineer_name,
-               (SELECT COUNT(*) FROM project_edit_requests r WHERE r.project_id = p.id AND r.status = 'pending') AS has_pending_edit_request
+               (SELECT COUNT(*) FROM project_edit_requests r WHERE r.project_id = p.id AND r.status = 'pending') AS has_pending_edit_request,
+               (SELECT COUNT(*) FROM feedback f WHERE f.project_id = p.id AND f.status IN ('open','in_progress')) AS feedback_total_active,
+               (SELECT COUNT(*) FROM feedback f WHERE f.project_id = p.id AND f.status IN ('open','in_progress') AND f.priority = 'urgent') AS feedback_critical_count,
+               (SELECT COUNT(*) FROM feedback f WHERE f.project_id = p.id AND f.status IN ('open','in_progress') AND f.priority = 'high') AS feedback_high_count,
+               (SELECT COUNT(*) FROM feedback f WHERE f.project_id = p.id AND f.status IN ('open','in_progress') AND f.priority = 'medium') AS feedback_medium_count,
+               (SELECT COUNT(*) FROM feedback f WHERE f.project_id = p.id AND f.status IN ('open','in_progress') AND f.priority = 'low') AS feedback_low_count
                $mapExtraSelect
         FROM projects p
         LEFT JOIN contractors c ON c.id = p.contractor_id

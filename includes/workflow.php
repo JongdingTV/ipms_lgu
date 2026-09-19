@@ -156,8 +156,18 @@ function feedbackEnsureSchema(PDO $db): void
         // district+barangay pair (CIMMS' own form has no such fields), so the
         // picked/typed address itself is the only location signal to keep.
         $db->exec("ALTER TABLE feedback ADD COLUMN IF NOT EXISTS location VARCHAR(255) NULL AFTER barangay");
+        $db->exec("ALTER TABLE feedback ADD COLUMN IF NOT EXISTS safety_concern TINYINT(1) NOT NULL DEFAULT 0 AFTER message");
+        $db->exec("ALTER TABLE feedback ADD COLUMN IF NOT EXISTS usage_blocked TINYINT(1) NOT NULL DEFAULT 0 AFTER safety_concern");
+        $db->exec("ALTER TABLE feedback ADD COLUMN IF NOT EXISTS people_affected ENUM('one','few','many','unknown') NOT NULL DEFAULT 'unknown' AFTER usage_blocked");
+        $db->exec("ALTER TABLE feedback ADD COLUMN IF NOT EXISTS priority_source ENUM('SYSTEM_RULE','AI_SUGGESTED','ENGINEER_REVIEW','ADMIN_REVIEW') NOT NULL DEFAULT 'SYSTEM_RULE' AFTER priority");
+        $db->exec("ALTER TABLE feedback ADD COLUMN IF NOT EXISTS priority_reason TEXT NULL AFTER priority_source");
+        $db->exec("ALTER TABLE feedback ADD COLUMN IF NOT EXISTS priority_reviewed_by INT NULL AFTER priority_reason");
+        $db->exec("ALTER TABLE feedback ADD COLUMN IF NOT EXISTS priority_reviewed_at DATETIME NULL AFTER priority_reviewed_by");
+        $db->exec("ALTER TABLE feedback ADD COLUMN IF NOT EXISTS priority_review_reason TEXT NULL AFTER priority_reviewed_at");
+        $db->exec("ALTER TABLE feedback ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP AFTER created_at");
         $db->exec("ALTER TABLE feedback ADD INDEX IF NOT EXISTS idx_feedback_concern_type (concern_type)");
         $db->exec("ALTER TABLE feedback ADD INDEX IF NOT EXISTS idx_feedback_cimm_sync (cimm_sync_status)");
+        $db->exec("ALTER TABLE feedback ADD INDEX IF NOT EXISTS idx_feedback_active_priority (status, priority, project_id)");
 
         $db->exec("
             CREATE TABLE IF NOT EXISTS feedback_photos (
@@ -171,6 +181,39 @@ function feedbackEnsureSchema(PDO $db): void
         ");
     } catch (Throwable $e) {
     }
+}
+
+/**
+ * Explainable first-pass classification. Citizen input is deliberately limited
+ * to plain-language impact signals; staff review remains the final authority.
+ */
+function feedbackPriorityMatrix(array $input): array
+{
+    $category = (string) ($input['category'] ?? '');
+    $message = strtolower((string) ($input['message'] ?? ''));
+    $safety = !empty($input['safety_concern']);
+    $blocked = !empty($input['usage_blocked']);
+    $affected = (string) ($input['people_affected'] ?? 'unknown');
+    $criticalTerms = ['live wire', 'electrical fire', 'collapse', 'collapsed', 'gas leak', 'open manhole', 'electrocution', 'immediate danger'];
+    $safetyTerms = ['unsafe', 'danger', 'hazard', 'injury', 'injured', 'broken light', 'damaged electrical', 'slippery', 'flood'];
+    $isCriticalSignal = $safety && (in_array($affected, ['many'], true) || $blocked) && array_filter($criticalTerms, static fn(string $term): bool => str_contains($message, $term));
+    $isHighSignal = $safety || $blocked || $affected === 'many' || $category === 'safety_hazard' || (bool) array_filter($safetyTerms, static fn(string $term): bool => str_contains($message, $term));
+
+    if ($isCriticalSignal) {
+        return ['priority' => 'urgent', 'source' => 'SYSTEM_RULE', 'reason' => 'Safety concern with immediate danger or broad/blocked public impact.'];
+    }
+    if ($isHighSignal) {
+        return ['priority' => 'high', 'source' => 'SYSTEM_RULE', 'reason' => 'Safety, access, or significant project impact requires prompt review.'];
+    }
+    if ($category === 'suggestion' || $category === 'commendation' || ($affected === 'one' && !$blocked)) {
+        return ['priority' => 'low', 'source' => 'SYSTEM_RULE', 'reason' => 'Minor, individual, or non-urgent concern with no stated safety or access impact.'];
+    }
+    return ['priority' => 'medium', 'source' => 'SYSTEM_RULE', 'reason' => 'Meaningful concern requiring review, with no immediate danger signal supplied.'];
+}
+
+function feedbackPriorityLabel(?string $priority): string
+{
+    return strtolower((string) $priority) === 'urgent' ? 'CRITICAL' : strtoupper((string) $priority ?: 'medium');
 }
 
 function projectProposalEnsureSchema(PDO $db): void

@@ -241,6 +241,28 @@ function taskCenterForEngineer(PDO $db, int $userId): array
         ];
     }
 
+    // Assigned project feedback — uses the existing live task engine. Resolved
+    // and closed reports remain in history but no longer create active tasks.
+    $feedbackStmt = $db->prepare("\n        SELECT f.id, f.project_id, f.message, f.priority, f.status, f.created_at,\n               p.project_code, p.name AS project_name\n        FROM feedback f\n        INNER JOIN engineer_project_assignments a ON a.project_id = f.project_id AND a.engineer_id = ? AND a.status = 'active'\n        INNER JOIN projects p ON p.id = f.project_id\n        WHERE f.status IN ('open', 'in_progress') AND f.priority IN ('urgent', 'high')\n        ORDER BY FIELD(f.priority, 'urgent', 'high'), f.created_at ASC\n    ");
+    $feedbackStmt->execute([$userId]);
+    foreach ($feedbackStmt->fetchAll() as $feedback) {
+        $isCritical = $feedback['priority'] === 'urgent';
+        $tasks[] = [
+            'key' => 'feedback_review:' . $feedback['id'],
+            'title' => ($isCritical ? 'CRITICAL' : 'HIGH') . ' Feedback Requires Review',
+            'description' => mb_strimwidth((string) $feedback['message'], 0, 120, '...'),
+            'project_id' => (int) $feedback['project_id'],
+            'project_name' => $feedback['project_code'] . ' — ' . $feedback['project_name'],
+            'module' => 'Citizen Feedback',
+            'priority' => $isCritical ? 'urgent' : 'due_today',
+            'due_date' => null,
+            'created_date' => $feedback['created_at'],
+            'status' => 'pending',
+            'link_page' => 'citizen-feedback',
+            'link_params' => ['feedback_id' => (int) $feedback['id'], 'project_id' => (int) $feedback['project_id']],
+        ];
+    }
+
     return taskCenterSort($tasks);
 }
 
@@ -334,9 +356,9 @@ function taskCenterForAdmin(PDO $db, int $userId): array
             'key' => 'feedback_attention:' . $f['id'],
             'title' => 'Citizen Feedback Requires Attention',
             'description' => mb_strimwidth($f['message'], 0, 120, '…') . ' (' . $f['reason'] . ')',
-            'project_id' => null, 'project_name' => $f['project_name'] ?? 'General',
+            'project_id' => !empty($f['project_id']) ? (int) $f['project_id'] : null, 'project_name' => $f['project_name'] ?? 'General',
             'module' => 'Citizen Feedback', 'priority' => $f['score'] >= 40 ? 'urgent' : 'upcoming', 'due_date' => null,
-            'created_date' => $f['created_at'], 'status' => 'pending', 'link_page' => 'citizen-feedback', 'link_params' => [],
+            'created_date' => $f['created_at'], 'status' => 'pending', 'link_page' => 'citizen-feedback', 'link_params' => ['feedback_id' => (int) $f['id'], 'project_id' => !empty($f['project_id']) ? (int) $f['project_id'] : null],
         ];
     }
 
@@ -382,7 +404,7 @@ function taskCenterFeedbackNeedsAttention(PDO $db): array
     $priorityWeight = ['urgent' => 40, 'high' => 25, 'medium' => 10, 'low' => 0];
 
     $rows = $db->query("
-        SELECT f.id, f.message, f.category, f.priority, f.status, f.created_at,
+        SELECT f.id, f.project_id, f.message, f.category, f.priority, f.status, f.created_at,
                p.name AS project_name, DATEDIFF(NOW(), f.created_at) AS days_open
         FROM feedback f LEFT JOIN projects p ON p.id = f.project_id
         WHERE f.status IN ('open', 'in_progress')

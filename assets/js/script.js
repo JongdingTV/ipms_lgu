@@ -942,6 +942,18 @@ async function openProjectModal(id) {
           </div>` : ''}
         </div>
         <div>
+          <p class="modal-label">CITIZEN FEEDBACK &amp; PRIORITY</p>
+          <div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:6px;font-size:.78rem;">
+            <span class="status-badge">${Number(p.feedback_total_active || 0)} active</span>
+            ${Number(p.feedback_critical_count || 0) ? `<span class="status-badge status-danger">${p.feedback_critical_count} CRITICAL</span>` : ''}
+            ${Number(p.feedback_high_count || 0) ? `<span class="status-badge status-warning">${p.feedback_high_count} HIGH</span>` : ''}
+            <span class="status-badge">${Number(p.feedback_medium_count || 0)} MEDIUM</span>
+            <span class="status-badge">${Number(p.feedback_low_count || 0)} LOW</span>
+          </div>
+          ${Number(p.feedback_critical_count || 0) ? '<p style="margin:7px 0 0;color:#b91c1c;font-size:.78rem;font-weight:600;">Critical feedback requires attention.</p>' : Number(p.feedback_high_count || 0) ? '<p style="margin:7px 0 0;color:#b45309;font-size:.78rem;font-weight:600;">High-priority feedback requires review.</p>' : '<p style="margin:7px 0 0;color:#64748b;font-size:.78rem;">No active high-priority feedback.</p>'}
+          ${p.feedback?.length ? `<div style="display:flex;flex-direction:column;gap:5px;margin-top:8px;">${p.feedback.slice(0, 5).map(f => `<div style="display:flex;align-items:center;gap:8px;font-size:.76rem;"><span class="priority-dot priority-${escapeHtml(f.priority)}"></span><span style="min-width:48px;font-weight:700;">${f.priority === 'urgent' ? 'CRITICAL' : escapeHtml(String(f.priority || 'medium').toUpperCase())}</span><span style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${escapeHtml(f.message || '')}</span><span style="color:#64748b;">${escapeHtml(f.status || '')}</span></div>`).join('')}</div>` : '<p class="empty-state" style="margin-top:8px;">No feedback history for this project.</p>'}
+        </div>
+        <div>
           <p class="modal-label">PROGRESS</p>
           <div style="background:#f1f5f9;border-radius:20px;height:10px;overflow:hidden;margin-top:6px;">
             <div style="width:${p.progress}%;background:${color};height:100%;border-radius:20px;transition:width 0.8s;"></div>
@@ -6083,6 +6095,15 @@ async function openFeedbackDetailModal(id) {
           <p class="modal-val" style="font-weight:400;white-space:pre-wrap;">${escapeHtml(f.message)}</p>
         </div>
 
+        <div>
+          <p class="modal-label">PRIORITY FOR REVIEW</p>
+          <form id="feedbackPriorityReviewForm" style="display:flex;gap:8px;align-items:flex-end;flex-wrap:wrap;margin-top:6px;">
+            <label style="flex:0 0 140px;font-size:.75rem;color:#64748b;">Priority<select name="priority" class="form-input"><option value="urgent" ${f.priority === 'urgent' ? 'selected' : ''}>CRITICAL</option><option value="high" ${f.priority === 'high' ? 'selected' : ''}>HIGH</option><option value="medium" ${f.priority === 'medium' ? 'selected' : ''}>MEDIUM</option><option value="low" ${f.priority === 'low' ? 'selected' : ''}>LOW</option></select></label>
+            <label style="flex:1;min-width:220px;font-size:.75rem;color:#64748b;">Reason required for a change<input name="priority_review_reason" class="form-input" placeholder="Explain the review decision"></label>
+            <button type="submit" class="btn-secondary btn-compact">Save Priority Review</button>
+          </form>
+        </div>
+
         ${photos.length ? `
         <div>
           <p class="modal-label">PHOTOS</p>
@@ -6110,6 +6131,20 @@ async function openFeedbackDetailModal(id) {
         </div>
       </div>
     `);
+    document.getElementById('feedbackPriorityReviewForm')?.addEventListener('submit', async event => {
+      event.preventDefault();
+      const values = Object.fromEntries(new FormData(event.target).entries());
+      if (values.priority === f.priority) return toast('Priority is unchanged.', 'info');
+      if (!String(values.priority_review_reason || '').trim()) return toast('A reason is required when changing priority.', 'error');
+      try {
+        await put(API.feedback, id, values);
+        toast('Feedback priority review saved.', 'success');
+        openFeedbackDetailModal(id);
+        fetchFeedback();
+      } catch (error) {
+        toast(error.message || 'Priority review failed.', 'error');
+      }
+    });
   } catch (err) {
     toast('Failed to load feedback details', 'error');
     console.error(err);

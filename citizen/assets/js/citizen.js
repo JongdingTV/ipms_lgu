@@ -3530,7 +3530,8 @@ function fbRenderReview() {
         ${projectName?.value ? `<div class="fb-review-row"><span>Project Name</span><strong>${escapeHtml(projectName.selectedOptions?.[0]?.textContent || projectName.value)}</strong></div>` : ''}
         <div class="fb-review-row"><span>Location</span><strong>${escapeHtml(locationText)}</strong></div>
         <div class="fb-review-row"><span>Category</span><strong>${escapeHtml(category?.selectedOptions[0]?.textContent.trim() || 'Not specified')}</strong></div>
-        <div class="fb-review-row"><span>Priority</span><strong>${escapeHtml(capitalizeFirst(priority?.value || ''))}</strong></div>
+        <div class="fb-review-row"><span>Priority for Review</span><strong>${escapeHtml(capitalizeFirst(priority?.selectedOptions[0]?.textContent.trim() || 'Needs review'))}</strong></div>
+        <div class="fb-review-row"><span>Impact Details</span><strong>${document.querySelector('[name="safety_concern"]')?.checked ? 'Safety concern' : 'No safety concern marked'}${document.querySelector('[name="usage_blocked"]')?.checked ? ' · Use may be blocked' : ''}</strong></div>
         <div class="fb-review-row fb-review-row-block"><span>Description</span><p>${escapeHtml(message?.value || '')}</p></div>
         <div class="fb-review-row"><span>Attachments</span><strong>${photoCount} photo${photoCount === 1 ? '' : 's'}</strong></div>
         <div class="fb-review-row"><span>Contact Information</span><strong>${escapeHtml(contactText)}</strong></div>
@@ -3574,7 +3575,8 @@ function submitFeedbackWizard() {
                             successNote.textContent = 'Saved in IPMS. CIMMS forwarding is pending or needs staff follow-up.';
                         }
                     } else {
-                        successNote.style.display = 'none';
+                        successNote.style.display = 'block';
+                        successNote.textContent = `Submitted and marked ${String(data.priority_label || 'MEDIUM')} priority for review.`;
                     }
                 }
                 fbGoToStep(4);

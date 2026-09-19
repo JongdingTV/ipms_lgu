@@ -600,12 +600,26 @@ $statusChip = [
                   </div>
 
                   <div class="form-group">
-                    <label for="feedbackPriority">Priority *</label>
-                    <select id="feedbackPriority" name="priority" required>
-                      <option value="low">Low</option>
-                      <option value="medium" selected>Medium</option>
-                      <option value="high">High</option>
-                      <option value="urgent">Urgent</option>
+                    <label for="feedbackPriority">How urgent does this feel to you? <span class="fb-optional">(optional)</span></label>
+                    <select id="feedbackPriority" name="priority">
+                      <option value="medium" selected>Needs review</option>
+                      <option value="low">Minor / non-urgent</option>
+                      <option value="high">Needs prompt attention</option>
+                      <option value="urgent">Immediate danger</option>
+                    </select>
+                    <p class="fb-field-hint">Staff will confirm the priority for review using the concern details below.</p>
+                  </div>
+
+                  <div class="form-group">
+                    <label>Impact details</label>
+                    <label class="form-checkbox-label"><input type="checkbox" name="safety_concern" value="1"> This may be a safety concern</label>
+                    <label class="form-checkbox-label"><input type="checkbox" name="usage_blocked" value="1"> This prevents people from using the infrastructure</label>
+                    <label for="feedbackPeopleAffected">How many people may be affected? <span class="fb-optional">(optional)</span></label>
+                    <select id="feedbackPeopleAffected" name="people_affected">
+                      <option value="unknown" selected>Not sure</option>
+                      <option value="one">One or a few people</option>
+                      <option value="few">Several people</option>
+                      <option value="many">Many people or the wider community</option>
                     </select>
                   </div>
 

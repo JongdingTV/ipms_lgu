@@ -4,6 +4,7 @@ require_once __DIR__ . '/../includes/qc-locations.php';
 require_once __DIR__ . '/../includes/feedback-categories.php';
 require_once __DIR__ . '/../../includes/CimmClient.php';
 require_once __DIR__ . '/../../includes/workflow.php';
+require_once __DIR__ . '/../../includes/auth.php';
 
 header('Content-Type: application/json');
 
@@ -54,7 +55,7 @@ if (($citizen['verification_status'] ?? 'unverified') !== 'verified') {
 
 // Validate input
 $category = $_POST['category'] ?? '';
-$priority = $_POST['priority'] ?? 'medium';
+$declaredPriority = $_POST['priority'] ?? 'medium';
 $message = $_POST['message'] ?? '';
 $district = trim($_POST['district'] ?? '');
 $barangay = trim($_POST['barangay'] ?? '');
@@ -67,6 +68,9 @@ $contactName = trim($_POST['contact_name'] ?? '');
 $contactPhone = trim($_POST['contact_phone'] ?? '');
 $contactEmail = trim($_POST['contact_email'] ?? '');
 $projectId = $concernType === 'project' ? (int) ($_POST['project_id'] ?? 0) : null;
+$safetyConcern = filter_var($_POST['safety_concern'] ?? false, FILTER_VALIDATE_BOOLEAN);
+$usageBlocked = filter_var($_POST['usage_blocked'] ?? false, FILTER_VALIDATE_BOOLEAN);
+$peopleAffected = $_POST['people_affected'] ?? 'unknown';
 
 $errors = [];
 if (!in_array($concernType, ['project', 'maintenance'], true)) {
@@ -88,8 +92,11 @@ if ($concernType === 'maintenance') {
 if (empty($category) || !array_key_exists($category, feedbackCategories())) {
     $errors[] = 'Invalid category';
 }
-if (empty($priority) || !in_array($priority, ['low', 'medium', 'high', 'urgent'])) {
+if (!in_array($declaredPriority, ['low', 'medium', 'high', 'urgent'], true)) {
     $errors[] = 'Invalid priority';
+}
+if (!in_array($peopleAffected, ['one', 'few', 'many', 'unknown'], true)) {
+    $errors[] = 'Invalid affected people range';
 }
 if (empty($message) || strlen($message) < 10) {
     $errors[] = 'Message must be at least 10 characters';
@@ -213,6 +220,15 @@ if (!empty($errors)) {
     exit;
 }
 
+$priorityMatrix = feedbackPriorityMatrix([
+    'category' => $category,
+    'message' => $message,
+    'safety_concern' => $safetyConcern,
+    'usage_blocked' => $usageBlocked,
+    'people_affected' => $peopleAffected,
+]);
+$priority = $priorityMatrix['priority'];
+
 $savedPaths = [];
 $cimmSync = [
     'status' => 'none',
@@ -234,13 +250,13 @@ try {
 
     $stmt = $pdo->prepare("
         INSERT INTO feedback (
-            project_id, citizen_id, citizen_name, message, category, infrastructure_type, concern_type,
+            project_id, citizen_id, citizen_name, message, safety_concern, usage_blocked, people_affected, category, infrastructure_type, concern_type,
             anonymous, contact_name, contact_phone, contact_email,
-            cimm_sync_status, priority, district, barangay, location, latitude, longitude, status
+            cimm_sync_status, priority, priority_source, priority_reason, district, barangay, location, latitude, longitude, status
         ) VALUES (
-            ?, ?, ?, ?, ?, ?, ?,
+            ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
             ?, ?, ?, ?,
-            ?, ?, ?, ?, ?, ?, ?, 'open'
+            ?, ?, ?, ?, ?, ?, ?, ?, ?, 'open'
         )
     ");
     $stmt->execute([
@@ -248,6 +264,9 @@ try {
         $citizenId,
         $citizenNameForRow,
         $message,
+        $safetyConcern ? 1 : 0,
+        $usageBlocked ? 1 : 0,
+        $peopleAffected,
         $category,
         $infrastructureType,
         $concernType,
@@ -257,6 +276,8 @@ try {
         $resolvedEmail !== '' ? $resolvedEmail : null,
         $cimmStatus,
         $priority,
+        $priorityMatrix['source'],
+        $priorityMatrix['reason'],
         $district ?: null,
         $barangay ?: null,
         $location ?: null,
@@ -281,6 +302,34 @@ try {
     }
 
     $pdo->commit();
+
+    auditLog($pdo, null, 'feedback_submitted', 'feedback', $feedbackId, sprintf(
+        '%s priority assigned by system rule. %s',
+        feedbackPriorityLabel($priority),
+        $priorityMatrix['reason']
+    ));
+
+    $projectName = null;
+    $assignedEngineers = [];
+    if ($projectId) {
+        $projectStmt = $pdo->prepare('SELECT name FROM projects WHERE id = ?');
+        $projectStmt->execute([$projectId]);
+        $projectName = $projectStmt->fetchColumn() ?: null;
+        $assignmentStmt = $pdo->prepare("SELECT DISTINCT a.engineer_id FROM engineer_project_assignments a INNER JOIN users u ON u.id = a.engineer_id WHERE a.project_id = ? AND a.status = 'active' AND u.status = 'active'");
+        $assignmentStmt->execute([$projectId]);
+        $assignedEngineers = array_map('intval', $assignmentStmt->fetchAll(PDO::FETCH_COLUMN));
+    }
+    $priorityLabel = feedbackPriorityLabel($priority);
+    $feedbackLink = appUrl('/engineer/dashboard.php');
+    foreach ($assignedEngineers as $engineerId) {
+        notifyUser($engineerId, $priority === 'urgent' ? 'urgent' : ($priority === 'high' ? 'warning' : 'info'), $priorityLabel . ' feedback requires review', 'A citizen report for ' . ($projectName ?: 'your assigned project') . ' was marked ' . $priorityLabel . ' priority for review.', $feedbackLink);
+    }
+    if ($priority === 'urgent') {
+        $supervisors = $pdo->query("SELECT id FROM users WHERE role IN ('admin', 'super_admin') AND status = 'active'")->fetchAll(PDO::FETCH_COLUMN);
+        foreach ($supervisors as $supervisorId) {
+            notifyUser((int) $supervisorId, 'urgent', 'CRITICAL feedback requires attention', 'A critical citizen report requires supervisory review.', appUrl('/admin/dashboard.php'));
+        }
+    }
 
     // Forward maintenance concerns to CIMMS after the local commit so a CIMMS
     // outage never rolls back the citizen's IPMS submission.
@@ -374,6 +423,9 @@ try {
                 : 'Feedback saved in IPMS. Forwarding to CIMMS is pending or failed — staff can retry later.')
             : 'Feedback submitted successfully',
         'id' => $feedbackId,
+        'priority' => $priority,
+        'priority_label' => $priorityLabel,
+        'priority_reason' => $priorityMatrix['reason'],
         'concern_type' => $concernType,
         'cimm' => $cimmSync,
     ]);
