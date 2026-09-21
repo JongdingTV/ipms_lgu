@@ -29,6 +29,7 @@ document.addEventListener('DOMContentLoaded', function() {
 
 // …and browser back/forward moves between pages.
 let currentPageName = 'dashboard';
+let transparencyRefreshTimer = null;
 window.addEventListener('hashchange', function() {
     const page = resolvePageHash((location.hash || '').replace(/^#/, '') || 'dashboard');
     if (page !== currentPageName && document.getElementById('page-' + page)) {
@@ -1463,6 +1464,10 @@ function changePage(pageName) {
     // back button works. currentPageName stops the resulting hashchange
     // event from re-running changePage.
     currentPageName = pageName;
+    if (pageName !== 'transparency' && transparencyRefreshTimer) {
+        clearInterval(transparencyRefreshTimer);
+        transparencyRefreshTimer = null;
+    }
     const targetHash = '#' + pageName;
     if (location.hash !== targetHash) {
         location.hash = targetHash;
@@ -1792,13 +1797,18 @@ function renderTransparencyCharts(data) {
 
     // Monthly spending over the last 12 months.
     const months = data.monthly_spending || [];
+    const hasRealMonthlySpending = months.some(month => Number(month.total) > 0);
+    const chartMonths = hasRealMonthlySpending ? months : months.map((month, index) => ({
+        ...month,
+        total: [0, 0, 125000, 85000, 0, 175000, 220000, 140000, 0, 195000, 260000, 180000][index] || 0,
+    }));
     mountChart('monthlySpend', 'monthlySpendChart', {
         type: 'line',
         data: {
-            labels: months.map(m => m.month),
+            labels: chartMonths.map(m => m.month),
             datasets: [{
-                label: 'Spending',
-                data: months.map(m => Number(m.total) || 0),
+                label: hasRealMonthlySpending ? 'Spending' : 'Sample spending (no recorded expenses)',
+                data: chartMonths.map(m => Number(m.total) || 0),
                 borderColor: t.money, backgroundColor: t.moneyFill, borderWidth: 2,
                 pointRadius: 0, pointHoverRadius: 5, fill: true, tension: .35,
             }],
@@ -2325,7 +2335,8 @@ function loadTrackedFeedback() {
 }
 
 function loadTransparencyDashboard() {
-    fetch(citizenUrl('citizen/api/transparency.php'))
+    const endpoint = citizenUrl('citizen/api/transparency.php') + '?_=' + Date.now();
+    fetch(endpoint, { cache: 'no-store' })
         .then(res => res.json())
         .then(data => {
             document.getElementById('totalBudget').textContent = formatCurrency(data.stats.total_budget);
@@ -2342,6 +2353,15 @@ function loadTransparencyDashboard() {
             setListData('expenses', data.expenses);
         })
         .catch(err => console.error('Error loading transparency data:', err));
+
+    if (transparencyRefreshTimer) {
+        clearInterval(transparencyRefreshTimer);
+    }
+    transparencyRefreshTimer = setInterval(() => {
+        if (currentPageName === 'transparency' && !document.hidden) {
+            loadTransparencyDashboard();
+        }
+    }, 30000);
 }
 
 function displayRecentProjects(projects) {
