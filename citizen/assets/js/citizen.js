@@ -1139,6 +1139,7 @@ function renderProjectDetail(data) {
                     <div class="star-display">${renderStarIcons(Math.round(ratingSummary.average || 0))}</div>
                     <span class="profile-label">${ratingSummary.count} rating${ratingSummary.count === 1 ? '' : 's'}</span>
                 </div>
+                ${ratingSummary.count ? `<div style="margin-left:auto;text-align:right;">${renderRatingSentiment(ratingSummary.ai_sentiment)}<small style="display:block;color:#64748b;font-size:.68rem;">AI detection from average rating</small></div>` : ''}
             </div>
 
             ${data.citizen_verified && data.rating_eligible ? `
@@ -1169,6 +1170,7 @@ function renderProjectDetail(data) {
                     <div class="rating-item">
                         <div class="rating-item-head">
                             <span class="star-display">${renderStarIcons(Number(r.rating))}</span>
+                            ${renderRatingSentiment(r.ai_sentiment)}
                             <strong>${Number(r.is_anonymous) === 1 ? 'Anonymous' : escapeHtml(r.citizen_name)}</strong>
                             <span class="update-date">${formatDate(r.created_at)}</span>
                         </div>
@@ -1182,6 +1184,13 @@ function renderProjectDetail(data) {
 
 function renderStarIcons(count) {
     return [1, 2, 3, 4, 5].map(n => `<span class="star${n <= count ? ' filled' : ''}">★</span>`).join('');
+}
+
+function renderRatingSentiment(sentiment) {
+    if (!sentiment) return '';
+    const colors = { positive: '#15803d', negative: '#b91c1c', neutral: '#a16207' };
+    const color = colors[sentiment.tone] || colors.neutral;
+    return `<span title="AI detection based on citizen rating: ${escapeHtml(sentiment.label)} (${Number(sentiment.confidence) || 0}% confidence)" style="display:inline-flex;align-items:center;gap:3px;color:${color};font-size:.78rem;font-weight:700;"><span aria-hidden="true">${escapeHtml(sentiment.sign)}</span>${escapeHtml(sentiment.label)}</span>`;
 }
 
 function ratingStatusLabel(status) {

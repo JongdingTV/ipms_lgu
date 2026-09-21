@@ -42,6 +42,7 @@ if (!empty($_GET['id'])) {
     if (!$row) {
         respond(['success' => false, 'message' => 'Not found'], 404);
     }
+    $row['ai_sentiment'] = projectRatingSentiment((int) $row['rating']);
     respond(['success' => true, 'data' => $row]);
 }
 
@@ -81,6 +82,7 @@ $totalRows = (int) $total->fetchColumn();
 $avgStmt = $db->prepare("SELECT COALESCE(AVG(r.rating), 0) $baseFrom");
 $avgStmt->execute($params);
 $average = round((float) $avgStmt->fetchColumn(), 1);
+$averageSentiment = projectRatingSentiment((float) $average);
 
 $stmt = $db->prepare("
     SELECT r.id, r.rating, r.comment, r.status, r.is_anonymous, r.created_at, r.updated_at, r.project_id,
@@ -91,12 +93,18 @@ $stmt = $db->prepare("
     LIMIT $limit OFFSET $offset
 ");
 $stmt->execute($params);
+$rows = $stmt->fetchAll();
+foreach ($rows as &$row) {
+    $row['ai_sentiment'] = projectRatingSentiment((int) $row['rating']);
+}
+unset($row);
 
 respond([
     'success' => true,
-    'data' => $stmt->fetchAll(),
+    'data' => $rows,
     'total' => $totalRows,
     'page' => $page,
     'last_page' => (int) ceil($totalRows / $limit),
     'average' => $average,
+    'average_sentiment' => $averageSentiment,
 ]);

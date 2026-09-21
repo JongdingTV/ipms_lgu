@@ -5,6 +5,9 @@ require_once __DIR__ . '/../includes/db.php';
 
 secureSessionStart();
 
+const STAFF_REMEMBER_COOKIE = 'ipms_staff_remember';
+const STAFF_REMEMBER_DAYS = 10;
+
 function authIsApiRequest(): bool
 {
     return strpos($_SERVER['PHP_SELF'] ?? '', '/api/') !== false;
@@ -36,6 +39,95 @@ function redirectToLogin(array $query = [], ?string $role = null): void
 function currentUser(): ?array
 {
     return $_SESSION['auth_user'] ?? null;
+}
+
+function rememberTokenEnsureSchema(PDO $db): void
+{
+    static $ensured = false;
+    if ($ensured) return;
+    $ensured = true;
+
+    try {
+        $db->exec("CREATE TABLE IF NOT EXISTS staff_remember_tokens (
+            id INT AUTO_INCREMENT PRIMARY KEY,
+            user_id INT NOT NULL,
+            selector CHAR(32) NOT NULL UNIQUE,
+            token_hash CHAR(64) NOT NULL,
+            user_agent_hash CHAR(64) NOT NULL,
+            expires_at DATETIME NOT NULL,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            last_used_at DATETIME NULL,
+            INDEX idx_staff_remember_user (user_id),
+            INDEX idx_staff_remember_expires (expires_at)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
+    } catch (Throwable $e) {
+        error_log('Failed to ensure staff remember-token schema: ' . $e->getMessage());
+    }
+}
+
+function rememberCookieOptions(int $expires): array
+{
+    return [
+        'expires' => $expires,
+        'path' => '/',
+        'secure' => !empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off',
+        'httponly' => true,
+        'samesite' => 'Lax',
+    ];
+}
+
+function clearStaffRememberCookie(): void
+{
+    if (isset($_COOKIE[STAFF_REMEMBER_COOKIE])) {
+        setcookie(STAFF_REMEMBER_COOKIE, '', rememberCookieOptions(time() - 3600));
+    }
+}
+
+function issueStaffRememberToken(array $user): void
+{
+    $db = getDB();
+    rememberTokenEnsureSchema($db);
+    $userId = (int) ($user['id'] ?? $user['user_id'] ?? 0);
+    if ($userId <= 0 || ($user['role'] ?? '') === 'citizen') return;
+
+    $selector = bin2hex(random_bytes(16));
+    $token = bin2hex(random_bytes(32));
+    $expires = time() + (STAFF_REMEMBER_DAYS * 86400);
+    $stmt = $db->prepare('INSERT INTO staff_remember_tokens (user_id, selector, token_hash, user_agent_hash, expires_at) VALUES (?, ?, ?, ?, FROM_UNIXTIME(?))');
+    $stmt->execute([$userId, $selector, hash('sha256', $token), hash('sha256', $_SERVER['HTTP_USER_AGENT'] ?? ''), $expires]);
+    setcookie(STAFF_REMEMBER_COOKIE, $selector . ':' . $token, rememberCookieOptions($expires));
+}
+
+function restoreStaffRememberedSession(): bool
+{
+    if (isLoggedIn()) return true;
+    $value = (string) ($_COOKIE[STAFF_REMEMBER_COOKIE] ?? '');
+    [$selector, $token] = array_pad(explode(':', $value, 2), 2, '');
+    if (!preg_match('/^[a-f0-9]{32}$/', $selector) || !preg_match('/^[a-f0-9]{64}$/', $token)) {
+        return false;
+    }
+
+    $db = getDB();
+    rememberTokenEnsureSchema($db);
+    $stmt = $db->prepare("SELECT t.*, u.id, u.username, u.email, u.full_name, u.role, u.status, u.district
+        FROM staff_remember_tokens t INNER JOIN users u ON u.id = t.user_id
+        WHERE t.selector = ? AND t.expires_at > NOW() AND u.status = 'active'");
+    $stmt->execute([$selector]);
+    $row = $stmt->fetch();
+    if (!$row || !hash_equals((string) $row['token_hash'], hash('sha256', $token))
+        || !hash_equals((string) $row['user_agent_hash'], hash('sha256', $_SERVER['HTTP_USER_AGENT'] ?? ''))
+        || ($row['role'] ?? '') === 'citizen') {
+        clearStaffRememberCookie();
+        if ($row) $db->prepare('DELETE FROM staff_remember_tokens WHERE id = ?')->execute([(int) $row['id']]);
+        return false;
+    }
+
+    $db->prepare('DELETE FROM staff_remember_tokens WHERE id = ?')->execute([(int) $row['id']]);
+    clearStaffRememberCookie();
+    establishUserSession($row);
+    issueStaffRememberToken($row);
+    logActivity((int) $row['id'], 'remembered_login', 'Staff session restored from trusted device', 'Authentication');
+    return true;
 }
 
 /**
@@ -82,6 +174,16 @@ function logoutCurrentUser(bool $logActivity = true): void
         logActivity((int) $_SESSION['auth_user']['user_id'], 'logout', 'User logged out', 'Authentication');
     }
 
+    $rememberValue = (string) ($_COOKIE[STAFF_REMEMBER_COOKIE] ?? '');
+    [$rememberSelector] = array_pad(explode(':', $rememberValue, 2), 2, '');
+    if (preg_match('/^[a-f0-9]{32}$/', $rememberSelector)) {
+        try {
+            rememberTokenEnsureSchema(getDB());
+            getDB()->prepare('DELETE FROM staff_remember_tokens WHERE selector = ?')->execute([$rememberSelector]);
+        } catch (Throwable $e) {
+        }
+    }
+    clearStaffRememberCookie();
     $_SESSION = [];
 
     if (isset($_COOKIE[session_name()])) {
@@ -98,6 +200,9 @@ function requireLogin(array $roles = []): array
     // page instead of the shared staff auth/login.php.
     $loginRole = (count($roles) === 1 && $roles[0] === 'citizen') ? 'citizen' : null;
 
+    if (!isLoggedIn()) {
+        restoreStaffRememberedSession();
+    }
     if (!isLoggedIn()) {
         redirectToLogin(['error' => 'Please log in to continue.'], $loginRole);
     }

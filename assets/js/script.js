@@ -2656,7 +2656,7 @@ function renderApprovalTable(rows) {
   wrap.innerHTML = `
     <table class="data-table">
       <thead>
-        <tr><th>Code</th><th>Project</th><th>Budget</th><th>Schedule</th><th>Contractor</th>${containerId === 'page-cancelled-projects' ? '<th>Discontinuation reason</th>' : ''}<th>Status</th><th>Actions</th></tr>
+        <tr><th>Code</th><th>Project</th><th>Budget</th><th>Schedule</th><th>Contractor</th><th>Status</th><th>Actions</th></tr>
       </thead>
       <tbody>
         ${rows.map(p => `
@@ -2666,7 +2666,6 @@ function renderApprovalTable(rows) {
             <td>${formatMoney(p.budget)}</td>
             <td>${formatDate(p.start_date)} to ${formatDate(p.end_date)}</td>
             <td>${p.contractor_name || 'Unassigned'}</td>
-            ${containerId === 'page-cancelled-projects' ? `<td><span class="archive-reason">${escapeHtml(p.rejection_reason || 'Reason not recorded')}</span></td>` : ''}
             <td>${statusBadge(p.status)}</td>
             <td>
               <div class="inline-actions">
@@ -4784,7 +4783,7 @@ async function fetchCitizenRatings() {
     renderCitizenRatingsTable(d.data || []);
     renderPager('ratingsPager', d.page, d.last_page, p => { ratingsState.page = p; fetchCitizenRatings(); });
     const summaryEl = document.getElementById('ratingsSummary');
-    if (summaryEl) summaryEl.textContent = `${d.total} rating${d.total === 1 ? '' : 's'} · avg ${d.average || 0}★`;
+    if (summaryEl) summaryEl.innerHTML = `${d.total} rating${d.total === 1 ? '' : 's'} · avg ${d.average || 0}★ ${d.total ? renderAdminRatingSentiment(d.average_sentiment) : ''}`;
   } catch (e) {
     wrap.innerHTML = '<p class="empty-state">Failed to load ratings.</p>';
     console.error(e);
@@ -4807,7 +4806,7 @@ function renderCitizenRatingsTable(rows) {
         ${rows.map(r => `
           <tr>
             <td>${escapeHtml(r.project_code)} — ${escapeHtml(r.project_name)}</td>
-            <td>${'★'.repeat(Number(r.rating))}${'☆'.repeat(5 - Number(r.rating))}</td>
+            <td>${'★'.repeat(Number(r.rating))}${'☆'.repeat(5 - Number(r.rating))}<br>${renderAdminRatingSentiment(r.ai_sentiment)}</td>
             <td style="max-width:280px;">${r.comment ? escapeHtml(r.comment) : '<span style="color:#94a3b8;">—</span>'}</td>
             <td>${Number(r.is_anonymous) === 1 ? '<span class="badge badge-flagged">Anonymous</span> ' + escapeHtml(r.citizen_name) : escapeHtml(r.citizen_name)}</td>
             <td style="font-size:.75rem;color:#94a3b8;">${formatDate(r.created_at)}</td>
@@ -4832,11 +4831,16 @@ async function openRatingDetailModal(id) {
           <span class="badge ${RATING_STATUS_BADGE[r.status] || 'badge-spike'}">${RATING_STATUS_LABELS[r.status] || r.status}</span>
           ${Number(r.is_anonymous) === 1 ? '<span class="badge badge-flagged">Posted anonymously — name hidden from the public</span>' : ''}
           <span style="font-size:1.1rem;">${'★'.repeat(Number(r.rating))}${'☆'.repeat(5 - Number(r.rating))}</span>
+          ${renderAdminRatingSentiment(r.ai_sentiment)}
         </div>
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">
           <div><p class="modal-label">PROJECT</p><p class="modal-val">${escapeHtml(r.project_code)} — ${escapeHtml(r.project_name)}</p></div>
           <div><p class="modal-label">CITIZEN</p><p class="modal-val">${escapeHtml(r.citizen_name)}</p></div>
           <div><p class="modal-label">SUBMITTED</p><p class="modal-val">${formatDate(r.created_at)}</p></div>
+        </div>
+        <div>
+          <p class="modal-label">AI DETECTION</p>
+          ${renderAdminRatingSentiment(r.ai_sentiment, true)}
         </div>
         <div>
           <p class="modal-label">REVIEW</p>
@@ -4848,6 +4852,15 @@ async function openRatingDetailModal(id) {
   } catch {
     toast('Failed to load review', 'error');
   }
+}
+
+function renderAdminRatingSentiment(sentiment, detailed = false) {
+  if (!sentiment) return '<span style="color:#94a3b8;">Unavailable</span>';
+  const colors = { positive: '#15803d', negative: '#b91c1c', neutral: '#a16207' };
+  const color = colors[sentiment.tone] || colors.neutral;
+  const label = `${sentiment.sign} ${sentiment.label}`;
+  const confidence = `${Number(sentiment.confidence) || 0}% confidence`;
+  return `<span title="AI detection based on the citizen's star rating" style="display:inline-flex;align-items:center;gap:5px;color:${color};font-weight:700;${detailed ? 'font-size:.95rem;' : 'font-size:.75rem;'}">${escapeHtml(label)} <small style="font-weight:500;color:#64748b;">(${confidence})</small></span>`;
 }
 
 /* ============================================================

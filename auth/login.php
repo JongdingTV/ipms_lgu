@@ -4,6 +4,9 @@ require_once __DIR__ . '/../includes/Settings.php';
 require_once __DIR__ . '/../includes/OTPManager.php';
 require_once __DIR__ . '/../includes/workflow.php';
 
+if (!isLoggedIn()) {
+    restoreStaffRememberedSession();
+}
 if (isLoggedIn()) {
     redirectToRoleDashboard();
 }
@@ -52,6 +55,7 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
     requireCsrfProtection();
     $identifier = trim($_POST['identifier'] ?? '');
     $password = $_POST['password'] ?? '';
+    $rememberMe = !empty($_POST['remember_me']);
 
     if ($selectedRole === '' || !array_key_exists($selectedRole, $portalRoles)) {
         $error = 'Please choose the portal you are logging in to.';
@@ -85,6 +89,7 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
                 $_SESSION['pending_2fa_name'] = $authedUser['full_name'];
                 $_SESSION['pending_2fa_started_at'] = time();
                 $_SESSION['pending_2fa_last_sent_at'] = time();
+                $_SESSION['pending_2fa_remember_me'] = $rememberMe;
 
                 $otp = new OTPManager();
                 $otpResult = $otp->createOTP($authedUser['user_id'], 'staff_login');
@@ -122,6 +127,9 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
                 );
                 $error = 'Unable to send verification code, contact your administrator.';
             } else {
+                if ($rememberMe) {
+                    issueStaffRememberToken($authedUser);
+                }
                 redirectToRoleDashboard($authedUser['role']);
             }
         } else {
@@ -422,6 +430,23 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
 
         .field {
             margin-bottom: 1.15rem;
+        }
+
+        .remember-choice {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            margin: -2px 0 18px;
+            color: var(--muted);
+            font-size: 0.78rem;
+            font-weight: 600;
+            cursor: pointer;
+        }
+
+        .remember-choice input {
+            width: 16px;
+            height: 16px;
+            accent-color: var(--primary);
         }
 
         label {
@@ -741,6 +766,11 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
                         </button>
                     </div>
                 </div>
+
+                <label class="remember-choice">
+                    <input type="checkbox" name="remember_me" value="1" <?= !empty($_POST['remember_me']) ? 'checked' : '' ?>>
+                    <span>Remember this device for 10 days</span>
+                </label>
 
                 <button type="submit">Login</button>
             </form>

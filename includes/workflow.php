@@ -1086,6 +1086,22 @@ function projectRatingsEnsureSchema(PDO $db): void
     }
 }
 
+/**
+ * Explainable sentiment signal derived from the citizen's star rating.
+ * This is advisory UI metadata, not a moderation decision and not a rewrite
+ * of the citizen's review text.
+ */
+function projectRatingSentiment(float $rating): array
+{
+    if ($rating >= 4) {
+        return ['label' => 'Positive', 'sign' => '+', 'tone' => 'positive', 'confidence' => $rating >= 4.5 ? 98 : 90];
+    }
+    if ($rating <= 2) {
+        return ['label' => 'Negative', 'sign' => '-', 'tone' => 'negative', 'confidence' => $rating <= 1.5 ? 98 : 90];
+    }
+    return ['label' => 'Neutral', 'sign' => '•', 'tone' => 'neutral', 'confidence' => 70];
+}
+
 // Narrower than the broad citizen-visibility list used everywhere else for
 // *viewing* a project (approved/bidding/awarded/assigned are all visible but
 // nothing has been built yet) — a citizen can only ever *submit* a rating

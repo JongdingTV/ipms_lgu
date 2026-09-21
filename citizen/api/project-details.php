@@ -85,6 +85,7 @@ $stmt = $pdo->prepare("SELECT COUNT(*) AS count, COALESCE(AVG(rating), 0) AS ave
 $stmt->execute([$projectId]);
 $ratingRow = $stmt->fetch();
 $ratingSummary = ['count' => (int) $ratingRow['count'], 'average' => round((float) $ratingRow['average'], 1)];
+$ratingSummary['ai_sentiment'] = projectRatingSentiment((float) $ratingSummary['average']);
 
 $distStmt = $pdo->prepare("SELECT rating, COUNT(*) AS c FROM project_ratings WHERE project_id = ? AND status = 'approved' GROUP BY rating");
 $distStmt->execute([$projectId]);
@@ -113,6 +114,9 @@ if ($citizenId) {
     $ownStmt->execute([$projectId, $citizenId]);
     $ownRating = $ownStmt->fetch() ?: null;
 }
+if ($ownRating) {
+    $ownRating['ai_sentiment'] = projectRatingSentiment((int) $ownRating['rating']);
+}
 
 // Other citizens shown as "Juan D." (first name + last initial) — privacy-
 // conscious, consistent with the timeline widget's role-only convention
@@ -131,6 +135,10 @@ $stmt = $pdo->prepare("
 ");
 $stmt->execute($citizenId ? [$projectId, $citizenId] : [$projectId]);
 $ratings = $stmt->fetchAll();
+foreach ($ratings as &$rating) {
+    $rating['ai_sentiment'] = projectRatingSentiment((int) $rating['rating']);
+}
+unset($rating);
 
 // Public procurement notice, if any
 $stmt = $pdo->prepare("

@@ -18,6 +18,7 @@ function clear2faSession(): void
         $_SESSION['pending_2fa_name'],
         $_SESSION['pending_2fa_started_at'],
         $_SESSION['pending_2fa_last_sent_at'],
+        $_SESSION['pending_2fa_remember_me'],
         $_SESSION['dev_otp_preview']
     );
 }
@@ -129,6 +130,10 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
                 $_SESSION['full_name'] = $freshUser['full_name'];
                 $_SESSION['role'] = $freshUser['role'];
                 $_SESSION['last_activity'] = time();
+
+                if (!empty($_SESSION['pending_2fa_remember_me'])) {
+                    issueStaffRememberToken($freshUser);
+                }
 
                 clear2faSession();
                 logActivity((int) $freshUser['id'], 'otp_verified', '2FA code verified for staff login');
