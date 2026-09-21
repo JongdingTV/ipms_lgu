@@ -408,6 +408,37 @@ try {
             margin-bottom: 1.15rem;
         }
 
+        .password-field {
+            position: relative;
+        }
+
+        .password-field input {
+            padding-right: 3.1rem;
+        }
+
+        .password-toggle {
+            position: absolute;
+            top: 50%;
+            right: 0.7rem;
+            width: 32px;
+            height: 32px;
+            display: grid;
+            place-items: center;
+            transform: translateY(-50%);
+            border: 0;
+            border-radius: 6px;
+            background: transparent;
+            color: var(--muted);
+            cursor: pointer;
+        }
+
+        .password-toggle:hover,
+        .password-toggle:focus-visible {
+            background: var(--mint);
+            color: var(--green);
+            outline: none;
+        }
+
         label {
             display: block;
             margin-bottom: 0.4rem;
@@ -603,14 +634,19 @@ try {
 
                 <div class="form-group">
                     <label for="password">Password</label>
-                    <input
-                        type="password"
-                        id="password"
-                        name="password"
-                        placeholder="Enter your password"
-                        required
-                        autocomplete="current-password"
-                    >
+                    <div class="password-field">
+                        <input
+                            type="password"
+                            id="password"
+                            name="password"
+                            placeholder="Enter your password"
+                            required
+                            autocomplete="current-password"
+                        >
+                        <button type="button" class="password-toggle" id="passwordToggle" aria-label="Show password" aria-pressed="false">
+                            <i class="fa-solid fa-eye" aria-hidden="true"></i>
+                        </button>
+                    </div>
                 </div>
 
                 <button type="submit">Sign In</button>
@@ -630,5 +666,6 @@ try {
             </div>
         </section>
     </div>
+    <script src="<?= htmlspecialchars(assetUrl('/assets/js/citizen-login.js')) ?>"></script>
 </body>
 </html>
