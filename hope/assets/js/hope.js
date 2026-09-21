@@ -6,6 +6,19 @@ const HOPE_USER_API = window.BASE_PATH + 'api/user.php';
 const HOPE_CSRF_HEADERS = window.CSRF_TOKEN ? { 'X-CSRF-Token': window.CSRF_TOKEN } : {};
 
 let hopeCurrentPage = 'dashboard';
+
+function resolveHopeHashPage(rawPage) {
+  const page = String(rawPage || '').replace(/^#/, '').trim() || 'dashboard';
+  return page;
+}
+
+function hopeSyncHash(page) {
+  const targetHash = '#' + page;
+  if (window.location.hash !== targetHash) {
+    window.location.hash = targetHash;
+  }
+}
+
 let hopeApprovalState = { page: 1, search: '', status: 'endorsed' };
 let hopeProjectsById = {};
 
@@ -1420,6 +1433,7 @@ const hopeRenderers = {
 
 function hopeShowPage(page) {
   hopeCurrentPage = page;
+  hopeSyncHash(page);
 
   document.querySelectorAll('.nav-item').forEach(item => {
     item.classList.toggle('active', item.dataset.page === page);
@@ -1617,6 +1631,22 @@ window.showChangePassword = showChangePassword;
 
 document.addEventListener('DOMContentLoaded', async () => {
   hopeWireShell();
-  await hopeRenderDashboard();
+  window.addEventListener('hashchange', () => {
+    const nextPage = resolveHopeHashPage(window.location.hash);
+    if (nextPage && document.getElementById('page-' + nextPage) && nextPage !== hopeCurrentPage) {
+      hopeShowPage(nextPage);
+    }
+  });
+  try {
+    await hopeRenderDashboard();
+    const initialPage = resolveHopeHashPage(window.location.hash);
+    if (document.getElementById('page-' + initialPage)) {
+      hopeShowPage(initialPage);
+    } else {
+      hopeShowPage('dashboard');
+    }
+  } catch (error) {
+    hopeToast(error.message, 'error');
+  }
 });
 

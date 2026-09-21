@@ -9,6 +9,19 @@ const BAC_DOCUMENT_TYPES = [
 ];
 
 let bacCurrentPage = 'dashboard';
+
+function resolveBacHashPage(rawPage) {
+  const page = String(rawPage || '').replace(/^#/, '').trim() || 'dashboard';
+  return page;
+}
+
+function bacSyncHash(page) {
+  const targetHash = '#' + page;
+  if (window.location.hash !== targetHash) {
+    window.location.hash = targetHash;
+  }
+}
+
 let bacDashboardData = { stats: {} };
 
 /* Per-section pagination/filter state */
@@ -1137,6 +1150,7 @@ const bacRenderers = {
 
 function bacShowPage(page) {
   bacCurrentPage = page;
+  bacSyncHash(page);
 
   document.querySelectorAll('.nav-item').forEach(item => {
     item.classList.toggle('active', item.dataset.page === page);
@@ -1622,5 +1636,21 @@ window.showChangePassword = showChangePassword;
 
 document.addEventListener('DOMContentLoaded', async () => {
   bacWireShell();
-  await bacRenderDashboard();
+  window.addEventListener('hashchange', () => {
+    const nextPage = resolveBacHashPage(window.location.hash);
+    if (nextPage && document.getElementById('page-' + nextPage) && nextPage !== bacCurrentPage) {
+      bacShowPage(nextPage);
+    }
+  });
+  try {
+    await bacRenderDashboard();
+    const initialPage = resolveBacHashPage(window.location.hash);
+    if (document.getElementById('page-' + initialPage)) {
+      bacShowPage(initialPage);
+    } else {
+      bacShowPage('dashboard');
+    }
+  } catch (error) {
+    bacToast(error.message, 'error');
+  }
 });

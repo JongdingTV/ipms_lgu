@@ -231,8 +231,21 @@ let budgetChartInst   = null;
    ============================================================ */
 let currentPage = 'dashboard';
 
+function resolveHashPage(rawPage) {
+  const page = String(rawPage || '').replace(/^#/, '').trim() || 'dashboard';
+  return page;
+}
+
+function syncPageHash(page) {
+  const targetHash = '#' + page;
+  if (window.location.hash !== targetHash) {
+    window.location.hash = targetHash;
+  }
+}
+
 function navigate(page, params = {}) {
   currentPage = page;
+  syncPageHash(page);
 
   // Update nav active state
   document.querySelectorAll('.nav-item').forEach(el => {
@@ -6460,12 +6473,22 @@ document.addEventListener('DOMContentLoaded', () => {
   // forever (all the dashboard's lower cards). Re-scan the new DOM.
   window.rescanScrollReveal?.();
 
+  window.addEventListener('hashchange', () => {
+    const nextPage = resolveHashPage(window.location.hash);
+    if (nextPage && document.getElementById('page-' + nextPage) && nextPage !== currentPage) {
+      navigate(nextPage);
+    }
+  });
+
   const proposalId = Number(new URLSearchParams(window.location.search).get('proposal_id'));
+  const initialPage = resolveHashPage(window.location.hash);
   if (proposalId > 0) {
     const cleanUrl = new URL(window.location.href);
     cleanUrl.searchParams.delete('proposal_id');
     window.history.replaceState({}, '', cleanUrl);
     navigate('project-proposals', { proposal_id: proposalId });
+  } else if (document.getElementById('page-' + initialPage)) {
+    navigate(initialPage);
   } else {
     loadDashboard();
   }

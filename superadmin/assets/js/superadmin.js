@@ -19,6 +19,18 @@ const SA_DOCUMENT_TYPES = [
 
 let saCurrentPage = 'dashboard';
 
+function resolveSuperAdminHashPage(rawPage) {
+  const page = String(rawPage || '').replace(/^#/, '').trim() || 'dashboard';
+  return page;
+}
+
+function saSyncHash(page) {
+  const targetHash = '#' + page;
+  if (window.location.hash !== targetHash) {
+    window.location.hash = targetHash;
+  }
+}
+
 /* Per-section pagination/filter state — each section fetches and renders itself
    independently now, instead of one global saData blob fetched via `summary`. */
 let saListState = {
@@ -1449,6 +1461,7 @@ const saRenderers = {
 
 function saShowPage(page) {
   saCurrentPage = page;
+  saSyncHash(page);
 
   document.querySelectorAll('.nav-item').forEach(item => {
     item.classList.toggle('active', item.dataset.page === page);
@@ -1721,5 +1734,21 @@ window.showChangePassword = showChangePassword;
 
 document.addEventListener('DOMContentLoaded', async () => {
   saWireShell();
-  await saRenderDashboard();
+  window.addEventListener('hashchange', () => {
+    const nextPage = resolveSuperAdminHashPage(window.location.hash);
+    if (nextPage && document.getElementById('page-' + nextPage) && nextPage !== saCurrentPage) {
+      saShowPage(nextPage);
+    }
+  });
+  try {
+    await saRenderDashboard();
+    const initialPage = resolveSuperAdminHashPage(window.location.hash);
+    if (document.getElementById('page-' + initialPage)) {
+      saShowPage(initialPage);
+    } else {
+      saShowPage('dashboard');
+    }
+  } catch (error) {
+    saToast(error.message, 'error');
+  }
 });

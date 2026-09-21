@@ -3,6 +3,20 @@ const CONTRACTOR_API = window.BASE_PATH + 'contractor/api/portal.php';
 const USER_API = window.BASE_PATH + 'api/user.php';
 const CONTRACTOR_CSRF_HEADERS = window.CSRF_TOKEN ? { 'X-CSRF-Token': window.CSRF_TOKEN } : {};
 
+let contractorCurrentPage = 'dashboard';
+
+function resolveContractorHashPage(rawPage) {
+  const page = String(rawPage || '').replace(/^#/, '').trim() || 'dashboard';
+  return page;
+}
+
+function contractorSyncHash(page) {
+  const targetHash = '#' + page;
+  if (window.location.hash !== targetHash) {
+    window.location.hash = targetHash;
+  }
+}
+
 let contractorState = {
   summary: null,
   projects: [],
@@ -1531,6 +1545,8 @@ async function contractorRefreshData() {
 }
 
 function contractorShowPage(page) {
+  contractorCurrentPage = page;
+  contractorSyncHash(page);
   document.querySelectorAll('.nav-item').forEach(item => {
     item.classList.toggle('active', item.dataset.page === page);
   });
@@ -1765,8 +1781,20 @@ window.showChangePassword = showChangePassword;
 
 document.addEventListener('DOMContentLoaded', async () => {
   contractorWireShell();
+  window.addEventListener('hashchange', () => {
+    const nextPage = resolveContractorHashPage(window.location.hash);
+    if (nextPage && document.getElementById('page-' + nextPage) && nextPage !== contractorCurrentPage) {
+      contractorShowPage(nextPage);
+    }
+  });
   try {
     await contractorRefreshData();
+    const initialPage = resolveContractorHashPage(window.location.hash);
+    if (document.getElementById('page-' + initialPage)) {
+      contractorShowPage(initialPage);
+    } else {
+      contractorShowPage('dashboard');
+    }
   } catch (error) {
     contractorToast(error.message, 'error');
   }

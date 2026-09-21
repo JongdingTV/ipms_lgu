@@ -7,6 +7,19 @@ const ENGINEER_PROPOSALS_API = window.BASE_PATH + 'api/project-proposals.php';
 const ENGINEER_CSRF_HEADERS = window.CSRF_TOKEN ? { 'X-CSRF-Token': window.CSRF_TOKEN } : {};
 
 let engineerCurrentPage = 'dashboard';
+
+function resolveEngineerHashPage(rawPage) {
+  const page = String(rawPage || '').replace(/^#/, '').trim() || 'dashboard';
+  return page;
+}
+
+function engineerSyncHash(page) {
+  const targetHash = '#' + page;
+  if (window.location.hash !== targetHash) {
+    window.location.hash = targetHash;
+  }
+}
+
 let engineerState = {
   summary: null,
   projects: [],
@@ -2687,6 +2700,7 @@ async function engineerRefreshData() {
 
 function engineerShowPage(page, selectedProjectId = '') {
   engineerCurrentPage = page;
+  engineerSyncHash(page);
   document.querySelectorAll('.nav-item').forEach(item => {
     item.classList.toggle('active', item.dataset.page === page);
   });
@@ -3614,8 +3628,20 @@ window.showChangePassword = showChangePassword;
 document.addEventListener('DOMContentLoaded', async () => {
   engineerWireShell();
   engineerStatusInit();
+  window.addEventListener('hashchange', () => {
+    const nextPage = resolveEngineerHashPage(window.location.hash);
+    if (nextPage && document.getElementById('page-' + nextPage) && nextPage !== engineerCurrentPage) {
+      engineerShowPage(nextPage);
+    }
+  });
   try {
     await engineerRefreshData();
+    const initialPage = resolveEngineerHashPage(window.location.hash);
+    if (document.getElementById('page-' + initialPage)) {
+      engineerShowPage(initialPage);
+    } else {
+      engineerShowPage('dashboard');
+    }
   } catch (error) {
     engineerToast(error.message, 'error');
   }
